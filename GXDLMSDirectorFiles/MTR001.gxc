@@ -1,0 +1,522 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ArrayOfGXDLMSDevice xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="Gurux1">
+  <GXDLMSDevice>
+    <WaitTime>10</WaitTime>
+    <ResendCount>1</ResendCount>
+    <Authentication>HighGMAC</Authentication>
+    <Password>mR3Vs57qW5rOSoeFK50bdw==</Password>
+    <Security>AuthenticationEncryption</Security>
+    <KeyAgreementScheme>0</KeyAgreementScheme>
+    <SystemTitle>53494D554C415452</SystemTitle>
+    <ServerSystemTitle />
+    <DedicatedKey />
+    <BlockCipherKey>41414141414141414141414141414141</BlockCipherKey>
+    <AuthenticationKey>41414141414141414141414141414141</AuthenticationKey>
+    <BroadcastKey />
+    <InvocationCounter>1000</InvocationCounter>
+    <Challenge />
+    <Signing>0</Signing>
+    <ClientAddress>1</ClientAddress>
+    <InterfaceType>1</InterfaceType>
+    <MacDestinationAddress>0</MacDestinationAddress>
+    <InactivityTimeout>120</InactivityTimeout>
+    <FrameDelay>0</FrameDelay>
+    <ObjectDelay>0</ObjectDelay>
+    <IncreaseInvocationCounterForGMacAuthentication>true</IncreaseInvocationCounterForGMacAuthentication>
+    <SignCipherOrder>0</SignCipherOrder>
+    <Name>MTR001</Name>
+    <Verbose>true</Verbose>
+    <Conformance>12220486</Conformance>
+    <Manufacturer>grx</Manufacturer>
+    <HDLCAddressing>0</HDLCAddressing>
+    <UseProtectedRelease>false</UseProtectedRelease>
+    <SecurityChangeCheck>false</SecurityChangeCheck>
+    <MediaType>Gurux.Net.GXNet</MediaType>
+    <MediaSettings>&lt;IP&gt;127.0.0.1&lt;/IP&gt;
+&lt;Port&gt;4059&lt;/Port&gt;
+</MediaSettings>
+    <UseLN>true</UseLN>
+    <Objects2>
+      <GXDLMSObject xsi:type="GXDLMSAssociationLogicalName">
+        <Version>2</Version>
+        <LogicalName>0.0.40.0.0.255</LogicalName>
+        <Description>Ch. 0 Current association</Description>
+        <Attributes>
+          <Item>
+            <Index>1</Index>
+            <Type>OctetString</Type>
+            <Access>1</Access>
+            <Access3>0</Access3>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Index>2</Index>
+            <Access>1</Access>
+            <Access3>0</Access3>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Index>3</Index>
+            <Access>0</Access>
+            <Access3>0</Access3>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Index>4</Index>
+            <Access>0</Access>
+            <Access3>0</Access3>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Index>5</Index>
+            <Access>0</Access>
+            <Access3>0</Access3>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Index>6</Index>
+            <Access>0</Access>
+            <Access3>0</Access3>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Index>7</Index>
+            <Access>0</Access>
+            <Access3>0</Access3>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Index>8</Index>
+            <Access>0</Access>
+            <Access3>0</Access3>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Index>9</Index>
+            <Access>0</Access>
+            <Access3>0</Access3>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Index>10</Index>
+            <Access>0</Access>
+            <Access3>0</Access3>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Index>11</Index>
+            <Access>0</Access>
+            <Access3>0</Access3>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+        </Attributes>
+        <Methods>
+          <Item>
+            <Index>1</Index>
+            <Type>OctetString</Type>
+            <MethodAccess>1</MethodAccess>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Index>2</Index>
+            <MethodAccess>1</MethodAccess>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Index>3</Index>
+            <MethodAccess>1</MethodAccess>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Index>4</Index>
+            <MethodAccess>1</MethodAccess>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Index>5</Index>
+            <MethodAccess>1</MethodAccess>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Index>6</Index>
+            <MethodAccess>1</MethodAccess>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+        </Methods>
+      </GXDLMSObject>
+      <GXDLMSObject xsi:type="GXDLMSRegister">
+        <Version>0</Version>
+        <LogicalName>1.0.1.8.0.255</LogicalName>
+        <Description>Ch. 0 Sum Li Active power+ (QI+QIV) Time integral 1 Rate 0 (0 is total)</Description>
+        <Attributes>
+          <Item>
+            <Name>Logical Name</Name>
+            <Index>1</Index>
+            <Type>OctetString</Type>
+            <Access>1</Access>
+            <Access3>0</Access3>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Name>Value</Name>
+            <Index>2</Index>
+            <Type>Int32</Type>
+            <UIType>String</UIType>
+            <Access>1</Access>
+            <Access3>0</Access3>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Name>Scaler and Unit</Name>
+            <Index>3</Index>
+            <Type>Structure</Type>
+            <Access>0</Access>
+            <Access3>0</Access3>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+        </Attributes>
+        <Methods>
+          <Item>
+            <Name>Reset</Name>
+            <Index>1</Index>
+            <Type>OctetString</Type>
+            <MethodAccess>1</MethodAccess>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+        </Methods>
+      </GXDLMSObject>
+      <GXDLMSObject xsi:type="GXDLMSClock">
+        <Version>0</Version>
+        <LogicalName>0.0.1.0.0.255</LogicalName>
+        <Description>Ch. 0 Clock object  #1</Description>
+        <Attributes>
+          <Item>
+            <Name>Logical Name</Name>
+            <Index>1</Index>
+            <Type>OctetString</Type>
+            <Access>1</Access>
+            <Access3>0</Access3>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Name>Time</Name>
+            <Index>2</Index>
+            <Type>OctetString</Type>
+            <Access>1</Access>
+            <Access3>0</Access3>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Name>Time Zone</Name>
+            <Index>3</Index>
+            <Type>Int16</Type>
+            <Access>0</Access>
+            <Access3>0</Access3>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Name>Status</Name>
+            <Index>4</Index>
+            <Type>UInt8</Type>
+            <Access>0</Access>
+            <Access3>0</Access3>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Name>Begin</Name>
+            <Index>5</Index>
+            <Type>OctetString</Type>
+            <Access>0</Access>
+            <Access3>0</Access3>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Name>End</Name>
+            <Index>6</Index>
+            <Type>OctetString</Type>
+            <Access>0</Access>
+            <Access3>0</Access3>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Name>Deviation</Name>
+            <Index>7</Index>
+            <Type>Int8</Type>
+            <Access>0</Access>
+            <Access3>0</Access3>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Name>Enabled</Name>
+            <Index>8</Index>
+            <Type>Boolean</Type>
+            <Access>0</Access>
+            <Access3>0</Access3>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Name>Clock Base</Name>
+            <Index>9</Index>
+            <Type>Enum</Type>
+            <Access>0</Access>
+            <Access3>0</Access3>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+        </Attributes>
+        <Methods>
+          <Item>
+            <Name>Adjust to quarter</Name>
+            <Index>1</Index>
+            <Type>OctetString</Type>
+            <MethodAccess>1</MethodAccess>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Name>Adjust to measuring period</Name>
+            <Index>2</Index>
+            <MethodAccess>1</MethodAccess>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Name>Adjust to minute</Name>
+            <Index>3</Index>
+            <MethodAccess>1</MethodAccess>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Name>Adjust to preset time</Name>
+            <Index>4</Index>
+            <MethodAccess>1</MethodAccess>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Name>Preset adjusting time</Name>
+            <Index>5</Index>
+            <MethodAccess>1</MethodAccess>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Name>Shift time</Name>
+            <Index>6</Index>
+            <MethodAccess>1</MethodAccess>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+        </Methods>
+      </GXDLMSObject>
+      <GXDLMSObject xsi:type="GXDLMSAssociationLogicalName">
+        <Version>2</Version>
+        <LogicalName>0.0.40.0.0.255</LogicalName>
+        <Description>Ch. 0 Current association</Description>
+        <Attributes>
+          <Item>
+            <Index>1</Index>
+            <Type>OctetString</Type>
+            <Access>1</Access>
+            <Access3>0</Access3>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Index>2</Index>
+            <Access>1</Access>
+            <Access3>0</Access3>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Index>3</Index>
+            <Access>0</Access>
+            <Access3>0</Access3>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Index>4</Index>
+            <Access>0</Access>
+            <Access3>0</Access3>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Index>5</Index>
+            <Access>0</Access>
+            <Access3>0</Access3>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Index>6</Index>
+            <Access>0</Access>
+            <Access3>0</Access3>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Index>7</Index>
+            <Access>0</Access>
+            <Access3>0</Access3>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Index>8</Index>
+            <Access>0</Access>
+            <Access3>0</Access3>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Index>9</Index>
+            <Access>0</Access>
+            <Access3>0</Access3>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Index>10</Index>
+            <Access>0</Access>
+            <Access3>0</Access3>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Index>11</Index>
+            <Access>0</Access>
+            <Access3>0</Access3>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+        </Attributes>
+        <Methods>
+          <Item>
+            <Index>1</Index>
+            <Type>OctetString</Type>
+            <MethodAccess>1</MethodAccess>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Index>2</Index>
+            <MethodAccess>1</MethodAccess>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Index>3</Index>
+            <MethodAccess>1</MethodAccess>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Index>4</Index>
+            <MethodAccess>1</MethodAccess>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Index>5</Index>
+            <MethodAccess>1</MethodAccess>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Index>6</Index>
+            <MethodAccess>1</MethodAccess>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+        </Methods>
+      </GXDLMSObject>
+    </Objects2>
+    <PduWaitTime>500</PduWaitTime>
+  </GXDLMSDevice>
+</ArrayOfGXDLMSDevice>

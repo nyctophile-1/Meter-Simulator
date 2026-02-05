@@ -1,0 +1,31 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<OutputType>Exe</OutputType>
+		<TargetFramework>net10.0</TargetFramework>
+		<RootNamespace>MeterSimulator</RootNamespace>
+
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+
+		<!-- Quality-of-life for simulators -->
+		<LangVersion>latest</LangVersion>
+		<InvariantGlobalization>true</InvariantGlobalization>
+	</PropertyGroup>
+
+	<ItemGroup>
+	  <Folder Include="Config\" />
+	  <Folder Include="Networking\" />
+	  <Folder Include="Models\" />
+	  <Folder Include="Logging\" />
+	  <Folder Include="Utils\" />
+	  <Folder Include="Simulation\" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <PackageReference Include="Gurux.DLMS" Version="9.0.2508.2201" />
+	  <PackageReference Include="Gurux.Net" Version="8.4.2503.1001" />
+	</ItemGroup>
+
+</Project>
+
