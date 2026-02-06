@@ -3,8 +3,8 @@
   <GXDLMSDevice>
     <WaitTime>10</WaitTime>
     <ResendCount>1</ResendCount>
-    <Authentication>HighGMAC</Authentication>
-    <Password>mR3Vs57qW5rOSoeFK50bdw==</Password>
+    <Authentication>High</Authentication>
+    <Password>N/ldHcqO6hqWO+NdWbDtyQ==</Password>
     <Security>AuthenticationEncryption</Security>
     <KeyAgreementScheme>0</KeyAgreementScheme>
     <SystemTitle>53494D554C415452</SystemTitle>
@@ -16,7 +16,7 @@
     <InvocationCounter>1000</InvocationCounter>
     <Challenge />
     <Signing>0</Signing>
-    <ClientAddress>1</ClientAddress>
+    <ClientAddress>48</ClientAddress>
     <InterfaceType>1</InterfaceType>
     <MacDestinationAddress>0</MacDestinationAddress>
     <InactivityTimeout>120</InactivityTimeout>
