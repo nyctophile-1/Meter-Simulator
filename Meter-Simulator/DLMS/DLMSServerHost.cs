@@ -28,40 +28,22 @@ namespace MeterSimulator.DLMS
             //ClientAddress = meter.ClientAddress;
 
             // ---- Authentication (v1 = NONE / LLS) ----
-            Settings.Authentication = Authentication.HighGMAC;
+            Settings.Authentication = Authentication.High;
             // ---- Network (TCP Wrapper) ----
             _network = new GXNet(NetworkType.Tcp, port)
             {
                 Trace = TraceLevel.Verbose
             };
 
-            Ciphering.Security = Security.AuthenticationEncryption;
+            Ciphering.Security = Security.None;
             Ciphering.SystemTitle = _meter.SystemTitle;
             Ciphering.BlockCipherKey = _meter.BlockCipherKey;
             Ciphering.AuthenticationKey = _meter.AuthenticationKey;
-
+            Settings.MaxPduSize = 65535;
             InitializeObjects();
             InitializeSecuritySetup();
             InitializeAssociation();
-        }
-
-        private void OnDataReceived(object? sender, ReceiveEventArgs e)
-        {
-            try
-            {
-                // Pass incoming bytes to DLMS server
-                var data = (byte[])e.Data;
-                byte[] reply = HandleRequest(data);
-
-                if (reply.Length != 0)
-                {
-                    _network.Send(reply, e.SenderInfo);
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"DLMS error: {ex.Message}");
-            }
+            Items.AddRange(_objects);
         }
 
         private void InitializeObjects()
@@ -89,7 +71,72 @@ namespace MeterSimulator.DLMS
                 Value = 1u
             });
         }
+        private void InitializeSecuritySetup()
+        {
+            var securitySetup = new GXDLMSSecuritySetup
+            {
+                LogicalName = "0.0.43.0.0.255",
+                Version = 2,
+                SecurityPolicy = SecurityPolicy.AuthenticatedEncrypted,
+                SecuritySuite = SecuritySuite.Suite0,
 
+                ServerSystemTitle = _meter.SystemTitle,
+                Guek = _meter.BlockCipherKey,
+                Gak = _meter.AuthenticationKey
+            };
+
+            _objects.Add(securitySetup);
+        }
+        private void InitializeAssociation()
+        {
+            var association = new GXDLMSAssociationLogicalName
+            {
+                LogicalName = "0.0.40.0.0.255",
+                Version = 2,
+                
+                AuthenticationMechanismName = new GXAuthenticationMechanismName
+                {
+                    MechanismId = Authentication.High
+                },
+                ApplicationContextName =  new GXApplicationContextName
+                {
+                    ContextId =  ApplicationContextName.LogicalName
+                },
+                XDLMSContextInfo = new GXxDLMSContextType
+                {
+                    Conformance = (Conformance)0x001E30, // Common LN conformance bits
+                    DlmsVersionNumber = 6
+                },
+                Secret = Encoding.ASCII.GetBytes("12345678")
+            };
+
+            association.SecuritySetupReference = "0.0.43.0.0.255";
+
+            association.ObjectList.AddRange(_objects.ToArray());
+            association.ObjectList.Add(association);
+
+            // Register association with server
+            _objects.Add(association);
+        }
+        private void OnDataReceived(object? sender, ReceiveEventArgs e)
+        {
+            try
+            {
+                // Pass incoming bytes to DLMS server
+                var data = (byte[])e.Data;
+                byte[] reply = HandleRequest(data);
+
+                if (reply.Length != 0)
+                {
+                    _network.Send(reply, e.SenderInfo);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"DLMS error: {ex.Message}");
+            }
+        }
+        
         protected override void PreRead(ValueEventArgs[] args)
         {
             foreach (var arg in args)
@@ -114,31 +161,7 @@ namespace MeterSimulator.DLMS
             _network.Open();
             Console.WriteLine($"DLMS Meter {_meter.MeterNo} listening on port {_network.Port}");
         }
-        private void InitializeAssociation()
-        {
-            var association = new GXDLMSAssociationLogicalName
-            {
-                LogicalName = "0.0.40.0.0.255",
-                Version = 2,
-                ApplicationContextName = new GXApplicationContextName
-                {
-                    ContextId = Gurux.DLMS.Objects.Enums.ApplicationContextName.LogicalNameWithCiphering
-                },
-                AuthenticationMechanismName = new GXAuthenticationMechanismName
-                {
-                    MechanismId = Authentication.HighGMAC
-                }
-                //Secret = Encoding.ASCII.GetBytes("12345678")
-            };
-
-            association.SecuritySetupReference = "0.0.43.0.0.255";
-
-            association.ObjectList.AddRange(_objects.ToArray());
-            association.ObjectList.Add(association);
-
-            // Register association with server
-            _objects.Add(association);
-        }
+        
 
         public void Stop()
         {
@@ -167,22 +190,7 @@ namespace MeterSimulator.DLMS
             return null;
         }
 
-        private void InitializeSecuritySetup()
-        {
-            var securitySetup = new GXDLMSSecuritySetup
-            {
-                LogicalName = "0.0.43.0.0.255",
-                Version = 2,
-                SecurityPolicy = SecurityPolicy.AuthenticatedEncrypted,
-                SecuritySuite = SecuritySuite.Suite0,
-               
-                ServerSystemTitle = _meter.SystemTitle,
-                Guek = _meter.BlockCipherKey,
-                Gak = _meter.AuthenticationKey
-            };
-
-            _objects.Add(securitySetup);
-        }
+        
 
         protected override bool IsTarget(int serverAddress, int clientAddress)
         {
@@ -238,7 +246,7 @@ namespace MeterSimulator.DLMS
             {
                 return SourceDiagnostic.None; // ACCEPT
             }
-            if (authentication == Authentication.HighGMAC)
+            if (authentication == Authentication.High)
             {
                 return SourceDiagnostic.None; // ACCEPT
             }
@@ -275,14 +283,14 @@ namespace MeterSimulator.DLMS
 
         protected override void PreWrite(ValueEventArgs[] args)
         {
-            foreach (var arg in args)
-                arg.Error = ErrorCode.ReadWriteDenied;
+            //foreach (var arg in args)
+            //    arg.Error = ErrorCode.ReadWriteDenied;
         }
 
         protected override void PreAction(ValueEventArgs[] args)
         {
-            foreach (var arg in args)
-                arg.Error = ErrorCode.ReadWriteDenied;
+            //foreach (var arg in args)
+            //    arg.Error = ErrorCode.ReadWriteDenied;
         }
 
         protected override void PostRead(ValueEventArgs[] args)
