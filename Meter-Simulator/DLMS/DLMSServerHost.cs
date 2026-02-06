@@ -21,6 +21,11 @@ namespace MeterSimulator.DLMS
             true, // useLogicalNameReferencing
             InterfaceType.WRAPPER)
         {
+            Ciphering.Security = Security.AuthenticationEncryption;
+            Ciphering.SystemTitle = meter.SystemTitle;
+            Ciphering.BlockCipherKey = meter.BlockCipherKey;
+            Ciphering.AuthenticationKey = meter.AuthenticationKey;
+            Settings.UseLogicalNameReferencing = true;
             _meter = meter;
 
             // ---- DLMS addressing ----
@@ -35,15 +40,31 @@ namespace MeterSimulator.DLMS
                 Trace = TraceLevel.Verbose
             };
 
-            Ciphering.Security = Security.None;
-            Ciphering.SystemTitle = _meter.SystemTitle;
-            Ciphering.BlockCipherKey = _meter.BlockCipherKey;
-            Ciphering.AuthenticationKey = _meter.AuthenticationKey;
             Settings.MaxPduSize = 65535;
+
+            Items.Clear();
             InitializeObjects();
             InitializeSecuritySetup();
             InitializeAssociation();
             Items.AddRange(_objects);
+
+            //Console.WriteLine($"Total items: {Items.Count}");
+            //var assoc = Items.FindByLN(ObjectType.AssociationLogicalName, "0.0.40.0.0.255");
+            //Console.WriteLine($"Association exists: {assoc != null}");
+            //if (assoc != null)
+            //{
+            //    var aln = (GXDLMSAssociationLogicalName)assoc;
+            //    //Console.WriteLine($"Context: {aln.ApplicationContextName.ContextId}");
+            //}
+
+            //Console.WriteLine($"All associations in Items:");
+            //foreach (var item in Items)
+            //{
+            //    if (item is GXDLMSAssociationLogicalName aln)
+            //    {
+            //        Console.WriteLine($"  LN: {aln.LogicalName}, Context: {aln.ApplicationContextName.ContextId}");
+            //    }
+            //}
         }
 
         private void InitializeObjects()
@@ -79,7 +100,7 @@ namespace MeterSimulator.DLMS
                 Version = 2,
                 SecurityPolicy = SecurityPolicy.AuthenticatedEncrypted,
                 SecuritySuite = SecuritySuite.Suite0,
-
+                
                 ServerSystemTitle = _meter.SystemTitle,
                 Guek = _meter.BlockCipherKey,
                 Gak = _meter.AuthenticationKey
@@ -100,12 +121,7 @@ namespace MeterSimulator.DLMS
                 },
                 ApplicationContextName =  new GXApplicationContextName
                 {
-                    ContextId =  ApplicationContextName.LogicalName
-                },
-                XDLMSContextInfo = new GXxDLMSContextType
-                {
-                    Conformance = (Conformance)0x001E30, // Common LN conformance bits
-                    DlmsVersionNumber = 6
+                    ContextId =  ApplicationContextName.LogicalNameWithCiphering
                 },
                 Secret = Encoding.ASCII.GetBytes("12345678")
             };
@@ -124,16 +140,23 @@ namespace MeterSimulator.DLMS
             {
                 // Pass incoming bytes to DLMS server
                 var data = (byte[])e.Data;
+                //Console.WriteLine($"Received {data.Length} bytes");
+                //Console.WriteLine($"Hex: {BitConverter.ToString(data)}");
                 byte[] reply = HandleRequest(data);
-
                 if (reply.Length != 0)
                 {
+                    //Console.WriteLine($"Sending reply: {BitConverter.ToString(reply)}");
                     _network.Send(reply, e.SenderInfo);
                 }
+                //Console.WriteLine($"Server SystemTitle: {Encoding.ASCII.GetString(_meter.SystemTitle)}");
+                //Console.WriteLine($"Server SystemTitle Hex: {BitConverter.ToString(_meter.SystemTitle)}");
+                //Console.WriteLine($"AuthKey: {BitConverter.ToString(_meter.AuthenticationKey)}");
+                //Console.WriteLine($"BlockKey: {BitConverter.ToString(_meter.BlockCipherKey)}");
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"DLMS error: {ex.Message}");
+                Console.WriteLine($"Stack: {ex.StackTrace}");  // ← Add this
             }
         }
         
@@ -168,20 +191,23 @@ namespace MeterSimulator.DLMS
             _network.Close();
         }
 
-        protected override GXDLMSObject FindObject(
-            ObjectType objectType,
-            int sn,
-            string ln)
+        protected override GXDLMSObject FindObject(ObjectType objectType, int sn, string ln)
         {
-            // Logical Name referencing
+            Console.WriteLine($"FindObject: Type={objectType}, LN={ln}");
+
             if (!string.IsNullOrEmpty(ln))
             {
-                return _objects.FirstOrDefault(o =>
+                var obj = _objects.FirstOrDefault(o =>
                     o.LogicalName == ln &&
                     o.ObjectType == objectType);
+                //Console.WriteLine($"  Found: {obj != null}");
+                if (obj is GXDLMSAssociationLogicalName aln)
+                {
+                    Console.WriteLine($"  Association Context: {aln.ApplicationContextName.ContextId}");
+                }
+                return obj;
             }
 
-            // Short Name referencing (not used)
             if (sn != 0)
             {
                 return _objects.FirstOrDefault(o => o.ShortName == sn);
@@ -190,7 +216,7 @@ namespace MeterSimulator.DLMS
             return null;
         }
 
-        
+
 
         protected override bool IsTarget(int serverAddress, int clientAddress)
         {
@@ -203,18 +229,18 @@ namespace MeterSimulator.DLMS
         protected override AccessMode GetAttributeAccess(ValueEventArgs arg)
         {
             if (arg.Target is GXDLMSRegister && arg.Index == 2)
-        return AccessMode.Read;
+                return AccessMode.Read;
 
-    // Clock: allow reading Time (attribute 2)
-    if (arg.Target is GXDLMSClock && arg.Index == 2)
-        return AccessMode.Read;
+            // Clock: allow reading Time (attribute 2)
+            if (arg.Target is GXDLMSClock && arg.Index == 2)
+                return AccessMode.Read;
 
-    // Association: allow reading object list (attribute 2)
-    if (arg.Target is GXDLMSAssociationLogicalName && arg.Index == 2)
-        return AccessMode.Read;
+            // Association: allow reading object list (attribute 2)
+            if (arg.Target is GXDLMSAssociationLogicalName && arg.Index == 2)
+                return AccessMode.Read;
 
-    // Everything else: no access
-    return AccessMode.NoAccess;
+            // Everything else: no access
+            return AccessMode.NoAccess;
         }
 
         protected override AccessMode3 GetAttributeAccess3(ValueEventArgs arg)
@@ -236,6 +262,8 @@ namespace MeterSimulator.DLMS
             Authentication authentication,
             byte[] password)
         {
+            Console.WriteLine($"ValidateAuthentication called: auth={authentication}");
+            //Console.WriteLine($"Password: {BitConverter.ToString(password)}");
             // We only support Authentication.None for now
             if (authentication == Authentication.None)
             {
