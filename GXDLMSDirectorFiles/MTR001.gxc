@@ -4,6 +4,7 @@
     <WaitTime>3600</WaitTime>
     <ResendCount>1</ResendCount>
     <Authentication>High</Authentication>
+    <AuthenticationName>US</AuthenticationName>
     <Password>N/ldHcqO6hqWO+NdWbDtyQ==</Password>
     <Security>AuthenticationEncryption</Security>
     <KeyAgreementScheme>0</KeyAgreementScheme>
@@ -13,10 +14,9 @@
     <BlockCipherKey>41414141414141414141414141414141</BlockCipherKey>
     <AuthenticationKey>41414141414141414141414141414141</AuthenticationKey>
     <BroadcastKey />
-    <InvocationCounter>1</InvocationCounter>
     <Challenge />
     <Signing>0</Signing>
-    <ClientAddress>1</ClientAddress>
+    <ClientAddress>48</ClientAddress>
     <InterfaceType>1</InterfaceType>
     <MacDestinationAddress>0</MacDestinationAddress>
     <InactivityTimeout>120</InactivityTimeout>
@@ -27,7 +27,7 @@
     <Name>MTR001</Name>
     <Verbose>true</Verbose>
     <Conformance>12220486</Conformance>
-    <Manufacturer>grx</Manufacturer>
+    <Manufacturer>ind</Manufacturer>
     <HDLCAddressing>0</HDLCAddressing>
     <UseProtectedRelease>false</UseProtectedRelease>
     <SecurityChangeCheck>false</SecurityChangeCheck>
@@ -43,7 +43,6 @@
         <Description>Ch. 0 Current association</Description>
         <Attributes>
           <Item>
-            <Name>Logical Name</Name>
             <Index>1</Index>
             <Type>OctetString</Type>
             <Access>1</Access>
@@ -53,9 +52,7 @@
             <AccessSelector>0</AccessSelector>
           </Item>
           <Item>
-            <Name>Object List</Name>
             <Index>2</Index>
-            <Type>Array</Type>
             <Access>1</Access>
             <Access3>0</Access3>
             <Values />
@@ -63,9 +60,7 @@
             <AccessSelector>0</AccessSelector>
           </Item>
           <Item>
-            <Name>Associated partners Id</Name>
             <Index>3</Index>
-            <Type>Structure</Type>
             <Access>0</Access>
             <Access3>0</Access3>
             <Values />
@@ -73,9 +68,7 @@
             <AccessSelector>0</AccessSelector>
           </Item>
           <Item>
-            <Name>Application Context Name</Name>
             <Index>4</Index>
-            <Type>Structure</Type>
             <Access>0</Access>
             <Access3>0</Access3>
             <Values />
@@ -83,9 +76,7 @@
             <AccessSelector>0</AccessSelector>
           </Item>
           <Item>
-            <Name>xDLMS Context Info</Name>
             <Index>5</Index>
-            <Type>Structure</Type>
             <Access>0</Access>
             <Access3>0</Access3>
             <Values />
@@ -93,9 +84,7 @@
             <AccessSelector>0</AccessSelector>
           </Item>
           <Item>
-            <Name>Authentication Mechanism Name</Name>
             <Index>6</Index>
-            <Type>Structure</Type>
             <Access>0</Access>
             <Access3>0</Access3>
             <Values />
@@ -103,9 +92,7 @@
             <AccessSelector>0</AccessSelector>
           </Item>
           <Item>
-            <Name>Secret</Name>
             <Index>7</Index>
-            <Type>OctetString</Type>
             <Access>0</Access>
             <Access3>0</Access3>
             <Values />
@@ -113,9 +100,7 @@
             <AccessSelector>0</AccessSelector>
           </Item>
           <Item>
-            <Name>Association Status</Name>
             <Index>8</Index>
-            <Type>Enum</Type>
             <Access>0</Access>
             <Access3>0</Access3>
             <Values />
@@ -123,9 +108,7 @@
             <AccessSelector>0</AccessSelector>
           </Item>
           <Item>
-            <Name>Security Setup Reference</Name>
             <Index>9</Index>
-            <Type>OctetString</Type>
             <Access>0</Access>
             <Access3>0</Access3>
             <Values />
@@ -133,9 +116,7 @@
             <AccessSelector>0</AccessSelector>
           </Item>
           <Item>
-            <Name>UserList</Name>
             <Index>10</Index>
-            <Type>Array</Type>
             <Access>0</Access>
             <Access3>0</Access3>
             <Values />
@@ -143,9 +124,7 @@
             <AccessSelector>0</AccessSelector>
           </Item>
           <Item>
-            <Name>CurrentUser</Name>
             <Index>11</Index>
-            <Type>Structure</Type>
             <Access>0</Access>
             <Access3>0</Access3>
             <Values />
@@ -155,7 +134,6 @@
         </Attributes>
         <Methods>
           <Item>
-            <Name>Reply to HLS authentication</Name>
             <Index>1</Index>
             <Type>OctetString</Type>
             <MethodAccess>1</MethodAccess>
@@ -164,7 +142,6 @@
             <AccessSelector>0</AccessSelector>
           </Item>
           <Item>
-            <Name>Change HLS secret</Name>
             <Index>2</Index>
             <MethodAccess>1</MethodAccess>
             <Values />
@@ -172,7 +149,6 @@
             <AccessSelector>0</AccessSelector>
           </Item>
           <Item>
-            <Name>Add object</Name>
             <Index>3</Index>
             <MethodAccess>1</MethodAccess>
             <Values />
@@ -180,7 +156,6 @@
             <AccessSelector>0</AccessSelector>
           </Item>
           <Item>
-            <Name>Remove object</Name>
             <Index>4</Index>
             <MethodAccess>1</MethodAccess>
             <Values />
@@ -188,7 +163,6 @@
             <AccessSelector>0</AccessSelector>
           </Item>
           <Item>
-            <Name>Add user</Name>
             <Index>5</Index>
             <MethodAccess>1</MethodAccess>
             <Values />
@@ -196,7 +170,6 @@
             <AccessSelector>0</AccessSelector>
           </Item>
           <Item>
-            <Name>Remove user</Name>
             <Index>6</Index>
             <MethodAccess>1</MethodAccess>
             <Values />
@@ -402,12 +375,13 @@
           </Item>
         </Methods>
       </GXDLMSObject>
-      <GXDLMSObject xsi:type="GXDLMSAssociationLogicalName">
-        <Version>2</Version>
-        <LogicalName>0.0.40.0.0.255</LogicalName>
-        <Description>Ch. 0 Current association</Description>
+      <GXDLMSObject xsi:type="GXDLMSData">
+        <Version>0</Version>
+        <LogicalName>0.0.43.1.0.255</LogicalName>
+        <Description>Ch. 0 Invocation counter  #0</Description>
         <Attributes>
           <Item>
+            <Name>Logical Name</Name>
             <Index>1</Index>
             <Type>OctetString</Type>
             <Access>1</Access>
@@ -417,7 +391,26 @@
             <AccessSelector>0</AccessSelector>
           </Item>
           <Item>
+            <Name>Value</Name>
             <Index>2</Index>
+            <Access>0</Access>
+            <Access3>0</Access3>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+        </Attributes>
+        <Methods />
+      </GXDLMSObject>
+      <GXDLMSObject xsi:type="GXDLMSSecuritySetup">
+        <Version>2</Version>
+        <LogicalName>0.0.43.0.0.255</LogicalName>
+        <Description>Ch. 0 Security setup  #0</Description>
+        <Attributes>
+          <Item>
+            <Name>Logical Name</Name>
+            <Index>1</Index>
+            <Type>OctetString</Type>
             <Access>1</Access>
             <Access3>0</Access3>
             <Values />
@@ -425,7 +418,19 @@
             <AccessSelector>0</AccessSelector>
           </Item>
           <Item>
+            <Name>Security Policy</Name>
+            <Index>2</Index>
+            <Type>Enum</Type>
+            <Access>0</Access>
+            <Access3>0</Access3>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Name>Security Suite</Name>
             <Index>3</Index>
+            <Type>Enum</Type>
             <Access>0</Access>
             <Access3>0</Access3>
             <Values />
@@ -433,7 +438,9 @@
             <AccessSelector>0</AccessSelector>
           </Item>
           <Item>
+            <Name>Client System Title</Name>
             <Index>4</Index>
+            <Type>OctetString</Type>
             <Access>0</Access>
             <Access3>0</Access3>
             <Values />
@@ -441,7 +448,9 @@
             <AccessSelector>0</AccessSelector>
           </Item>
           <Item>
+            <Name>Server System Title</Name>
             <Index>5</Index>
+            <Type>OctetString</Type>
             <Access>0</Access>
             <Access3>0</Access3>
             <Values />
@@ -449,47 +458,9 @@
             <AccessSelector>0</AccessSelector>
           </Item>
           <Item>
+            <Name>Certificates</Name>
             <Index>6</Index>
-            <Access>0</Access>
-            <Access3>0</Access3>
-            <Values />
-            <UIValueType>0</UIValueType>
-            <AccessSelector>0</AccessSelector>
-          </Item>
-          <Item>
-            <Index>7</Index>
-            <Access>0</Access>
-            <Access3>0</Access3>
-            <Values />
-            <UIValueType>0</UIValueType>
-            <AccessSelector>0</AccessSelector>
-          </Item>
-          <Item>
-            <Index>8</Index>
-            <Access>0</Access>
-            <Access3>0</Access3>
-            <Values />
-            <UIValueType>0</UIValueType>
-            <AccessSelector>0</AccessSelector>
-          </Item>
-          <Item>
-            <Index>9</Index>
-            <Access>0</Access>
-            <Access3>0</Access3>
-            <Values />
-            <UIValueType>0</UIValueType>
-            <AccessSelector>0</AccessSelector>
-          </Item>
-          <Item>
-            <Index>10</Index>
-            <Access>0</Access>
-            <Access3>0</Access3>
-            <Values />
-            <UIValueType>0</UIValueType>
-            <AccessSelector>0</AccessSelector>
-          </Item>
-          <Item>
-            <Index>11</Index>
+            <Type>Array</Type>
             <Access>0</Access>
             <Access3>0</Access3>
             <Values />
@@ -499,6 +470,7 @@
         </Attributes>
         <Methods>
           <Item>
+            <Name>Security activate</Name>
             <Index>1</Index>
             <Type>OctetString</Type>
             <MethodAccess>1</MethodAccess>
@@ -507,6 +479,7 @@
             <AccessSelector>0</AccessSelector>
           </Item>
           <Item>
+            <Name>Key transfer</Name>
             <Index>2</Index>
             <MethodAccess>1</MethodAccess>
             <Values />
@@ -514,6 +487,7 @@
             <AccessSelector>0</AccessSelector>
           </Item>
           <Item>
+            <Name>Key agreement</Name>
             <Index>3</Index>
             <MethodAccess>1</MethodAccess>
             <Values />
@@ -521,6 +495,7 @@
             <AccessSelector>0</AccessSelector>
           </Item>
           <Item>
+            <Name>Generate key pair</Name>
             <Index>4</Index>
             <MethodAccess>1</MethodAccess>
             <Values />
@@ -528,6 +503,7 @@
             <AccessSelector>0</AccessSelector>
           </Item>
           <Item>
+            <Name>Generate certificate request</Name>
             <Index>5</Index>
             <MethodAccess>1</MethodAccess>
             <Values />
@@ -535,6 +511,194 @@
             <AccessSelector>0</AccessSelector>
           </Item>
           <Item>
+            <Name>Import certificate</Name>
+            <Index>6</Index>
+            <MethodAccess>1</MethodAccess>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Name>Export certificate</Name>
+            <Index>7</Index>
+            <MethodAccess>1</MethodAccess>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Name>Remove certificate</Name>
+            <Index>8</Index>
+            <MethodAccess>1</MethodAccess>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+        </Methods>
+        <Guek>AAECAwQFBgcICQoLDA0ODw==</Guek>
+        <Gbek>AAECAwQFBgcICQoLDA0ODw==</Gbek>
+        <Gak>0NHS09TV1tfY2drb3N3e3w==</Gak>
+      </GXDLMSObject>
+      <GXDLMSObject xsi:type="GXDLMSAssociationLogicalName">
+        <Version>2</Version>
+        <LogicalName>0.0.40.0.0.255</LogicalName>
+        <Description>Ch. 0 Current association</Description>
+        <Attributes>
+          <Item>
+            <Name>Logical Name</Name>
+            <Index>1</Index>
+            <Type>OctetString</Type>
+            <Access>1</Access>
+            <Access3>0</Access3>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Name>Object List</Name>
+            <Index>2</Index>
+            <Type>Array</Type>
+            <Access>1</Access>
+            <Access3>0</Access3>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Name>Associated partners Id</Name>
+            <Index>3</Index>
+            <Type>Structure</Type>
+            <Access>0</Access>
+            <Access3>0</Access3>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Name>Application Context Name</Name>
+            <Index>4</Index>
+            <Type>Structure</Type>
+            <Access>0</Access>
+            <Access3>0</Access3>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Name>xDLMS Context Info</Name>
+            <Index>5</Index>
+            <Type>Structure</Type>
+            <Access>0</Access>
+            <Access3>0</Access3>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Name>Authentication Mechanism Name</Name>
+            <Index>6</Index>
+            <Type>Structure</Type>
+            <Access>0</Access>
+            <Access3>0</Access3>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Name>Secret</Name>
+            <Index>7</Index>
+            <Type>OctetString</Type>
+            <Access>0</Access>
+            <Access3>0</Access3>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Name>Association Status</Name>
+            <Index>8</Index>
+            <Type>Enum</Type>
+            <Access>0</Access>
+            <Access3>0</Access3>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Name>Security Setup Reference</Name>
+            <Index>9</Index>
+            <Type>OctetString</Type>
+            <Access>0</Access>
+            <Access3>0</Access3>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Name>UserList</Name>
+            <Index>10</Index>
+            <Type>Array</Type>
+            <Access>0</Access>
+            <Access3>0</Access3>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Name>CurrentUser</Name>
+            <Index>11</Index>
+            <Type>Structure</Type>
+            <Access>0</Access>
+            <Access3>0</Access3>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+        </Attributes>
+        <Methods>
+          <Item>
+            <Name>Reply to HLS authentication</Name>
+            <Index>1</Index>
+            <Type>OctetString</Type>
+            <MethodAccess>1</MethodAccess>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Name>Change HLS secret</Name>
+            <Index>2</Index>
+            <MethodAccess>1</MethodAccess>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Name>Add object</Name>
+            <Index>3</Index>
+            <MethodAccess>1</MethodAccess>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Name>Remove object</Name>
+            <Index>4</Index>
+            <MethodAccess>1</MethodAccess>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Name>Add user</Name>
+            <Index>5</Index>
+            <MethodAccess>1</MethodAccess>
+            <Values />
+            <UIValueType>0</UIValueType>
+            <AccessSelector>0</AccessSelector>
+          </Item>
+          <Item>
+            <Name>Remove user</Name>
             <Index>6</Index>
             <MethodAccess>1</MethodAccess>
             <Values />
