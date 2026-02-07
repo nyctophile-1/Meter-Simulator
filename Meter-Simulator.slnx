@@ -1,3 +1,5 @@
 <Solution>
+  <Project Path="Gurux/Gurux.DLMS.Net/Development/Gurux.DLMS.Net.csproj" />
+  <Project Path="Gurux/Gurux.Net/Development/Gurux.Net.csproj" />
   <Project Path="Meter-Simulator/Meter-Simulator.csproj" />
 </Solution>

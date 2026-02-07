@@ -23,8 +23,8 @@
 	</ItemGroup>
 
 	<ItemGroup>
-	  <PackageReference Include="Gurux.DLMS" Version="9.0.2508.2201" />
-	  <PackageReference Include="Gurux.Net" Version="8.4.2503.1001" />
+	  <ProjectReference Include="..\Gurux\Gurux.DLMS.Net\Development\Gurux.DLMS.Net.csproj" />
+	  <ProjectReference Include="..\Gurux\Gurux.Net\Development\Gurux.Net.csproj" />
 	</ItemGroup>
 
 </Project>
