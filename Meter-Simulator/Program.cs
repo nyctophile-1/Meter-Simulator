@@ -6,7 +6,7 @@ Console.WriteLine("Starting DLMS Meter Simulator...");
 var meter = new DLMSMeter(
     meterNo: "MTR001",
     logicalName: "0.0.42.0.0.255",
-    clientAddress: 1,
+    clientAddress: 30,
     serverAddress: 1
 );
 
