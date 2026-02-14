@@ -306,7 +306,7 @@ namespace MeterSimulator.DLMS
         protected override void Disconnected(GXDLMSConnectionEventArgs connectionInfo)
         {
             Console.WriteLine( $"DLMS client Disconnected");
-            Reset(true);
+            //Reset(true);
         }
 
         protected override void PreWrite(ValueEventArgs[] args)
