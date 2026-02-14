@@ -18,7 +18,7 @@ namespace MeterSimulator.DLMS
         private readonly GXDLMSObjectCollection _objects = new();
         public DLMSServerHost(DLMSMeter meter, int port)
         : base(
-            true, // useLogicalNameReferencing
+            true,
             InterfaceType.WRAPPER)
         {
             Ciphering.Security = Security.AuthenticationEncryption;
@@ -28,13 +28,7 @@ namespace MeterSimulator.DLMS
             Settings.UseLogicalNameReferencing = true;
             _meter = meter;
 
-            // ---- DLMS addressing ----
-            //ServerAddress = meter.ServerAddress;
-            //ClientAddress = meter.ClientAddress;
-
-            // ---- Authentication (v1 = NONE / LLS) ----
             Settings.Authentication = Authentication.High;
-            // ---- Network (TCP Wrapper) ----
             _network = new GXNet(NetworkType.Tcp, port)
             {
                 Trace = TraceLevel.Verbose
@@ -43,33 +37,16 @@ namespace MeterSimulator.DLMS
             Settings.MaxPduSize = 65535;
 
             Items.Clear();
-            InitializeObjects();
-            InitializeSecuritySetup();
-            InitializeAssociation();
-            Items.AddRange(_objects);
 
-            //Console.WriteLine($"Total items: {Items.Count}");
-            //var assoc = Items.FindByLN(ObjectType.AssociationLogicalName, "0.0.40.0.0.255");
-            //Console.WriteLine($"Association exists: {assoc != null}");
-            //if (assoc != null)
-            //{
-            //    var aln = (GXDLMSAssociationLogicalName)assoc;
-            //    //Console.WriteLine($"Context: {aln.ApplicationContextName.ContextId}");
-            //}
+            InitializeObjects();        
+            InitializeSecuritySetup();  
+            InitializeAssociation(); 
+            Items.AddRange(_objects); 
 
-            //Console.WriteLine($"All associations in Items:");
-            //foreach (var item in Items)
-            //{
-            //    if (item is GXDLMSAssociationLogicalName aln)
-            //    {
-            //        Console.WriteLine($"  LN: {aln.LogicalName}, Context: {aln.ApplicationContextName.ContextId}");
-            //    }
-            //}
         }
 
         private void InitializeObjects()
         {
-            // Example: Active Energy Import (1.0.1.8.0.255)
             var energy = new GXDLMSRegister
             {
                 LogicalName = "1.0.1.8.0.255",
@@ -85,12 +62,18 @@ namespace MeterSimulator.DLMS
                 Status = ClockStatus.Ok
             };
 
+            var invocationCounter = new GXDLMSData
+            {
+                LogicalName = "0.0.43.1.3.255",
+                Value = Convert.ToUInt32(1)
+            };
+            invocationCounter.SetAccess(1, AccessMode.Read);
+            invocationCounter.SetAccess(2, AccessMode.ReadWrite);
+
             _objects.Add(energy);
             _objects.Add(clock);
-            _objects.Add(new GXDLMSData("0.0.43.1.0.255")
-            {
-                Value = 1u
-            });
+            _objects.Add(invocationCounter);
+
         }
         private void InitializeSecuritySetup()
         {
@@ -105,53 +88,77 @@ namespace MeterSimulator.DLMS
                 Guek = _meter.BlockCipherKey,
                 Gak = _meter.AuthenticationKey
             };
-
             _objects.Add(securitySetup);
         }
         private void InitializeAssociation()
         {
+            // PUBLIC Association
+            var publicAssoc = new GXDLMSAssociationLogicalName
+            {
+                LogicalName = "0.0.40.0.1.255",
+                Version = 2,
+                AuthenticationMechanismName = new GXAuthenticationMechanismName
+                {
+                    MechanismId = Authentication.None
+                },
+                ApplicationContextName = new GXApplicationContextName
+                {
+                    ContextId = ApplicationContextName.LogicalName
+                },
+                ClientSAP = 10 
+            };
+
+            publicAssoc.ObjectList.AddRange(_objects);
+            publicAssoc.ObjectList.Add(publicAssoc);
+            _objects.Add(publicAssoc);
+
+            var icPublic = publicAssoc.ObjectList.FindByLN(ObjectType.Data, "0.0.43.1.3.255");
+            if (icPublic != null)
+            {
+                icPublic.SetAccess(2, AccessMode.Read);
+            }
+
             var association = new GXDLMSAssociationLogicalName
             {
                 LogicalName = "0.0.40.0.0.255",
                 Version = 2,
-                
                 AuthenticationMechanismName = new GXAuthenticationMechanismName
                 {
                     MechanismId = Authentication.High
                 },
-                ApplicationContextName =  new GXApplicationContextName
+                ApplicationContextName = new GXApplicationContextName
                 {
-                    ContextId =  ApplicationContextName.LogicalNameWithCiphering
+                    ContextId = ApplicationContextName.LogicalName
                 },
-                Secret = Encoding.ASCII.GetBytes("12345678")
+                Secret = Encoding.ASCII.GetBytes("AAAAAAAAAAAAAAAA"),
+                ClientSAP = 30
             };
-
             association.SecuritySetupReference = "0.0.43.0.0.255";
-
+            var icInObjects = _objects.FirstOrDefault(o => o.LogicalName == "0.0.43.1.3.255");
             association.ObjectList.AddRange(_objects.ToArray());
             association.ObjectList.Add(association);
-
-            // Register association with server
             _objects.Add(association);
+
+            var ic = association.ObjectList.FindByLN(ObjectType.Data, "0.0.43.1.3.255");
+            if (ic != null)
+            {
+                ic.SetAccess(2, AccessMode.ReadWrite);
+            }
         }
         private void OnDataReceived(object? sender, ReceiveEventArgs e)
         {
             try
             {
-                // Pass incoming bytes to DLMS server
                 var data = (byte[])e.Data;
-                //Console.WriteLine($"Received {data.Length} bytes");
-                //Console.WriteLine($"Hex: {BitConverter.ToString(data)}");
+
+                Console.WriteLine($"Hex Received: {BitConverter.ToString(data)}");
+
                 byte[] reply = HandleRequest(data);
                 if (reply.Length != 0)
                 {
-                    //Console.WriteLine($"Sending reply: {BitConverter.ToString(reply)}");
+                    Console.WriteLine($"Sending reply: {BitConverter.ToString(reply)}");
                     _network.Send(reply, e.SenderInfo);
                 }
-                //Console.WriteLine($"Server SystemTitle: {Encoding.ASCII.GetString(_meter.SystemTitle)}");
-                //Console.WriteLine($"Server SystemTitle Hex: {BitConverter.ToString(_meter.SystemTitle)}");
-                //Console.WriteLine($"AuthKey: {BitConverter.ToString(_meter.AuthenticationKey)}");
-                //Console.WriteLine($"BlockKey: {BitConverter.ToString(_meter.BlockCipherKey)}");
             }
             catch (Exception ex)
             {
@@ -159,14 +166,34 @@ namespace MeterSimulator.DLMS
                 Console.WriteLine($"Stack: {ex.StackTrace}");  // ← Add this
             }
         }
-        
+
         protected override void PreRead(ValueEventArgs[] args)
         {
             foreach (var arg in args)
             {
-                if (arg.Target is GXDLMSRegister obj)
+                Console.WriteLine($"PreRead: {arg.Target.ObjectType} - {arg.Target.LogicalName}, Attr={arg.Index}");
+
+                if (arg.Target is GXDLMSAssociationLogicalName && arg.Index == 2)
                 {
-                    var obis = obj.LogicalName;
+                    var assoc = arg.Target as GXDLMSAssociationLogicalName;
+                }
+
+                if (arg.Target.LogicalName == "0.0.43.1.3.255" && arg.Index == 2)
+                {
+                    var ic0 = Items.FindByLN(ObjectType.Data, "0.0.43.1.0.255") as GXDLMSData;
+
+                    if (ic0 != null)
+                    {
+                        arg.Value = ic0.Value;
+                        arg.Handled = true;
+                    }
+                }
+
+
+                var obis = arg.Target.LogicalName;
+
+                if (arg.Target is GXDLMSRegister || arg.Target is GXDLMSData)
+                {
                     var value = _meter.GetValue(obis);
 
                     if (value != null)
@@ -193,18 +220,12 @@ namespace MeterSimulator.DLMS
 
         protected override GXDLMSObject FindObject(ObjectType objectType, int sn, string ln)
         {
-            Console.WriteLine($"FindObject: Type={objectType}, LN={ln}");
-
             if (!string.IsNullOrEmpty(ln))
             {
                 var obj = _objects.FirstOrDefault(o =>
                     o.LogicalName == ln &&
                     o.ObjectType == objectType);
-                //Console.WriteLine($"  Found: {obj != null}");
-                if (obj is GXDLMSAssociationLogicalName aln)
-                {
-                    Console.WriteLine($"  Association Context: {aln.ApplicationContextName.ContextId}");
-                }
+                
                 return obj;
             }
 
@@ -220,8 +241,6 @@ namespace MeterSimulator.DLMS
 
         protected override bool IsTarget(int serverAddress, int clientAddress)
         {
-            // For TCP Wrapper + single meter simulator,
-            // always accept the connection
             return true;
         }
 
@@ -231,15 +250,15 @@ namespace MeterSimulator.DLMS
             if (arg.Target is GXDLMSRegister && arg.Index == 2)
                 return AccessMode.Read;
 
-            // Clock: allow reading Time (attribute 2)
             if (arg.Target is GXDLMSClock && arg.Index == 2)
                 return AccessMode.Read;
 
-            // Association: allow reading object list (attribute 2)
             if (arg.Target is GXDLMSAssociationLogicalName && arg.Index == 2)
                 return AccessMode.Read;
 
-            // Everything else: no access
+            if (arg.Target is GXDLMSData && arg.Index == 2)
+                return AccessMode.ReadWrite; 
+
             return AccessMode.NoAccess;
         }
 
@@ -262,15 +281,12 @@ namespace MeterSimulator.DLMS
             Authentication authentication,
             byte[] password)
         {
-            Console.WriteLine($"ValidateAuthentication called: auth={authentication}");
-            //Console.WriteLine($"Password: {BitConverter.ToString(password)}");
-            // We only support Authentication.None for now
             if (authentication == Authentication.None)
             {
                 return SourceDiagnostic.None; // ACCEPT
             }
             if (password != null &&
-            password.SequenceEqual(Encoding.ASCII.GetBytes(_meter.LlsPassword)))
+            password.SequenceEqual(Encoding.ASCII.GetBytes("AAAAAAAAAAAAAAAA")))
             {
                 return SourceDiagnostic.None; // ACCEPT
             }
@@ -278,67 +294,67 @@ namespace MeterSimulator.DLMS
             {
                 return SourceDiagnostic.None; // ACCEPT
             }
-            // Reject everything else
+
             return SourceDiagnostic.AuthenticationFailure;
         }
 
-        protected override void Connected(GXDLMSConnectionEventArgs connectionInfo)
+        protected override void Connected(GXDLMSConnectionEventArgs e)
         {
-            Console.WriteLine(
-                $"DLMS client connected");
-        }
-
-        protected override void InvalidConnection(GXDLMSConnectionEventArgs connectionInfo)
-        {
-            //throw new NotImplementedException();
+            Console.WriteLine($"Client connected");
         }
 
         protected override void Disconnected(GXDLMSConnectionEventArgs connectionInfo)
         {
-            Console.WriteLine(
-                $"DLMS client Disconnected");
-        }
-
-        public override void PreGet(ValueEventArgs[] args)
-        {
-            //throw new NotImplementedException();
-        }
-
-        public override void PostGet(ValueEventArgs[] args)
-        {
-            //throw new NotImplementedException();
+            Console.WriteLine( $"DLMS client Disconnected");
+            Reset(true);
         }
 
         protected override void PreWrite(ValueEventArgs[] args)
         {
-            //foreach (var arg in args)
-            //    arg.Error = ErrorCode.ReadWriteDenied;
+            foreach(var arg in args)
+            {
+                if (arg.Target.LogicalName == "0.0.43.1.3.255" && arg.Index == 2)
+                {
+                    var ic0 = Items.FindByLN(ObjectType.Data, "0.0.43.1.0.255") as GXDLMSData;
+
+                    if (ic0 != null)
+                    {
+                        ic0.Value = arg.Value;
+                        arg.Handled = true;
+                    }
+                }
+            }
         }
 
         protected override void PreAction(ValueEventArgs[] args)
         {
-            //foreach (var arg in args)
-            //    arg.Error = ErrorCode.ReadWriteDenied;
         }
 
         protected override void PostRead(ValueEventArgs[] args)
         {
-            //throw new NotImplementedException();
         }
 
         protected override void PostWrite(ValueEventArgs[] args)
         {
-            //throw new NotImplementedException();
         }
 
         protected override void PostAction(ValueEventArgs[] args)
         {
-            //throw new NotImplementedException();
         }
 
         protected override void Execute(List<KeyValuePair<GXDLMSObject, int>> actions)
         {
-            //throw new NotImplementedException();
+        }
+
+        public override void PreGet(ValueEventArgs[] args)
+        {
+        }
+
+        public override void PostGet(ValueEventArgs[] args)
+        {
+        }
+        protected override void InvalidConnection(GXDLMSConnectionEventArgs connectionInfo)
+        {
         }
     }
 }
