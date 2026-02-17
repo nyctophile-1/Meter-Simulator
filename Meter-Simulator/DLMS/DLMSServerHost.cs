@@ -145,9 +145,7 @@ namespace MeterSimulator.DLMS
                     ContextId = ApplicationContextName.LogicalName
                 },
                 Secret = Encoding.ASCII.GetBytes("AAAAAAAAAAAAAAAA"),
-                ClientSAP = 30,
-               
-                
+                ClientSAP = 30
             };
 
             association.XDLMSContextInfo.Conformance =
@@ -339,7 +337,6 @@ namespace MeterSimulator.DLMS
         protected override void Disconnected(GXDLMSConnectionEventArgs connectionInfo)
         {
             Console.WriteLine( $"DLMS client Disconnected");
-            //Reset(true);
         }
 
         protected override void PreWrite(ValueEventArgs[] args)
