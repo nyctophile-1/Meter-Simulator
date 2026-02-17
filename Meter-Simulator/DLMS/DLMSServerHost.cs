@@ -107,7 +107,21 @@ namespace MeterSimulator.DLMS
                 },
                 ClientSAP = 10 
             };
+            publicAssoc.XDLMSContextInfo.Conformance =
+                Conformance.GeneralProtection |
+                Conformance.GeneralBlockTransfer |
+                Conformance.BlockTransferWithGetOrRead |
+                Conformance.BlockTransferWithSetOrWrite |
+                Conformance.BlockTransferWithAction |
+                Conformance.MultipleReferences |
+                Conformance.Access |
+                Conformance.Get |
+                Conformance.Set |
+                Conformance.SelectiveAccess |
+                Conformance.Action |
+                Conformance.DeltaValueEncoding;
 
+            publicAssoc.XDLMSContextInfo.MaxReceivePduSize = 0xFFFF;
             publicAssoc.ObjectList.AddRange(_objects);
             publicAssoc.ObjectList.Add(publicAssoc);
             _objects.Add(publicAssoc);
@@ -131,8 +145,27 @@ namespace MeterSimulator.DLMS
                     ContextId = ApplicationContextName.LogicalName
                 },
                 Secret = Encoding.ASCII.GetBytes("AAAAAAAAAAAAAAAA"),
-                ClientSAP = 30
+                ClientSAP = 30,
+               
+                
             };
+
+            association.XDLMSContextInfo.Conformance =
+                Conformance.GeneralProtection |
+                Conformance.GeneralBlockTransfer |
+                Conformance.BlockTransferWithGetOrRead |
+                Conformance.BlockTransferWithSetOrWrite |
+                Conformance.BlockTransferWithAction |
+                Conformance.MultipleReferences |
+                Conformance.Access |
+                Conformance.Get |
+                Conformance.Set |
+                Conformance.SelectiveAccess |
+                Conformance.Action |
+                Conformance.DeltaValueEncoding;
+
+            association.XDLMSContextInfo.MaxReceivePduSize = 0xFFFF;
+
             association.SecuritySetupReference = "0.0.43.0.0.255";
             var icInObjects = _objects.FirstOrDefault(o => o.LogicalName == "0.0.43.1.3.255");
             association.ObjectList.AddRange(_objects.ToArray());
