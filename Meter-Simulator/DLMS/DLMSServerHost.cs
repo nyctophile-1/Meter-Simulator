@@ -47,13 +47,6 @@ namespace MeterSimulator.DLMS
 
         private void InitializeObjects()
         {
-            var energy = new GXDLMSRegister
-            {
-                LogicalName = "1.0.1.8.0.255",
-                Scaler = 0,
-                Unit = Unit.None,
-                Value = 1
-            };
 
             var clock = new GXDLMSClock
             {
@@ -62,6 +55,35 @@ namespace MeterSimulator.DLMS
                 Status = ClockStatus.Ok
             };
 
+            var cumKwh = new GXDLMSRegister
+            {
+                LogicalName = "1.0.1.8.0.255",
+                Scaler = 0,
+                Unit = Unit.ActiveEnergy,
+                Value = 1
+            };
+
+            var cumKvah = new GXDLMSRegister
+            {
+                LogicalName = "1.0.9.8.0.255",
+                Scaler = 0,
+                Unit = Unit.ApparentEnergy,
+                Value = 1
+            };
+            var exportkwh = new GXDLMSRegister
+            {
+                LogicalName = "1.0.2.8.0.255",
+                Scaler = 0,
+                Unit = Unit.ActiveEnergy,
+                Value = 1
+            };
+            var exportkvah = new GXDLMSRegister
+            {
+                LogicalName = "1.0.10.8.0.255",
+                Scaler = 0,
+                Unit = Unit.ApparentEnergy,
+                Value = 1
+            };
             var invocationCounter = new GXDLMSData
             {
                 LogicalName = "0.0.43.1.3.255",
@@ -70,10 +92,18 @@ namespace MeterSimulator.DLMS
             invocationCounter.SetAccess(1, AccessMode.Read);
             invocationCounter.SetAccess(2, AccessMode.ReadWrite);
 
-            _objects.Add(energy);
+            _objects.Add(cumKwh);
+            _objects.Add(cumKvah);
+            _objects.Add(exportkwh);
+            _objects.Add(exportkvah);
             _objects.Add(clock);
             _objects.Add(invocationCounter);
+            cumKwh.SetDataType(2, DataType.UInt32);
+            cumKvah.SetDataType(2, DataType.UInt32);
+            exportkwh.SetDataType(2, DataType.UInt32);
+            exportkvah.SetDataType(2, DataType.UInt32);
 
+            AddDailyLoadProfile(clock, cumKwh, cumKvah, exportkwh, exportkvah);
         }
         private void InitializeSecuritySetup()
         {
@@ -287,6 +317,9 @@ namespace MeterSimulator.DLMS
             if (arg.Target is GXDLMSAssociationLogicalName && arg.Index == 2)
                 return AccessMode.Read;
 
+            if (arg.Target is GXDLMSProfileGeneric)
+                return AccessMode.Read;
+
             if (arg.Target is GXDLMSData && arg.Index == 2)
                 return AccessMode.ReadWrite; 
 
@@ -355,7 +388,57 @@ namespace MeterSimulator.DLMS
                 }
             }
         }
+        #region Profiles
+        private void AddDailyLoadProfile(GXDLMSClock clock, GXDLMSRegister cumKwh, GXDLMSRegister cumKvah, GXDLMSRegister exportKwh, GXDLMSRegister exportKvah)
+        {
+            var loadProfile = new GXDLMSProfileGeneric
+            {
+                LogicalName = "1.0.99.2.0.255",
+                CapturePeriod = 86400,
+                ProfileEntries = 10,
+                SortMethod = SortMethod.FiFo
+            };
 
+            loadProfile.CaptureObjects.Add(
+                new GXKeyValuePair<GXDLMSObject, GXDLMSCaptureObject>(
+                    clock, new GXDLMSCaptureObject(2, 0)));
+            loadProfile.CaptureObjects.Add(
+                new GXKeyValuePair<GXDLMSObject, GXDLMSCaptureObject>(
+                    cumKwh, new GXDLMSCaptureObject(2, 0)));
+            loadProfile.CaptureObjects.Add(
+                new GXKeyValuePair<GXDLMSObject, GXDLMSCaptureObject>(
+                    cumKvah, new GXDLMSCaptureObject(2, 0)));
+            loadProfile.CaptureObjects.Add(
+                new GXKeyValuePair<GXDLMSObject, GXDLMSCaptureObject>(
+                    exportKwh, new GXDLMSCaptureObject(2, 0)));
+            loadProfile.CaptureObjects.Add(
+                new GXKeyValuePair<GXDLMSObject, GXDLMSCaptureObject>(
+                    exportKvah, new GXDLMSCaptureObject(2, 0)));
+
+            loadProfile.SetAccess(2, AccessMode.Read);
+            loadProfile.SortObject = clock;
+            loadProfile.SortAttributeIndex = 2;
+
+            DateTime start = DateTime.Now.Date.AddDays(-10);
+
+            for (int i = 0; i < 10; i++)
+            {
+                loadProfile.Buffer.Add(new object[]
+                {
+                    new GXDateTime(start.AddDays(i)),
+                    1000 + (i * 10),
+                    2000 + (i * 10),
+                    300 + (i * 10),
+                    150 + (i * 10)
+                            });
+            }
+
+            loadProfile.EntriesInUse = (uint)loadProfile.Buffer.Count;
+
+            _objects.Add(loadProfile);
+        }
+        #endregion
+        #region Unused
         protected override void PreAction(ValueEventArgs[] args)
         {
         }
@@ -385,6 +468,7 @@ namespace MeterSimulator.DLMS
         }
         protected override void InvalidConnection(GXDLMSConnectionEventArgs connectionInfo)
         {
-        }
+        } 
+        #endregion
     }
 }
