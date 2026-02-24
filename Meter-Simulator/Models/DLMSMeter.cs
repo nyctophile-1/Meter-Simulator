@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace MeterSimulator.DLMS
+namespace MeterSimulator.Models
 {
     public class DLMSMeter
     {

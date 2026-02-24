@@ -14,12 +14,9 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-	  <Folder Include="Config\" />
 	  <Folder Include="Networking\" />
-	  <Folder Include="Models\" />
 	  <Folder Include="Logging\" />
 	  <Folder Include="Utils\" />
-	  <Folder Include="Simulation\" />
 	</ItemGroup>
 
 	<ItemGroup>

@@ -5,6 +5,7 @@ using Gurux.DLMS.Objects;
 using Gurux.DLMS.Objects.Enums;
 using Gurux.DLMS.Secure;
 using Gurux.Net;
+using MeterSimulator.Models;
 using System.Diagnostics;
 using System.Text;
 using System.Threading;
@@ -208,23 +209,25 @@ namespace MeterSimulator.DLMS
         }
         private void OnDataReceived(object? sender, ReceiveEventArgs e)
         {
+            byte[] data;
             try
             {
-                var data = (byte[])e.Data;
+                data = (byte[])e.Data;
 
-                Console.WriteLine($"Hex Received: {BitConverter.ToString(data)}");
+                //Console.WriteLine($"Hex Received: {BitConverter.ToString(data)}");
 
                 byte[] reply = HandleRequest(data);
                 if (reply.Length != 0)
                 {
-                    Console.WriteLine($"Sending reply: {BitConverter.ToString(reply)}");
+                    //Console.WriteLine($"Sending reply: {BitConverter.ToString(reply)}");
                     _network.Send(reply, e.SenderInfo);
                 }
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"DLMS error: {ex.Message}");
-                Console.WriteLine($"Stack: {ex.StackTrace}");  // ← Add this
+                //Console.WriteLine($"Data Received: {BitConverter.ToString(data)}");
+                Console.WriteLine($"Stack: {ex.StackTrace}");
             }
         }
 
