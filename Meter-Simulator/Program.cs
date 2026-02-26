@@ -3,7 +3,7 @@ using MeterSimulator.Simulation;
 
 var config = new MeterConfig
 {
-    MeterCount = 150,
+    MeterCount = 100,
     BasePort = 4059
 };
 

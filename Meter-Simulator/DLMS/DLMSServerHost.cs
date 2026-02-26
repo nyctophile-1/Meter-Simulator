@@ -99,10 +99,13 @@ namespace MeterSimulator.DLMS
             _objects.Add(exportkvah);
             _objects.Add(clock);
             _objects.Add(invocationCounter);
+
+            clock.SetDataType(2, DataType.DateTime);
             cumKwh.SetDataType(2, DataType.UInt32);
             cumKvah.SetDataType(2, DataType.UInt32);
             exportkwh.SetDataType(2, DataType.UInt32);
             exportkvah.SetDataType(2, DataType.UInt32);
+            invocationCounter.SetDataType(2, DataType.UInt32);
 
             AddDailyLoadProfile(clock, cumKwh, cumKvah, exportkwh, exportkvah);
         }
@@ -422,7 +425,7 @@ namespace MeterSimulator.DLMS
             loadProfile.SortObject = clock;
             loadProfile.SortAttributeIndex = 2;
 
-            DateTime start = DateTime.Now.Date.AddDays(-10);
+            DateTime start = DateTime.UtcNow.Date.AddDays(-10);
 
             for (int i = 0; i < 10; i++)
             {
@@ -437,7 +440,7 @@ namespace MeterSimulator.DLMS
             }
 
             loadProfile.EntriesInUse = (uint)loadProfile.Buffer.Count;
-
+            loadProfile.SetDataType(2, DataType.Structure);
             _objects.Add(loadProfile);
         }
         #endregion
