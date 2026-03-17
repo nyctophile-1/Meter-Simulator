@@ -12,17 +12,17 @@ using System.Threading;
 
 namespace MeterSimulator.DLMS
 {
-    public class DLMSServerHost : GXDLMSSecureServer
+    public class DLMSServerSession : GXDLMSSecureServer
     {
         private readonly DLMSMeter _meter;
-        private readonly GXNet _network;
+        //private readonly GXNet _network;
         private readonly GXDLMSObjectCollection _objects = new();
-        public DLMSServerHost(DLMSMeter meter, int port)
+        public DLMSServerSession(DLMSMeter meter)
         : base(
             true,
             InterfaceType.WRAPPER)
         {
-            Ciphering.Security = Security.AuthenticationEncryption;
+            //Ciphering.Security = Security.AuthenticationEncryption;
             Ciphering.SystemTitle = meter.SystemTitle;
             Ciphering.BlockCipherKey = meter.BlockCipherKey;
             Ciphering.AuthenticationKey = meter.AuthenticationKey;
@@ -30,10 +30,10 @@ namespace MeterSimulator.DLMS
             _meter = meter;
 
             Settings.Authentication = Authentication.High;
-            _network = new GXNet(NetworkType.Tcp, port)
-            {
-                Trace = TraceLevel.Verbose
-            };
+            //_network = new GXNet(NetworkType.Tcp, port)
+            //{
+            //    Trace = TraceLevel.Verbose
+            //};
 
             Settings.MaxPduSize = 65535;
 
@@ -210,29 +210,29 @@ namespace MeterSimulator.DLMS
                 ic.SetAccess(2, AccessMode.ReadWrite);
             }
         }
-        private void OnDataReceived(object? sender, ReceiveEventArgs e)
-        {
-            byte[] data;
-            try
-            {
-                data = (byte[])e.Data;
+        //private void OnDataReceived(object? sender, ReceiveEventArgs e)
+        //{
+        //    byte[] data;
+        //    try
+        //    {
+        //        data = (byte[])e.Data;
 
-                //Console.WriteLine($"Hex Received: {BitConverter.ToString(data)}");
+        //        //Console.WriteLine($"Hex Received: {BitConverter.ToString(data)}");
 
-                byte[] reply = HandleRequest(data);
-                if (reply.Length != 0)
-                {
-                    //Console.WriteLine($"Sending reply: {BitConverter.ToString(reply)}");
-                    _network.Send(reply, e.SenderInfo);
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"DLMS error: {ex.Message}");
-                //Console.WriteLine($"Data Received: {BitConverter.ToString(data)}");
-                Console.WriteLine($"Stack: {ex.StackTrace}");
-            }
-        }
+        //        byte[] reply = HandleRequest(data);
+        //        if (reply.Length != 0)
+        //        {
+        //            //Console.WriteLine($"Sending reply: {BitConverter.ToString(reply)}");
+        //            _network.Send(reply, e.SenderInfo);
+        //        }
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        Console.WriteLine($"DLMS error: {ex.Message}");
+        //        //Console.WriteLine($"Data Received: {BitConverter.ToString(data)}");
+        //        Console.WriteLine($"Stack: {ex.StackTrace}");
+        //    }
+        //}
 
         protected override void PreRead(ValueEventArgs[] args)
         {
@@ -271,19 +271,19 @@ namespace MeterSimulator.DLMS
                 }
             }
         }
-        public void Start()
-        {
-            Initialize(true);
-            _network.OnReceived += OnDataReceived;
-            _network.Open();
-            Console.WriteLine($"DLMS Meter {_meter.MeterNo} listening on port {_network.Port}");
-        }
+        //public void Start()
+        //{
+        //    Initialize(true);
+        //    _network.OnReceived += OnDataReceived;
+        //    _network.Open();
+        //    Console.WriteLine($"DLMS Meter {_meter.MeterNo} listening on port {_network.Port}");
+        //}
         
 
-        public void Stop()
-        {
-            _network.Close();
-        }
+        //public void Stop()
+        //{
+        //    _network.Close();
+        //}
 
         protected override GXDLMSObject FindObject(ObjectType objectType, int sn, string ln)
         {
@@ -308,7 +308,8 @@ namespace MeterSimulator.DLMS
 
         protected override bool IsTarget(int serverAddress, int clientAddress)
         {
-            return true;
+            //return true;
+            return serverAddress == _meter.ServerAddress;
         }
 
 

@@ -41,6 +41,17 @@ namespace MeterSimulator.Models
             //BlockCipherKey = blockCipherKey;
             //HlsUsKey = hlsUsKey;
             //HlsFwKey = hlsFwKey;
+
+            var manufacturer = Encoding.ASCII.GetBytes("SIM");
+
+            byte[] unique = BitConverter.GetBytes(serverAddress);
+            if (BitConverter.IsLittleEndian)
+                Array.Reverse(unique);
+
+            SystemTitle = manufacturer
+                .Concat(new byte[] { 0x00 })  // padding to make 8 total
+                .Concat(unique.Take(4))
+                .ToArray();
         }
 
         public void SetValue(string obis, object? value)
