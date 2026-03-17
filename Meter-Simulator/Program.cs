@@ -1,32 +1,25 @@
 ﻿using MeterSimulator.Config;
 using MeterSimulator.Simulation;
-using System.Runtime.InteropServices;
-using System.Text.Json.Nodes;
+using Microsoft.Extensions.Configuration;
 
-
-//public static void Main(string[] args)
-//{ 
-//    // app. start (args) or --shared file---
-//    //args[0] = Json{ with ur required props }
-//    // how to return values  {once done}
-//    // how to share errors 
-//    // -- get a liost of copmmands to run 
-//    // -- billing [size of payload]
-//    // -- frequency
-//}
-
-var config = new MeterConfig
+public class Program
 {
-    MeterCount = 500,
-    BasePort = 4059
-};
+    public static void Main(string[] args)
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+            .Build();
 
-var manager = new MeterManager(config);
+        var config = configuration.GetSection("MeterConfig").Get<MeterConfig>();
 
-manager.Initialize();
-manager.StartAll();
+        var manager = new MeterManager(config);
 
-Console.WriteLine("Press ENTER to stop...");
-Console.ReadLine();
+        manager.Initialize();
+        manager.StartAll();
 
-manager.StopAll();
+        Console.WriteLine("Press ENTER to stop...");
+        Console.ReadLine();
+
+        manager.StopAll();
+    }
+}
