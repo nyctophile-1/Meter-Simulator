@@ -24,7 +24,8 @@ namespace MeterSimulator.Simulation
 
         public void Initialize()
         {
-            for (int i = 0; i < _config.MeterCount; i++)
+            var NumberOfMeters = _config.MeterCount + _config.StartFrom;
+            for (int i = _config.StartFrom; i < NumberOfMeters; i++)
             {
                 var meter = new DLMSMeter(
                     meterNo: $"MTR{i + 1:D5}",
