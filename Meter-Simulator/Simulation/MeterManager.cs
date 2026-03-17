@@ -1,8 +1,10 @@
-﻿using MeterSimulator.Config;
+﻿using Gurux.DLMS;
+using MeterSimulator.Config;
 using MeterSimulator.DLMS;
 using MeterSimulator.Models;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.Metrics;
 using System.Text;
 
 namespace MeterSimulator.Simulation
@@ -10,7 +12,10 @@ namespace MeterSimulator.Simulation
     public class MeterManager
     {
         private readonly MeterConfig _config;
-        private readonly List<DLMSServerHost> _servers = new();
+        //private readonly List<DLMSServerHost> _servers = new();
+        private DLMSServerSession _server;
+        private DLMSTCPGateway _gateway;
+        private Dictionary<int, DLMSMeter> _meters = new();
 
         public MeterManager(MeterConfig config)
         {
@@ -28,30 +33,26 @@ namespace MeterSimulator.Simulation
                     serverAddress: _config.ServerAddressStart + i
                 );
 
-                int port = _config.BasePort + i;
-
-                var server = new DLMSServerHost(meter, port);
-                _servers.Add(server);
+                _meters[meter.ServerAddress] = meter;
+                Console.WriteLine($"Initialized meter: {meter.MeterNo} with Server Address: {meter.ServerAddress}");
+                //int port = _config.BasePort + i;
+                //var server = new DLMSServerHost(meter, port);
+                //_servers.Add(server);
             }
+            _gateway = new DLMSTCPGateway(_meters, _config.BasePort);
+            //_server = new DLMSServerHost(_meters, _config.BasePort);
         }
 
         public void StartAll()
         {
-            foreach (var server in _servers)
-            {
-                server.Start();
-            }
+            _gateway.Start();
 
-            Console.WriteLine($"Started {_servers.Count} meters.");
+            Console.WriteLine($"Started {_config.MeterCount} meters.");
         }
 
         public void StopAll()
         {
-            foreach (var server in _servers)
-            {
-                server.Stop();
-            }
-
+            _gateway.Stop();
             Console.WriteLine("All meters stopped.");
         }
     }
