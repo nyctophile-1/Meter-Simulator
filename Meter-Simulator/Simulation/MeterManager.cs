@@ -24,7 +24,8 @@ namespace MeterSimulator.Simulation
 
             for (int i = 0; i < _config.MeterCount; i++)
             {
-                int serverAddress = _config.ServerAddressStart + i;
+                // Server address can stay the same (typically 1) because each meter is isolated by TCP port.
+                int serverAddress = _config.ServerAddressStart;
                 int port = _config.BasePort + i;
 
                 var meter = new DLMSMeter(
