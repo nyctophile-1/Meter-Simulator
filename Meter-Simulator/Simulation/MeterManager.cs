@@ -1,21 +1,16 @@
-﻿using Gurux.DLMS;
-using MeterSimulator.Config;
+﻿using MeterSimulator.Config;
 using MeterSimulator.DLMS;
 using MeterSimulator.Models;
 using System;
 using System.Collections.Generic;
-using System.Diagnostics.Metrics;
-using System.Text;
 
 namespace MeterSimulator.Simulation
 {
     public class MeterManager
     {
         private readonly MeterConfig _config;
-        //private readonly List<DLMSServerHost> _servers = new();
-        private DLMSServerSession _server;
-        private DLMSTCPGateway _gateway;
-        private Dictionary<int, DLMSMeter> _meters = new();
+        private readonly List<DLMSTCPGateway> _gateways = new();
+        private readonly Dictionary<int, DLMSMeter> _meters = new();
 
         public MeterManager(MeterConfig config)
         {
@@ -24,35 +19,54 @@ namespace MeterSimulator.Simulation
 
         public void Initialize()
         {
+            _meters.Clear();
+            _gateways.Clear();
+
             for (int i = 0; i < _config.MeterCount; i++)
             {
+                int serverAddress = _config.ServerAddressStart + i;
+                int port = _config.BasePort + i;
+
                 var meter = new DLMSMeter(
                     meterNo: $"MTR{i + 1:D5}",
                     logicalName: _config.LogicalName,
                     clientAddress: _config.ClientAddress,
-                    serverAddress: _config.ServerAddressStart + i
+                    serverAddress: serverAddress
                 );
 
                 _meters[meter.ServerAddress] = meter;
-                Console.WriteLine($"Initialized meter: {meter.MeterNo} with Server Address: {meter.ServerAddress}");
-                //int port = _config.BasePort + i;
-                //var server = new DLMSServerHost(meter, port);
-                //_servers.Add(server);
+
+                var meterMap = new Dictionary<int, DLMSMeter>
+                {
+                    [meter.ServerAddress] = meter
+                };
+
+                var gateway = new DLMSTCPGateway(meterMap, port);
+                _gateways.Add(gateway);
+
+                Console.WriteLine(
+                    $"Initialized meter: {meter.MeterNo} | Server Address: {meter.ServerAddress} | Port: {port}");
             }
-            _gateway = new DLMSTCPGateway(_meters, _config.BasePort);
-            //_server = new DLMSServerHost(_meters, _config.BasePort);
         }
 
         public void StartAll()
         {
-            _gateway.Start();
+            foreach (var gateway in _gateways)
+            {
+                gateway.Start();
+            }
 
-            Console.WriteLine($"Started {_config.MeterCount} meters.");
+            Console.WriteLine(
+                $"Started {_config.MeterCount} meters on ports {_config.BasePort} to {_config.BasePort + _config.MeterCount - 1}.");
         }
 
         public void StopAll()
         {
-            _gateway.Stop();
+            foreach (var gateway in _gateways)
+            {
+                gateway.Stop();
+            }
+
             Console.WriteLine("All meters stopped.");
         }
     }
