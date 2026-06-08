@@ -17,6 +17,8 @@ namespace MeterSimulator.DLMS
         private readonly DLMSMeter _meter;
         //private readonly GXNet _network;
         private readonly GXDLMSObjectCollection _objects = new();
+        private readonly GXDLMSObjectCollection _objectsFromFile = new();
+
         public DLMSServerSession(DLMSMeter meter)
         : base(
             true,
@@ -39,11 +41,38 @@ namespace MeterSimulator.DLMS
 
             Items.Clear();
 
-            InitializeObjects();        
-            InitializeSecuritySetup();  
-            InitializeAssociation(); 
-            Items.AddRange(_objects); 
+            var loader = new MeterObjectLoader("C:\\Users\\AkshitaGupta\\Desktop\\HPL 1P_MP-POC.xml");
+            loader.Load(_objectsFromFile);
 
+            InitializeObjects();
+            InitializeSecuritySetup();
+            InitializeAssociation();
+
+            //Items.AddRange(_objects);
+            foreach (var obj in _objects)
+            {
+                if (Items.Any(x => x.LogicalName == obj.LogicalName) && false)
+                {
+                    Console.WriteLine($"Skipping: {obj.ObjectType} - {obj.LogicalName}");
+                }
+                else
+                {
+                    Console.WriteLine($"Added object: {obj.ObjectType} - {obj.LogicalName}");
+                    Items.Add(obj);
+                }
+            }
+            foreach (var obj in _objectsFromFile)
+            {
+                if (Items.Any(x => x.LogicalName == obj.LogicalName))
+                {
+                    Console.WriteLine($"Skipping: {obj.ObjectType} - {obj.LogicalName}");
+                }
+                else
+                {
+                    Console.WriteLine($"Added object: {obj.ObjectType} - {obj.LogicalName}");
+                    Items.Add(obj);
+                }
+            }
         }
 
         private void InitializeObjects()
@@ -178,7 +207,7 @@ namespace MeterSimulator.DLMS
                 {
                     ContextId = ApplicationContextName.LogicalName
                 },
-                Secret = Encoding.ASCII.GetBytes("AAAAAAAAAAAAAAAA"),
+                Secret = _meter.HLSKey,
                 ClientSAP = 30
             };
 
@@ -251,6 +280,7 @@ namespace MeterSimulator.DLMS
 
                     if (ic0 != null)
                     {
+                        Console.WriteLine($"IC Value : {ic0.Value}");
                         arg.Value = ic0.Value;
                         arg.Handled = true;
                     }
@@ -356,8 +386,7 @@ namespace MeterSimulator.DLMS
             {
                 return SourceDiagnostic.None; // ACCEPT
             }
-            if (password != null &&
-            password.SequenceEqual(Encoding.ASCII.GetBytes("AAAAAAAAAAAAAAAA")))
+            if (password != null)
             {
                 return SourceDiagnostic.None; // ACCEPT
             }

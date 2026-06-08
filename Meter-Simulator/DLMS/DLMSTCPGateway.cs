@@ -58,6 +58,7 @@ namespace MeterSimulator.DLMS
 
                 if (reply != null && reply.Length > 0)
                 {
+                    Thread.Sleep(1000);
                     _network.Send(reply, e.SenderInfo);
                 }
             }

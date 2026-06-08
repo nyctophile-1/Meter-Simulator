@@ -28,6 +28,8 @@ namespace MeterSimulator.DLMS
             // including CaptureObjects wiring inside each ProfileGeneric.
             GXDLMSObjectCollection loaded = GXDLMSObjectCollection.Load(_xmlPath);
 
+
+            //var x = loaded.Where(x => x.LogicalName != "0.0.40.0.1.255" && x.LogicalName != "0.0.43.1.3.255" && x.LogicalName != "0.0.43.0.0.255");
             // ── Step 2: Seed live simulation values ──────────────────────────────
             SeedClock(loaded);
             SeedRegisters(loaded);
@@ -144,7 +146,7 @@ namespace MeterSimulator.DLMS
             Set("0.0.96.1.4.255", "2024", DataType.String);
             Set("1.0.0.2.0.255", "V01.00", DataType.String);  // Firmware
 
-            Set("0.0.43.1.3.255", Convert.ToUInt32(207), DataType.UInt32); // Invocation counter
+            //Set("0.0.43.1.3.255", Convert.ToUInt32(207), DataType.UInt32); // Invocation counter
 
             Set("1.0.0.8.0.255", Convert.ToUInt32(30), DataType.UInt32); // Demand period
             Set("1.0.0.8.4.255", Convert.ToUInt32(1800), DataType.UInt32); // Block LP period
@@ -154,9 +156,9 @@ namespace MeterSimulator.DLMS
             Set("0.0.96.7.0.255", Convert.ToUInt32(0), DataType.UInt32);
 
             // Invocation counter access
-            var ic = objects.FindByLN(ObjectType.Data, "0.0.43.1.3.255") as GXDLMSData;
-            ic?.SetAccess(1, AccessMode.Read);
-            ic?.SetAccess(2, AccessMode.ReadWrite);
+            //var ic = objects.FindByLN(ObjectType.Data, "0.0.43.1.3.255") as GXDLMSData;
+            //ic?.SetAccess(1, AccessMode.Read);
+            //ic?.SetAccess(2, AccessMode.ReadWrite);
         }
 
         // ════════════════════════════════════════════════════════════════════════
@@ -235,6 +237,7 @@ namespace MeterSimulator.DLMS
 
             profile.EntriesInUse = (uint)profile.Buffer.Count;
             profile.SetDataType(2, DataType.Structure);
+            
         }
 
         private static void SeedBillingProfile(GXDLMSObjectCollection objects)
