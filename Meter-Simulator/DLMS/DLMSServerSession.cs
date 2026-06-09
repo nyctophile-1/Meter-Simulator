@@ -7,6 +7,7 @@ using Gurux.DLMS.Secure;
 using Gurux.Net;
 using MeterSimulator.Models;
 using System.Diagnostics;
+using System.Linq;
 using System.Text;
 using System.Threading;
 
@@ -44,33 +45,75 @@ namespace MeterSimulator.DLMS
             var loader = new MeterObjectLoader("C:\\Users\\AkshitaGupta\\Desktop\\HPL 1P_MP-POC.xml");
             loader.Load(_objectsFromFile);
 
+            foreach (var obj in _objectsFromFile)
+            {
+                if (obj is GXDLMSRegister reg)
+                {
+                    _meter.SetValue(reg.LogicalName, reg.Value);
+                }
+                else if (obj is GXDLMSData data)
+                {
+                    _meter.SetValue(data.LogicalName, data.Value);
+                }
+            }
+
             InitializeObjects();
             InitializeSecuritySetup();
             InitializeAssociation();
 
-            //Items.AddRange(_objects);
+            var publicAssoc = _objects.FirstOrDefault(o => o.LogicalName == "0.0.40.0.1.255") as GXDLMSAssociationLogicalName;
+            var association = _objects.FirstOrDefault(o => o.LogicalName == "0.0.40.0.0.255") as GXDLMSAssociationLogicalName;
+
             foreach (var obj in _objects)
             {
-                if (Items.Any(x => x.LogicalName == obj.LogicalName) && false)
-                {
-                    Console.WriteLine($"Skipping: {obj.ObjectType} - {obj.LogicalName}");
-                }
-                else
-                {
-                    Console.WriteLine($"Added object: {obj.ObjectType} - {obj.LogicalName}");
-                    Items.Add(obj);
-                }
+                Console.WriteLine($"Added object: {obj.ObjectType} - {obj.LogicalName}");
+                Items.Add(obj);
             }
+
             foreach (var obj in _objectsFromFile)
             {
-                if (Items.Any(x => x.LogicalName == obj.LogicalName))
+                var existing = Items.FirstOrDefault(x => x.LogicalName == obj.LogicalName);
+                if (existing != null)
                 {
-                    Console.WriteLine($"Skipping: {obj.ObjectType} - {obj.LogicalName}");
+                    Console.WriteLine($"Synchronizing duplicate object: {obj.ObjectType} - {obj.LogicalName}");
+                    if (existing is GXDLMSRegister regEx && obj is GXDLMSRegister regObj)
+                    {
+                        regEx.Value = regObj.Value;
+                        regEx.Scaler = regObj.Scaler;
+                        regEx.Unit = regObj.Unit;
+                    }
+                    else if (existing is GXDLMSData dataEx && obj is GXDLMSData dataObj)
+                    {
+                        dataEx.Value = dataObj.Value;
+                    }
+                    else if (existing is GXDLMSClock clockEx && obj is GXDLMSClock clockObj)
+                    {
+                        clockEx.Time = clockObj.Time;
+                        clockEx.TimeZone = clockObj.TimeZone;
+                        clockEx.Deviation = clockObj.Deviation;
+                        clockEx.Status = clockObj.Status;
+                    }
+                    else if (existing is GXDLMSProfileGeneric profEx && obj is GXDLMSProfileGeneric profObj)
+                    {
+                        profEx.Buffer.Clear();
+                        foreach (var row in profObj.Buffer)
+                        {
+                            profEx.Buffer.Add(row);
+                        }
+                        profEx.EntriesInUse = profObj.EntriesInUse;
+                        profEx.CaptureObjects.Clear();
+                        profEx.CaptureObjects.AddRange(profObj.CaptureObjects);
+                    }
                 }
                 else
                 {
-                    Console.WriteLine($"Added object: {obj.ObjectType} - {obj.LogicalName}");
+                    Console.WriteLine($"Added unique object: {obj.ObjectType} - {obj.LogicalName}");
                     Items.Add(obj);
+                    _objects.Add(obj);
+
+                    // Also make unique objects visible to client associations
+                    publicAssoc?.ObjectList.Add(obj);
+                    association?.ObjectList.Add(obj);
                 }
             }
         }
@@ -485,6 +528,15 @@ namespace MeterSimulator.DLMS
 
         protected override void PostWrite(ValueEventArgs[] args)
         {
+            foreach (var arg in args)
+            {
+                var obis = arg.Target.LogicalName;
+                if (arg.Target is GXDLMSRegister || arg.Target is GXDLMSData)
+                {
+                    _meter.SetValue(obis, arg.Value);
+                    Console.WriteLine($"Synchronized client write to meter: {arg.Target.ObjectType} - {obis} = {arg.Value}");
+                }
+            }
         }
 
         protected override void PostAction(ValueEventArgs[] args)
