@@ -33,6 +33,8 @@ namespace MeterSimulator.DLMS
                 if (data.Length < 8)
                     return;
 
+                Console.WriteLine($"Hex Received: {BitConverter.ToString(data)}");
+
                 // WRAPPER header → ServerAddress at offset 4 (Big Endian)
                 ushort serverAddress =
                     BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(4));
@@ -55,10 +57,12 @@ namespace MeterSimulator.DLMS
                 });
 
                 byte[] reply = session.HandleRequest(data);
+                Console.WriteLine($"HandleRequest reply: {(reply == null ? "NULL" : reply.Length + " bytes")}");
 
                 if (reply != null && reply.Length > 0)
                 {
-                    Thread.Sleep(1000);
+                    //Thread.Sleep(200);
+                    Console.WriteLine($"Sending reply: {BitConverter.ToString(reply)}");
                     _network.Send(reply, e.SenderInfo);
                 }
             }
