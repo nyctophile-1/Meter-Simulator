@@ -46,6 +46,7 @@ namespace MeterSimulator.DLMS
             // Items.Add(obj) runs in DLMSServerSession the CaptureObject
             // references ARE the Items instances — no second pass needed.
             RewireCaptureObjects(objects);
+            FixProfileBufferTypes(objects);
 
             // Step 4 ── Seed live values (registers, clock, data — NOT profile buffers)
             // Profile buffer rows come from the XML as-is.
@@ -57,7 +58,92 @@ namespace MeterSimulator.DLMS
             // Step 5 ── Hand off
             target.AddRange(objects);
         }
+        private static void FixProfileBufferTypes(GXDLMSObjectCollection objects)
+        {
+            foreach (var profile in objects.OfType<GXDLMSProfileGeneric>())
+            {
+                if (profile.Buffer.Count == 0 || profile.CaptureObjects.Count == 0) continue;
 
+                int cols = profile.CaptureObjects.Count;
+                DataType[] columnTypes = new DataType[cols];
+
+                // Pass 1 — fix string→GXDateTime and accumulate the widest DataType
+                // seen across ALL rows for each column.
+                // Setting DataType per-row causes the last row to overwrite all previous
+                // ones — if row 12 is ushort but row 0 is double, encoding row 0 overflows.
+                foreach (var row in profile.Buffer)
+                {
+                    for (int i = 0; i < Math.Min(row.Length, cols); i++)
+                    {
+                        var x = Convert.ToString(row[i]);
+                        if(x != null && x.Equals("*/*/* *:*:*"))
+                        {
+                            row[i] = new GXDateTime
+                            {
+                                Skip = DateTimeSkips.Year | DateTimeSkips.Month | DateTimeSkips.Day |
+                                       DateTimeSkips.Hour | DateTimeSkips.Minute | DateTimeSkips.Second
+                            };
+                            continue;
+                        }
+                        if (row[i] is string s && DateTime.TryParse(s, out DateTime dt))
+                            row[i] = new GXDateTime(dt);
+
+                        if (row[i] != null)
+                            columnTypes[i] = WiderType(columnTypes[i], DataTypeFromValue(row[i]));
+                    }
+                }
+
+                // Pass 2 — set the winning DataType once per column
+                for (int i = 0; i < cols; i++)
+                {
+                    if (columnTypes[i] != DataType.None)
+                    {
+                        var co = profile.CaptureObjects[i];
+                        co.Key.SetDataType(co.Value.AttributeIndex, columnTypes[i]);
+                        Console.WriteLine($"[Fix] {profile.LogicalName} col[{i}] " +
+                            $"{co.Key.LogicalName} → DataType={columnTypes[i]}");
+                    }
+                }
+            }
+        }
+
+        // Returns the wider of two DataTypes so no value in the column overflows.
+        private static DataType WiderType(DataType existing, DataType candidate)
+        {
+            if (existing == DataType.None)     return candidate;
+            if (candidate == DataType.None)    return existing;
+            if (existing == candidate)         return existing;
+            if (existing == DataType.DateTime  || candidate == DataType.DateTime)  return DataType.DateTime;
+            if (existing == DataType.Float64   || candidate == DataType.Float64)   return DataType.Float64;
+            if (existing == DataType.Float32   || candidate == DataType.Float32)   return DataType.Float32;
+            if (existing == DataType.Int64     || candidate == DataType.Int64)     return DataType.Int64;
+            if (existing == DataType.UInt64    || candidate == DataType.UInt64)    return DataType.UInt64;
+            if (existing == DataType.Int32     || candidate == DataType.Int32)     return DataType.Int32;
+            if (existing == DataType.UInt32    || candidate == DataType.UInt32)    return DataType.UInt32;
+            if (existing == DataType.Int16     || candidate == DataType.Int16)     return DataType.Int16;
+            if (existing == DataType.UInt16    || candidate == DataType.UInt16)    return DataType.UInt16;
+            return candidate;
+        }
+
+        // Maps a C# runtime type to the corresponding DLMS DataType.
+        private static DataType DataTypeFromValue(object value)
+        {
+            if (value is GXDateTime) return DataType.DateTime;
+            if (value is double)     return DataType.Float64;
+            if (value is float)      return DataType.Float32;
+            if (value is long)       return DataType.Int64;
+            if (value is ulong)      return DataType.UInt64;
+            if (value is int)        return DataType.Int32;
+            if (value is uint)       return DataType.UInt32;
+            if (value is short)      return DataType.Int16;
+            if (value is ushort)     return DataType.UInt16;
+            if (value is sbyte)      return DataType.Int8;
+            if (value is byte)       return DataType.UInt8;
+            if (value is bool)       return DataType.Boolean;
+            if (value is string)     return DataType.String;
+            if (value is byte[])     return DataType.OctetString;
+            return DataType.None;
+        }
         // ════════════════════════════════════════════════════════════════════════
         // STEP 2 — DEDUPLICATE
         // ════════════════════════════════════════════════════════════════════════
