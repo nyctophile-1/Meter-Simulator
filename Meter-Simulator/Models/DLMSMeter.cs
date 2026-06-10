@@ -15,7 +15,8 @@ namespace MeterSimulator.Models
         public byte[]? SystemTitle { get; } = Encoding.ASCII.GetBytes("SIMULATR");
         public byte[]? AuthenticationKey { get; } = Encoding.ASCII.GetBytes("AAAAAAAAAAAAAAAA");
         public byte[]? BlockCipherKey { get; } = Encoding.ASCII.GetBytes("AAAAAAAAAAAAAAAA");
-        public string LlsPassword { get; } = "12345678";
+        public byte[]? HLSKey { get; } = Encoding.ASCII.GetBytes("AAAAAAAAAAAAAAAA");
+        public byte[]? LLSKey { get; } = Encoding.ASCII.GetBytes("12345678");
         //public byte[]? HlsUsKey { get; } = Encoding.ASCII.GetBytes("AAAAAAAA");
         //public byte[]? HlsFwKey { get; } = Encoding.ASCII.GetBytes("AAAAAAAA");
         private readonly Dictionary<string, object?> _values = new();

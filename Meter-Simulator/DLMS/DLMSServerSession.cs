@@ -7,6 +7,7 @@ using Gurux.DLMS.Secure;
 using Gurux.Net;
 using MeterSimulator.Models;
 using System.Diagnostics;
+using System.Linq;
 using System.Text;
 using System.Threading;
 
@@ -17,6 +18,8 @@ namespace MeterSimulator.DLMS
         private readonly DLMSMeter _meter;
         //private readonly GXNet _network;
         private readonly GXDLMSObjectCollection _objects = new();
+        private readonly GXDLMSObjectCollection _objectsFromFile = new();
+
         public DLMSServerSession(DLMSMeter meter)
         : base(
             true,
@@ -39,11 +42,98 @@ namespace MeterSimulator.DLMS
 
             Items.Clear();
 
-            InitializeObjects();        
-            InitializeSecuritySetup();  
-            InitializeAssociation(); 
-            Items.AddRange(_objects); 
+            var loader = new MeterObjectLoader("C:\\Users\\AkshitaGupta\\Desktop\\Values_SZ0000014HP - Copy.xml");
+            loader.Load(_objectsFromFile);
 
+            foreach (var obj in _objectsFromFile)
+            {
+                if (obj is GXDLMSRegister reg)
+                {
+                    _meter.SetValue(reg.LogicalName, reg.Value);
+                }
+                else if (obj is GXDLMSData data)
+                {
+                    _meter.SetValue(data.LogicalName, data.Value);
+                }
+            }
+
+            //InitializeObjects();
+            InitializeSecuritySetup();
+            InitializeAssociation();
+
+            var publicAssoc = _objects.FirstOrDefault(o => o.LogicalName == "0.0.40.0.1.255") as GXDLMSAssociationLogicalName;
+            var association = _objects.FirstOrDefault(o => o.LogicalName == "0.0.40.0.0.255") as GXDLMSAssociationLogicalName;
+
+            foreach (var obj in _objects)
+            {
+                Console.WriteLine($"Added object: {obj.ObjectType} - {obj.LogicalName}");
+                Items.Add(obj);
+            }
+
+            // MeterObjectLoader.Load() already deduplicates by (ObjectType, LN) and
+            // rewires every profile's CaptureObjects to point at the canonical instances
+            // within that same collection.  The only "duplicates" we'll see here are
+            // association objects (0.0.40.0.x.255) that InitializeAssociation already
+            // added to _objects — everything else should land in the `else` branch.
+            foreach (var obj in _objectsFromFile)
+            {
+                var existing = Items.FirstOrDefault(x =>
+                    x.LogicalName == obj.LogicalName && x.ObjectType == obj.ObjectType);
+
+                if (existing != null)
+                {
+                    // Already registered (e.g. associations created by InitializeAssociation).
+                    // Nothing to sync — the loader has already seeded the incoming object.
+                    Console.WriteLine($"[Session] Skipping duplicate: {obj.ObjectType} {obj.LogicalName}");
+                }
+                else
+                {
+                    Items.Add(obj);
+                    _objects.Add(obj);
+                    publicAssoc?.ObjectList.Add(obj);
+                    association?.ObjectList.Add(obj);
+                    Console.WriteLine($"[Session] Registered: {obj.ObjectType} {obj.LogicalName}");
+                }
+            }
+
+            // Safety net: if any CaptureObject key somehow still points to an instance
+            // not in Items, re-wire it now.  With a clean load this is a no-op.
+            RewireProfileCaptureObjects();
+        }
+
+        /// <summary>
+        /// For every ProfileGeneric in _objects, replace each CaptureObject's key
+        /// with the corresponding instance that already lives in Items.  If a
+        /// referenced object is missing from Items it is added so Gurux can still
+        /// encode the column.
+        /// </summary>
+        private void RewireProfileCaptureObjects()
+        {
+            foreach (var profile in _objects.OfType<GXDLMSProfileGeneric>().ToList())
+            {
+                if (profile.CaptureObjects.Count == 0) continue;
+
+                Console.WriteLine($"Re-wiring CaptureObjects for {profile.LogicalName} " +
+                                  $"({profile.CaptureObjects.Count} columns, {profile.Buffer.Count} rows)");
+
+                var rewired = new List<GXKeyValuePair<GXDLMSObject, GXDLMSCaptureObject>>();
+                foreach (var kv in profile.CaptureObjects)
+                {
+                    var real = Items.FindByLN(kv.Key.ObjectType, kv.Key.LogicalName);
+                    if (real == null)
+                    {
+                        // Referenced object not in Items — register the stub so Gurux
+                        // can at least determine the column DataType.
+                        Console.WriteLine($"  WARNING: {kv.Key.ObjectType} {kv.Key.LogicalName} not in Items — adding stub");
+                        Items.Add(kv.Key);
+                        real = kv.Key;
+                    }
+                    rewired.Add(new GXKeyValuePair<GXDLMSObject, GXDLMSCaptureObject>(real, kv.Value));
+                }
+
+                profile.CaptureObjects.Clear();
+                profile.CaptureObjects.AddRange(rewired);
+            }
         }
 
         private void InitializeObjects()
@@ -178,7 +268,7 @@ namespace MeterSimulator.DLMS
                 {
                     ContextId = ApplicationContextName.LogicalName
                 },
-                Secret = Encoding.ASCII.GetBytes("AAAAAAAAAAAAAAAA"),
+                Secret = _meter.HLSKey,
                 ClientSAP = 30
             };
 
@@ -238,36 +328,44 @@ namespace MeterSimulator.DLMS
         {
             foreach (var arg in args)
             {
-                Console.WriteLine($"PreRead: {arg.Target.ObjectType} - {arg.Target.LogicalName}, Attr={arg.Index}");
-
-                if (arg.Target is GXDLMSAssociationLogicalName && arg.Index == 2)
+                try
                 {
-                    var assoc = arg.Target as GXDLMSAssociationLogicalName;
-                }
+                    Console.WriteLine($"PreRead: {arg.Target.ObjectType} - {arg.Target.LogicalName}, Attr={arg.Index}");
 
-                if (arg.Target.LogicalName == "0.0.43.1.3.255" && arg.Index == 2)
-                {
-                    var ic0 = Items.FindByLN(ObjectType.Data, "0.0.43.1.0.255") as GXDLMSData;
-
-                    if (ic0 != null)
+                    if (arg.Target is GXDLMSAssociationLogicalName && arg.Index == 2)
                     {
-                        arg.Value = ic0.Value;
-                        arg.Handled = true;
+                        var assoc = arg.Target as GXDLMSAssociationLogicalName;
+                    }
+
+                    if (arg.Target.LogicalName == "0.0.43.1.3.255" && arg.Index == 2)
+                    {
+                        var ic0 = Items.FindByLN(ObjectType.Data, "0.0.43.1.0.255") as GXDLMSData;
+
+                        if (ic0 != null)
+                        {
+                            Console.WriteLine($"IC Value : {ic0.Value}");
+                            arg.Value = ic0.Value;
+                            arg.Handled = true;
+                        }
+                    }
+
+
+                    var obis = arg.Target.LogicalName;
+
+                    if (arg.Target is GXDLMSRegister || arg.Target is GXDLMSData)
+                    {
+                        var value = _meter.GetValue(obis);
+
+                        if (value != null)
+                        {
+                            arg.Value = value;
+                            arg.Handled = true;
+                        }
                     }
                 }
-
-
-                var obis = arg.Target.LogicalName;
-
-                if (arg.Target is GXDLMSRegister || arg.Target is GXDLMSData)
+                catch (Exception ex)
                 {
-                    var value = _meter.GetValue(obis);
-
-                    if (value != null)
-                    {
-                        arg.Value = value;
-                        arg.Handled = true;
-                    }
+                    Console.WriteLine($"PreRead ERROR: {arg.Target?.LogicalName} attr{arg.Index}: {ex}");
                 }
             }
         }
@@ -356,8 +454,7 @@ namespace MeterSimulator.DLMS
             {
                 return SourceDiagnostic.None; // ACCEPT
             }
-            if (password != null &&
-            password.SequenceEqual(Encoding.ASCII.GetBytes("AAAAAAAAAAAAAAAA")))
+            if (password != null)
             {
                 return SourceDiagnostic.None; // ACCEPT
             }
@@ -456,6 +553,15 @@ namespace MeterSimulator.DLMS
 
         protected override void PostWrite(ValueEventArgs[] args)
         {
+            foreach (var arg in args)
+            {
+                var obis = arg.Target.LogicalName;
+                if (arg.Target is GXDLMSRegister || arg.Target is GXDLMSData)
+                {
+                    _meter.SetValue(obis, arg.Value);
+                    Console.WriteLine($"Synchronized client write to meter: {arg.Target.ObjectType} - {obis} = {arg.Value}");
+                }
+            }
         }
 
         protected override void PostAction(ValueEventArgs[] args)
