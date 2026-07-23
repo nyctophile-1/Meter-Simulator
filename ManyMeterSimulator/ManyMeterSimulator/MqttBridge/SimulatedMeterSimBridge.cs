@@ -4,9 +4,10 @@ using Microsoft.Extensions.Options;
 namespace ManyMeterSimulator.MqttBridge;
 
 /// <summary>
-/// Temporary stand-in for the real MQTT bridge to meter_sim. No MQTT, no brain -
-/// just simulates round-trip latency and echoes the request payload back, so the
-/// framing/session/registry layers are testable end-to-end before Phase 4 exists.
+/// Framing-only stand-in for the real brain (<see cref="BrainMeterSimBridge"/>). No brain,
+/// no DLMS — just simulates round-trip latency and echoes the request frame back, so the
+/// framing/session/registry layers are testable end-to-end without the brain. Selectable via
+/// config; the brain bridge is the default.
 /// </summary>
 public sealed class SimulatedMeterSimBridge : IMeterSimBridge
 {
@@ -17,9 +18,9 @@ public sealed class SimulatedMeterSimBridge : IMeterSimBridge
         _options = options.Value;
     }
 
-    public async Task<byte[]> ExchangeAsync(IPAddress meterId, byte[] requestPayload, CancellationToken cancellationToken)
+    public async Task<byte[]> ExchangeAsync(IPAddress meterId, byte[] requestFrame, CancellationToken cancellationToken)
     {
         await Task.Delay(_options.RoundTripDelayMs, cancellationToken);
-        return requestPayload;
+        return requestFrame;
     }
 }

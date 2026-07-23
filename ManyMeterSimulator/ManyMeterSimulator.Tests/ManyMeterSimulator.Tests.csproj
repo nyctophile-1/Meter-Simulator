@@ -22,4 +22,12 @@
     <ProjectReference Include="..\ManyMeterSimulator\ManyMeterSimulator.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Small real templates for the brain-session tests, copied next to the test assembly. -->
+    <Content Include="..\ManyMeterSimulator\Templates\SA1231166HP_values.xml"
+             Link="Templates\SA1231166HP_values.xml" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\ManyMeterSimulator\Templates\SA1231166HP_values_bill.xml"
+             Link="Templates\SA1231166HP_values_bill.xml" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

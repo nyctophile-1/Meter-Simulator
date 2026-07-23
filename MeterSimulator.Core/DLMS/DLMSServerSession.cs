@@ -33,11 +33,13 @@ namespace MeterSimulator.DLMS
         private readonly object _pushLock = new();
         private Timer? _pushTimer;
 
-        public DLMSServerSession(DLMSMeter meter, PushConfig? pushConfig = null)
+        public DLMSServerSession(DLMSMeter meter, string templatePath, PushConfig? pushConfig = null)
         : base(
             true,
             InterfaceType.WRAPPER)
         {
+            if (string.IsNullOrWhiteSpace(templatePath))
+                throw new ArgumentException("A meter template (XML) path is required.", nameof(templatePath));
             //Ciphering.Security = Security.AuthenticationEncryption;
             Ciphering.SystemTitle = meter.SystemTitle;
             Ciphering.BlockCipherKey = meter.BlockCipherKey;
@@ -61,8 +63,9 @@ namespace MeterSimulator.DLMS
 
             Items.Clear();
 
-            //var loader = new MeterObjectLoader("C:\\Users\\AkshitaGupta\\OneDrive - Sinhal Udyog pvt ltd\\Desktop\\SZ0000014HP_Only_Push.xml");
-            var loader = new MeterObjectLoader("C:\\Users\\AkshitaGupta\\OneDrive - Sinhal Udyog pvt ltd\\Desktop\\Values_SZ0000014HP.xml");
+            // Template (DLMS object model) is chosen per-batch and resolved to a path by
+            // the host (MeterSessionManager) — no hardcoded/machine-specific path here.
+            var loader = new MeterObjectLoader(templatePath);
 
             loader.Load(_objectsFromFile);
 
@@ -71,6 +74,13 @@ namespace MeterSimulator.DLMS
             // PushSetup NOW — before the objects are registered in Items — so both
             // the push sender and the value the HES reads back reflect our target.
             ApplyPushDestinationOverride(_objectsFromFile);
+
+            // The XML template bakes in a single serial (e.g. "SA1231166").  Every meter is
+            // built from a SHARED template, so rewrite the serial-number object to THIS meter's
+            // own serial before the values are copied into the meter store — otherwise every
+            // meter would report the template's serial and HES couldn't tell them apart
+            // (HES reconciles IP-vs-meterno using the serial in the DLMS payload).
+            ApplySerialOverride(_objectsFromFile);
 
             foreach (var obj in _objectsFromFile)
             {
@@ -151,6 +161,30 @@ namespace MeterSimulator.DLMS
                     $"'{push.Destination}' → '{dest}'");
                 push.Destination = dest;
             }
+        }
+
+        /// <summary>
+        /// OBIS of the meter serial number (a GXDLMSData string, attr 2).
+        /// </summary>
+        private const string SerialNumberLN = "0.0.96.1.0.255";
+
+        /// <summary>
+        /// Replaces the serial-number object's value with this meter's own serial
+        /// (<see cref="DLMSMeter.MeterNo"/>, "MY" + 9-digit index).  No-op if the template
+        /// has no serial object.
+        /// </summary>
+        private void ApplySerialOverride(GXDLMSObjectCollection objects)
+        {
+            if (objects.FindByLN(ObjectType.Data, SerialNumberLN) is not GXDLMSData serial)
+            {
+                Console.WriteLine($"[Serial] {_meter.MeterNo}: no {SerialNumberLN} in template, skipping");
+                return;
+            }
+
+            Console.WriteLine(
+                $"[Serial] {_meter.MeterNo}: rewriting {SerialNumberLN} '{serial.Value}' → '{_meter.MeterNo}'");
+            serial.Value = _meter.MeterNo;
+            serial.SetDataType(2, DataType.String);
         }
 
         /// <summary>
@@ -279,6 +313,15 @@ namespace MeterSimulator.DLMS
         /// PushSetup NumberOfRetries / RepetitionDelay so a missing receiver doesn't
         /// kill the timer.
         /// </summary>
+        /// <remarks>
+        /// PUSH-READINESS SEAM (merge_task.md #15) — push is currently deferred, but when it is
+        /// wired in the merged host this outbound socket MUST bind its LOCAL endpoint to the
+        /// meter's own IPv6 (<see cref="DLMSMeter"/> index → address). In the field, push from
+        /// meter ABC originates from ABC's IP:4059 — the same IP HES pulls from — so the receiver
+        /// correlates the push to the right meter by source IP. The host owns the whole /64 via the
+        /// local route, so binding to the meter's address is possible; do it here (e.g.
+        /// `new TcpClient(new IPEndPoint(meterAddress, 0))`).
+        /// </remarks>
         private void SendFrames(GXDLMSPushSetup push, string host, int port, byte[][] frames)
         {
             int attempts = Math.Max(1, (int)push.NumberOfRetries);
@@ -287,6 +330,7 @@ namespace MeterSimulator.DLMS
             {
                 try
                 {
+                    // NOTE (push-readiness): bind local endpoint to the meter's IPv6 here — see remarks.
                     using var client = new TcpClient();
                     if (!client.ConnectAsync(host, port).Wait(TimeSpan.FromSeconds(5)))
                         throw new TimeoutException("connect timeout");
@@ -665,8 +709,13 @@ namespace MeterSimulator.DLMS
 
         protected override bool IsTarget(int serverAddress, int clientAddress)
         {
-            //return true;
-            return serverAddress == _meter.ServerAddress;
+            // Routing to the correct meter is done by IPv6 before this session ever sees a
+            // frame (MeterSessionManager keys sessions by meter IP), and each session serves
+            // exactly one meter. So we accept whatever DLMS server (lower) address the HES
+            // dialed rather than rejecting on it — the logical device address is fixed on a
+            // real meter and the IP is the distinguisher here. Per-meter distinctness lives
+            // in the crypto identity (system title / keys), not this address.
+            return true;
         }
 
 

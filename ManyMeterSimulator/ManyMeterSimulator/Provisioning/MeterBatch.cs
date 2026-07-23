@@ -10,6 +10,12 @@ public sealed class MeterBatch
 
     public required string Name { get; init; }
 
+    /// <summary>
+    /// Name of the DLMS template (XML) every meter in this batch is built from
+    /// (see TemplateRegistry). Required — a batch with no template can't be simulated.
+    /// </summary>
+    public required string TemplateName { get; init; }
+
     /// <summary>1-based index of the first meter in this batch.</summary>
     public required long StartIndex { get; init; }
 

@@ -20,6 +20,7 @@ public class TcpNicListenerService : BackgroundService
     private readonly SimulatedBridgeOptions _simulatedBridgeOptions;
     private readonly SimulatorMetrics _metrics;
     private readonly MeterRegistry _meterRegistry;
+    private readonly TemplateRegistry _templateRegistry;
     private readonly IHostApplicationLifetime _appLifetime;
 
     // Deliberately NOT the same token ExecuteAsync receives: that one is cancelled the instant
@@ -40,6 +41,7 @@ public class TcpNicListenerService : BackgroundService
         IOptions<SimulatedBridgeOptions> simulatedBridgeOptions,
         SimulatorMetrics metrics,
         MeterRegistry meterRegistry,
+        TemplateRegistry templateRegistry,
         IHostApplicationLifetime appLifetime)
     {
         _logger = logger;
@@ -49,6 +51,7 @@ public class TcpNicListenerService : BackgroundService
         _simulatedBridgeOptions = simulatedBridgeOptions.Value;
         _metrics = metrics;
         _meterRegistry = meterRegistry;
+        _templateRegistry = templateRegistry;
         _appLifetime = appLifetime;
     }
 
@@ -174,11 +177,11 @@ public class TcpNicListenerService : BackgroundService
         _logger.LogInformation(
             "{Kind} metrics: active={Active}, accepted={Accepted}, rejectedCollision={RejectedCollision}, " +
             "rejectedMaxConn={RejectedMaxConn}, rejectedBatchNotRunning={RejectedBatchNotRunning}, " +
-            "idleTimeouts={IdleTimeouts}, exchanges={Exchanges}, " +
+            "rejectedNoTemplate={RejectedNoTemplate}, idleTimeouts={IdleTimeouts}, exchanges={Exchanges}, " +
             "avgBridgeLatency={AvgLatencyMs}ms, maxBridgeLatency={MaxLatencyMs}ms",
             kind, snapshot.ActiveConnections, snapshot.TotalAccepted, snapshot.TotalRejectedCollision,
             snapshot.TotalRejectedMaxConnections, snapshot.TotalRejectedBatchNotRunning,
-            snapshot.TotalIdleTimeouts, snapshot.TotalExchanges,
+            snapshot.TotalRejectedNoTemplate, snapshot.TotalIdleTimeouts, snapshot.TotalExchanges,
             snapshot.AvgBridgeLatency.TotalMilliseconds, snapshot.MaxBridgeLatency.TotalMilliseconds);
     }
 
@@ -190,16 +193,34 @@ public class TcpNicListenerService : BackgroundService
             var remoteEndPoint = (IPEndPoint)connection.RemoteEndPoint!;
             var meterId = localEndPoint.Address;
 
-            // Meters never assigned to any batch keep the old permissive behavior (accepted
-            // regardless) - this only rejects meters that belong to a batch explicitly not
-            // Running (NotStarted or Stopped).
-            BatchStatus? batchStatus = _meterRegistry.GetBatchStatusForAddress(meterId, _options.AddressPrefix);
-            if (batchStatus is BatchStatus.NotStarted or BatchStatus.Stopped)
+            // A meter must belong to a batch AND that batch must have a resolvable template — a
+            // meter with no template can't be simulated, so we reject it (this replaces the old
+            // permissive behavior where meters not assigned to any batch were accepted).
+            MeterBatch? batch = _meterRegistry.GetBatchForAddress(meterId);
+            if (batch is null)
+            {
+                _logger.LogInformation(
+                    "Rejected connection for meter {MeterId} from HES {RemoteEndPoint}: not part of any batch (no template)",
+                    meterId, remoteEndPoint);
+                _metrics.RecordRejectedNoTemplate();
+                return;
+            }
+
+            if (batch.Status is BatchStatus.NotStarted or BatchStatus.Stopped)
             {
                 _logger.LogInformation(
                     "Rejected connection for meter {MeterId} from HES {RemoteEndPoint}: batch is {BatchStatus}",
-                    meterId, remoteEndPoint, batchStatus);
+                    meterId, remoteEndPoint, batch.Status);
                 _metrics.RecordRejectedBatchNotRunning();
+                return;
+            }
+
+            if (!_templateRegistry.TryResolve(batch.TemplateName, out _))
+            {
+                _logger.LogWarning(
+                    "Rejected connection for meter {MeterId} from HES {RemoteEndPoint}: batch template '{Template}' not found",
+                    meterId, remoteEndPoint, batch.TemplateName);
+                _metrics.RecordRejectedNoTemplate();
                 return;
             }
 
@@ -268,12 +289,16 @@ public class TcpNicListenerService : BackgroundService
                         state.MeterId, frame.SourceWPort, frame.DestinationWPort, frame.Payload.Length);
 
                     var bridgeStopwatch = Stopwatch.StartNew();
-                    byte[] responsePayload = await _bridge.ExchangeAsync(state.MeterId, frame.Payload, sessionToken);
+                    // Hand the brain the COMPLETE frame; it returns a complete wrapper reply
+                    // (Gurux owns wrapper build), which we write back verbatim — no re-wrapping.
+                    byte[] response = await _bridge.ExchangeAsync(state.MeterId, frame.Raw, sessionToken);
                     bridgeStopwatch.Stop();
                     _metrics.RecordExchange(bridgeStopwatch.Elapsed);
 
-                    byte[] response = DlmsWpduFramer.BuildFrame(frame.DestinationWPort, frame.SourceWPort, responsePayload);
-                    await writer.WriteAsync(response, sessionToken);
+                    if (response.Length > 0)
+                    {
+                        await writer.WriteAsync(response, sessionToken);
+                    }
                     state.Touch();
 
                     _logger.LogInformation(

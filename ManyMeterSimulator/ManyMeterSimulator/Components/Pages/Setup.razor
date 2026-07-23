@@ -5,7 +5,9 @@
 @using Microsoft.AspNetCore.Authorization
 @using Microsoft.AspNetCore.Components.Authorization
 @using ManyMeterSimulator.Auth
+@using Microsoft.AspNetCore.Components.Forms
 @inject MeterRegistry MeterRegistry
+@inject TemplateRegistry TemplateRegistry
 @inject IOptions<TcpOptions> TcpOptionsAccessor
 
 <PageTitle>MAYA - Setup</PageTitle>
@@ -26,6 +28,30 @@
         <input id="meterCount" type="number" min="1" @bind="MeterCount" @bind:event="onchange" />
     </div>
 
+    <div class="field">
+        <label for="template">DLMS template:</label>
+        <select id="template" @bind="SelectedTemplate">
+            <option value="">-- select a template --</option>
+            @foreach (string t in Templates)
+            {
+                <option value="@t">@t</option>
+            }
+        </select>
+        @if (Templates.Count == 0)
+        {
+            <span class="error">No templates found in the templates folder.</span>
+        }
+    </div>
+
+    <div class="field">
+        <label>Upload template (.xml):</label>
+        <InputFile OnChange="OnTemplateUpload" accept=".xml" />
+        @if (UploadMessage is not null)
+        {
+            <span>@UploadMessage</span>
+        }
+    </div>
+
     @if (MeterCount > 0)
     {
         BatchPreview preview = MeterRegistry.PreviewNextBatch(AddressPrefix, MeterCount);
@@ -36,7 +62,7 @@
         </p>
     }
 
-    <button @onclick="AddBatch" disabled="@(MeterCount <= 0 || string.IsNullOrWhiteSpace(BatchName))">Add Batch</button>
+    <button @onclick="AddBatch" disabled="@(MeterCount <= 0 || string.IsNullOrWhiteSpace(BatchName) || string.IsNullOrWhiteSpace(SelectedTemplate))">Add Batch</button>
 
     @if (ErrorMessage is not null)
     {
@@ -58,6 +84,7 @@ else
         <thead>
             <tr>
                 <th>Name</th>
+                <th>Template</th>
                 <th>Count</th>
                 <th>IP range</th>
                 <th>Meter# range</th>
@@ -74,6 +101,7 @@ else
                 (IPAddress firstAddr, IPAddress lastAddr) = MeterRegistry.GetAddressRange(batch, AddressPrefix);
                 <tr class="batch-row" @onclick="() => ToggleExpanded(batch.Id)">
                     <td>@batch.Name</td>
+                    <td>@batch.TemplateName</td>
                     <td>@batch.Count.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</td>
                     <td>@firstAddr - @lastAddr</td>
                     <td>@MeterRegistry.FormatSerial(batch.StartIndex) - @MeterRegistry.FormatSerial(batch.EndIndex)</td>
@@ -93,7 +121,7 @@ else
                 @if (ExpandedBatchId == batch.Id)
                 {
                     <tr class="detail-row">
-                        <td colspan="6">
+                        <td colspan="7">
                             @{
                                 const int maxShown = 50;
                                 var meters = MeterRegistry.GetMeters(batch, AddressPrefix).Take(maxShown).ToList();
@@ -124,8 +152,15 @@ else
 
     private string BatchName { get; set; } = "";
     private int MeterCount { get; set; } = 100;
+    private string SelectedTemplate { get; set; } = "";
     private string? ErrorMessage;
+    private string? UploadMessage;
     private int? ExpandedBatchId;
+
+    // Templates can be large (the full-model XML is ~4 MB); allow generous headroom for upload.
+    private const long MaxUploadBytes = 32 * 1024 * 1024;
+
+    private IReadOnlyList<string> Templates => TemplateRegistry.List();
 
     private string AddressPrefix => TcpOptionsAccessor.Value.AddressPrefix;
 
@@ -153,12 +188,34 @@ else
         ErrorMessage = null;
         try
         {
-            MeterRegistry.AddBatch(BatchName, MeterCount);
+            MeterRegistry.AddBatch(BatchName, SelectedTemplate, MeterCount);
             BatchName = "";
         }
-        catch (Exception ex) when (ex is ArgumentOutOfRangeException or InvalidOperationException)
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         {
             ErrorMessage = ex.Message;
+        }
+    }
+
+    private async Task OnTemplateUpload(InputFileChangeEventArgs e)
+    {
+        if (!IsAdmin)
+        {
+            return; // defense in depth
+        }
+
+        UploadMessage = null;
+        try
+        {
+            IBrowserFile file = e.File;
+            await using Stream stream = file.OpenReadStream(MaxUploadBytes);
+            string saved = await TemplateRegistry.SaveUploadAsync(file.Name, stream);
+            SelectedTemplate = saved; // auto-select the just-uploaded template
+            UploadMessage = $"Uploaded '{saved}'.";
+        }
+        catch (Exception ex)
+        {
+            UploadMessage = $"Upload failed: {ex.Message}";
         }
     }
 

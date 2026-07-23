@@ -76,8 +76,10 @@ public static class DlmsWpduFramer
         }
 
         byte[] payload = buffer.Slice(headerEnd, length).ToArray();
+        // The whole frame (header + payload) is handed to the brain, which owns wrapper handling.
+        byte[] raw = buffer.Slice(0, HeaderLength + length).ToArray();
         consumed = buffer.GetPosition(length, headerEnd);
-        frame = new WpduFrame(version, sourceWPort, destinationWPort, payload);
+        frame = new WpduFrame(version, sourceWPort, destinationWPort, payload) { Raw = raw };
         return true;
     }
 

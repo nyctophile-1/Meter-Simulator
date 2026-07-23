@@ -7,6 +7,7 @@ public sealed class SimulatorMetrics
     private long _totalRejectedCollision;
     private long _totalRejectedMaxConnections;
     private long _totalRejectedBatchNotRunning;
+    private long _totalRejectedNoTemplate;
     private long _totalIdleTimeouts;
     private long _totalExchanges;
     private long _bridgeLatencyTicksSum;
@@ -19,6 +20,8 @@ public sealed class SimulatorMetrics
     public void RecordRejectedMaxConnections() => Interlocked.Increment(ref _totalRejectedMaxConnections);
 
     public void RecordRejectedBatchNotRunning() => Interlocked.Increment(ref _totalRejectedBatchNotRunning);
+
+    public void RecordRejectedNoTemplate() => Interlocked.Increment(ref _totalRejectedNoTemplate);
 
     public void RecordIdleTimeout() => Interlocked.Increment(ref _totalIdleTimeouts);
 
@@ -41,6 +44,7 @@ public sealed class SimulatorMetrics
             Interlocked.Read(ref _totalRejectedCollision),
             Interlocked.Read(ref _totalRejectedMaxConnections),
             Interlocked.Read(ref _totalRejectedBatchNotRunning),
+            Interlocked.Read(ref _totalRejectedNoTemplate),
             Interlocked.Read(ref _totalIdleTimeouts),
             totalExchanges,
             avgLatency,
@@ -68,6 +72,7 @@ public readonly record struct SimulatorMetricsSnapshot(
     long TotalRejectedCollision,
     long TotalRejectedMaxConnections,
     long TotalRejectedBatchNotRunning,
+    long TotalRejectedNoTemplate,
     long TotalIdleTimeouts,
     long TotalExchanges,
     TimeSpan AvgBridgeLatency,

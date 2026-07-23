@@ -365,10 +365,26 @@ output.
 
 ### 10.6 brain_sim merge — status
 
-**Deferred.** Real brain_sim code is not being merged in now. `SimulatedMeterSimBridge` (§ Phase
-4) continues to stand in. When the merge happens: brain_sim's logic gets called directly in-process
-(a new `IMeterSimBridge` implementation making direct calls instead of MQTT), which the existing
-seam already supports cleanly — no rework needed in `TcpNicListenerService` when that day comes.
+**Done.** The brain (`MeterSimulator.Core`, the Gurux DLMS engine, formerly the standalone
+`Meter-Simulator` console) is merged in-process. Its own TCP code was removed — the NIC owns all
+HES-facing networking. The seam held exactly as predicted: `BrainMeterSimBridge` implements
+`IMeterSimBridge` and calls the brain directly (no MQTT), with **no change to
+`TcpNicListenerService`'s accept/session structure**. See `walkthrough.md` and `merge_task.md` for
+the full account. Key points:
+
+- **Seam carries the full WPDU frame** (not just the APDU): the brain is a Gurux WRAPPER server that
+  owns wrapper parse/build, so the listener hands it `WpduFrame.Raw` and writes the reply verbatim.
+- **`MeterSessionManager`** is the authoritative per-meter state store, keyed by IPv6 — one
+  `DLMSServerSession` per meter, built once from the batch's template, never rebuilt on reconnect.
+  Both the inbound pull path and (future) push resolve the same instance.
+- **Templates** are per-batch (`TemplateRegistry` + `Templates/` folder + browser upload). A meter
+  with no batch/template is **rejected** (`rejectedNoTemplate` metric) — the old permissive path is
+  gone. This supersedes §10.8's "batch templates deferred".
+- **Per-meter identity**: system title + keys derived from the IPv6 index (`MeterIdentity`); serial
+  OBIS `0.0.96.1.0.255` rewritten per meter. DLMS server address stays fixed (IP is the key).
+- **Push remains deferred**, with seams reserved (`MaterializeBatch`, source-IP bind at push egress).
+- `HESTestClient` stays a framing-only tool (use `Brain:Mode=Simulated`); real DLMS end-to-end is
+  validated against the actual HES. Brain-session build + serial override are covered by unit tests.
 
 ### 10.7 Batches - provisioning unit (done)
 

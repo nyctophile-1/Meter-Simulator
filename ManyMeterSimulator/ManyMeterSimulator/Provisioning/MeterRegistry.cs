@@ -47,12 +47,20 @@ public sealed class MeterRegistry
         }
     }
 
-    /// <summary>Reserves the next `count` indices as a new batch. Does not start it.</summary>
-    public MeterBatch AddBatch(string name, long count)
+    /// <summary>
+    /// Reserves the next `count` indices as a new batch bound to <paramref name="templateName"/>.
+    /// Does not start it. Every meter in the batch is built from that template.
+    /// </summary>
+    public MeterBatch AddBatch(string name, string templateName, long count)
     {
         if (count <= 0)
         {
             throw new ArgumentOutOfRangeException(nameof(count), "Must provision at least one meter.");
+        }
+
+        if (string.IsNullOrWhiteSpace(templateName))
+        {
+            throw new ArgumentException("A batch must be bound to a template.", nameof(templateName));
         }
 
         lock (_lock)
@@ -64,7 +72,14 @@ public sealed class MeterRegistry
                     $"Cannot add {count} meter(s): only {remaining} remain before the {MaxIndex} max is reached.");
             }
 
-            var batch = new MeterBatch { Id = _nextBatchId++, Name = name, StartIndex = _nextIndex, Count = count };
+            var batch = new MeterBatch
+            {
+                Id = _nextBatchId++,
+                Name = name,
+                TemplateName = templateName,
+                StartIndex = _nextIndex,
+                Count = count
+            };
             _batches.Add(batch);
             _nextIndex += count;
             return batch;
@@ -97,8 +112,8 @@ public sealed class MeterRegistry
         (MeterAddressing.ComputeAddress(addressPrefixCidr, batch.StartIndex),
          MeterAddressing.ComputeAddress(addressPrefixCidr, batch.EndIndex));
 
-    /// <summary>Status of the batch that owns this address, or null if the address isn't part of any batch (unrestricted, legacy behavior).</summary>
-    public BatchStatus? GetBatchStatusForAddress(IPAddress address, string addressPrefixCidr)
+    /// <summary>The batch that owns this address, or null if the address isn't part of any batch.</summary>
+    public MeterBatch? GetBatchForAddress(IPAddress address)
     {
         long index = MeterAddressing.ExtractIndex(address);
 
@@ -108,13 +123,21 @@ public sealed class MeterRegistry
             {
                 if (index >= batch.StartIndex && index <= batch.EndIndex)
                 {
-                    return batch.Status;
+                    return batch;
                 }
             }
         }
 
         return null;
     }
+
+    /// <summary>Status of the batch that owns this address, or null if the address isn't part of any batch.</summary>
+    public BatchStatus? GetBatchStatusForAddress(IPAddress address, string addressPrefixCidr) =>
+        GetBatchForAddress(address)?.Status;
+
+    /// <summary>Template name of the batch that owns this address, or null if unprovisioned.</summary>
+    public string? GetTemplateNameForAddress(IPAddress address) =>
+        GetBatchForAddress(address)?.TemplateName;
 
     private bool TrySetStatus(int batchId, BatchStatus status)
     {

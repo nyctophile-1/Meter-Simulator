@@ -1,0 +1,3848 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Objects>
+  <GXDLMSData>
+    <LN>0.0.42.0.0.255</LN>
+    <Description>COSEM Logical Device Name</Description>
+    <Access>11</Access>
+    <MethodAccess />
+    <Value Type="10">CRY0000SA1231166</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.0.96.1.0.255</LN>
+    <Description>Meter Serial Number</Description>
+    <Access>11</Access>
+    <MethodAccess />
+    <Value Type="10">SA1231166</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.0.96.1.2.255</LN>
+    <Description>Device ID</Description>
+    <Access>11</Access>
+    <MethodAccess />
+    <Value Type="10">CRYSA1231166</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.0.96.1.1.255</LN>
+    <Description>Manufacturer Name</Description>
+    <Access>11</Access>
+    <MethodAccess />
+    <Value Type="10">Sinhal Udyog Pvt. Ltd.</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>1.0.0.2.0.255</LN>
+    <Description>Firmware Version For Meter</Description>
+    <Access>11</Access>
+    <MethodAccess />
+    <Value Type="10">KU1 01.24</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>1.0.128.2.0.255</LN>
+    <Description>Man. specific</Description>
+    <Access>11</Access>
+    <MethodAccess />
+    <Value Type="10">APHP0.01.52</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.0.94.91.9.255</LN>
+    <Description>Meter Type</Description>
+    <Access>11</Access>
+    <MethodAccess />
+    <Value Type="17">6</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.0.94.91.11.255</LN>
+    <Description>Meter Category</Description>
+    <Access>11</Access>
+    <MethodAccess />
+    <Value Type="10">D1</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.0.94.91.12.255</LN>
+    <Description>Current Rating</Description>
+    <Access>11</Access>
+    <MethodAccess />
+    <Value Type="10">(10-60) A</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.0.96.1.4.255</LN>
+    <Description>Year Of Manufacture</Description>
+    <Access>11</Access>
+    <MethodAccess />
+    <Value Type="18">2025</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>1.0.0.8.0.255</LN>
+    <Description>Demand Integration Period</Description>
+    <Access>13</Access>
+    <MethodAccess />
+    <Value Type="18">900</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>1.0.0.8.4.255</LN>
+    <Description>Profile Capture Period</Description>
+    <Access>13</Access>
+    <MethodAccess />
+    <Value Type="6">900</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>1.0.0.8.5.255</LN>
+    <Description>Ch. 0 Recording interval 2, for load profile</Description>
+    <Access>11</Access>
+    <MethodAccess />
+    <Value Type="6">86400</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.0.94.91.0.255</LN>
+    <Description>Cumulative Tamper Count</Description>
+    <Access>11</Access>
+    <MethodAccess />
+    <Value Type="6">7</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.0.0.1.0.255</LN>
+    <Description>Cum. Billing Count</Description>
+    <Access>11</Access>
+    <MethodAccess />
+    <Value Type="6">14</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.0.96.2.0.255</LN>
+    <Description>Cum. Programming Count</Description>
+    <Access>11</Access>
+    <MethodAccess />
+    <Value Type="18">0</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.0.96.11.0.255</LN>
+    <Description>Event:Voltage Related</Description>
+    <Access>13</Access>
+    <MethodAccess />
+    <Value Type="22">10</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.0.96.11.1.255</LN>
+    <Description>Event:Current Related</Description>
+    <Access>13</Access>
+    <MethodAccess />
+    <Value Type="22">0</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.0.96.11.2.255</LN>
+    <Description>Event:Power Related</Description>
+    <Access>13</Access>
+    <MethodAccess />
+    <Value Type="22">102</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.0.96.11.3.255</LN>
+    <Description>Event:Transaction Related</Description>
+    <Access>13</Access>
+    <MethodAccess />
+    <Value Type="22">0</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.0.96.11.4.255</LN>
+    <Description>Event:Others</Description>
+    <Access>13</Access>
+    <MethodAccess />
+    <Value Type="22">204</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.0.96.11.5.255</LN>
+    <Description>Event:Non-Roll Over</Description>
+    <Access>13</Access>
+    <MethodAccess />
+    <Value Type="22">0</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.0.96.11.6.255</LN>
+    <Description>Event:Control</Description>
+    <Access>13</Access>
+    <MethodAccess />
+    <Value Type="22">0</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.0.0.1.1.255</LN>
+    <Description>Available Billing Periods</Description>
+    <Access>11</Access>
+    <MethodAccess />
+    <Value Type="17">12</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.0.94.91.18.255</LN>
+    <Description>Event Status Word 1 (ESW-1)</Description>
+    <Access>13</Access>
+    <MethodAccess />
+    <Value Type="4">00000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.0.94.91.26.255</LN>
+    <Description>ESWF</Description>
+    <Access>13</Access>
+    <MethodAccess />
+    <Value Type="4">00011010000110000000000000000000000000000000000000010000000000000000000000000000011111110000000000000000000000000000000000000000</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.0.94.96.19.255</LN>
+    <Description>Metering Mode</Description>
+    <Access>13</Access>
+    <MethodAccess />
+    <Value Type="17">0</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.0.96.13.1.255</LN>
+    <Description>Ch. 0 Consumer message via the meter display and/or via local consumer information port</Description>
+    <Access>13</Access>
+    <MethodAccess />
+    <Value Type="10"></Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.0.94.96.20.255</LN>
+    <Description>Payment Mode</Description>
+    <Access>13</Access>
+    <MethodAccess />
+    <Value Type="17">0</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.0.94.96.21.255</LN>
+    <Description>Last Token Recharge Amount</Description>
+    <Access>13</Access>
+    <MethodAccess />
+    <Value Type="5">0</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.0.94.96.22.255</LN>
+    <Description>Last Token Recharge Time</Description>
+    <Access>13</Access>
+    <MethodAccess />
+    <Value Type="9" UIType="25">*/*/* 00:00:00</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.0.94.96.23.255</LN>
+    <Description>Total Amount At Last Recharge</Description>
+    <Access>13</Access>
+    <MethodAccess />
+    <Value Type="5">0</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.0.94.96.24.255</LN>
+    <Description>Current Balance Amount</Description>
+    <Access>13</Access>
+    <MethodAccess />
+    <Value Type="5">0</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.0.94.96.25.255</LN>
+    <Description>Current Balance Time</Description>
+    <Access>13</Access>
+    <MethodAccess />
+    <Value Type="9" UIType="25">*/*/* 00:00:00</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.128.128.0.1.255</LN>
+    <Description>Manufacturer specific</Description>
+    <Access>13</Access>
+    <MethodAccess />
+    <Value Type="6">180</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.128.128.0.2.255</LN>
+    <Description>Manufacturer specific</Description>
+    <Access>13</Access>
+    <MethodAccess />
+    <Value Type="6">180</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.128.128.0.3.255</LN>
+    <Description>Manufacturer specific</Description>
+    <Access>13</Access>
+    <MethodAccess />
+    <Value Type="6">1800</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.128.128.0.4.255</LN>
+    <Description>Manufacturer specific</Description>
+    <Access>13</Access>
+    <MethodAccess />
+    <Value Type="17">3</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.128.128.0.5.255</LN>
+    <Description>Manufacturer specific</Description>
+    <Access>13</Access>
+    <MethodAccess />
+    <Value Type="6">180</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.128.128.0.6.255</LN>
+    <Description>Manufacturer specific</Description>
+    <Access>13</Access>
+    <MethodAccess />
+    <Value Type="6">180</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.0.128.1.0.255</LN>
+    <Description>Manufacturer specific</Description>
+    <Access>11</Access>
+    <MethodAccess />
+    <Value Type="10">KIM0.T02.05.025</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.0.128.1.1.255</LN>
+    <Description>Manufacturer specific</Description>
+    <Access>11</Access>
+    <MethodAccess />
+    <Value Type="6">0</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.0.128.1.2.255</LN>
+    <Description>Manufacturer specific</Description>
+    <Access>11</Access>
+    <MethodAccess />
+    <Value Type="6">0</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.0.128.1.3.255</LN>
+    <Description>Manufacturer specific</Description>
+    <Access>13</Access>
+    <MethodAccess />
+    <Value Type="6">7340289</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.0.128.1.4.255</LN>
+    <Description>Manufacturer specific</Description>
+    <Access>13</Access>
+    <MethodAccess />
+    <Value Type="17">1</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.0.128.1.5.255</LN>
+    <Description>Manufacturer specific</Description>
+    <Access>13</Access>
+    <MethodAccess />
+    <Value Type="9">45 4E 43 5F 41 50 52 56 41 5F 48 50 53 45 42 4C</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.0.96.1.5.255</LN>
+    <Description>Ch. 0 Device ID  #6</Description>
+    <Access>11</Access>
+    <MethodAccess />
+    <Value Type="10">863674077786885</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.0.96.1.6.255</LN>
+    <Description>Ch. 0 Device ID  #7</Description>
+    <Access>11</Access>
+    <MethodAccess />
+    <Value Type="9" UIType="10">8991102405925139396F</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.0.128.1.8.255</LN>
+    <Description>Manufacturer specific</Description>
+    <Access>13</Access>
+    <MethodAccess />
+    <Value Type="9"></Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.0.128.1.16.255</LN>
+    <Description>Manufacturer specific</Description>
+    <Access>13</Access>
+    <MethodAccess />
+    <Value Type="15">0</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.0.128.1.17.255</LN>
+    <Description>Manufacturer specific</Description>
+    <Access>13</Access>
+    <MethodAccess />
+    <Value Type="2">
+      <Item Type="10">AIRTELMETERV6</Item>
+      <Item Type="10"></Item>
+      <Item Type="10"></Item>
+      <Item Type="10">apraavahps-cell-tcp.hpseb.co.in</Item>
+      <Item Type="18">4059</Item>
+      <Item Type="10">mqttmasteruser</Item>
+      <Item Type="10">Orvw69ZwBoc9JqEckgnFK8fZz4f72DY</Item>
+    </Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.128.96.0.12.255</LN>
+    <Description>Manufacturer specific</Description>
+    <Access>11</Access>
+    <MethodAccess />
+    <Value Type="16">0</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.128.96.0.16.255</LN>
+    <Description>Manufacturer specific</Description>
+    <Access>11</Access>
+    <MethodAccess />
+    <Value Type="10">KU_4G_V_0.3</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.0.128.3.0.255</LN>
+    <Description>Manufacturer specific</Description>
+    <Access>11</Access>
+    <MethodAccess />
+    <Value Type="18">0</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.0.128.2.0.255</LN>
+    <Description>Manufacturer specific</Description>
+    <Access>11</Access>
+    <MethodAccess />
+    <Value Type="18">0</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.0.128.4.0.255</LN>
+    <Description>Manufacturer specific</Description>
+    <Access>13</Access>
+    <MethodAccess />
+    <Value Type="16">0</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.0.165.128.128.255</LN>
+    <Description>Manufacturer specific</Description>
+    <Access>13</Access>
+    <MethodAccess />
+    <Value Type="10"></Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.0.165.128.129.255</LN>
+    <Description>Manufacturer specific</Description>
+    <Access>11</Access>
+    <MethodAccess />
+    <Value Type="17">0</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.0.43.1.2.255</LN>
+    <Description>Invocation Counter #2 (MR)</Description>
+    <Access>11</Access>
+    <MethodAccess />
+    <Value Type="6">0</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.0.43.1.3.255</LN>
+    <Description>Invocation Counter #3 (US)</Description>
+    <Access>11</Access>
+    <MethodAccess />
+    <Value Type="6">15449</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.0.43.1.4.255</LN>
+    <Description>Invocation Counter #4 (Push)</Description>
+    <Access>11</Access>
+    <MethodAccess />
+    <Value Type="6">56530</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.0.43.1.5.255</LN>
+    <Description>Invocation Counter #5 (FW)</Description>
+    <Access>11</Access>
+    <MethodAccess />
+    <Value Type="6">0</Value>
+  </GXDLMSData>
+  <GXDLMSRegister>
+    <LN>0.0.94.91.13.255</LN>
+    <Description>Billing Power On Duration</Description>
+    <Access>111</Access>
+    <MethodAccess>0</MethodAccess>
+    <Unit>6</Unit>
+    <Scaler>1</Scaler>
+    <Value Type="0" />
+  </GXDLMSRegister>
+  <GXDLMSRegister>
+    <LN>0.0.94.91.14.255</LN>
+    <Description>Cum. Power On Duration</Description>
+    <Access>111</Access>
+    <MethodAccess>0</MethodAccess>
+    <Unit>6</Unit>
+    <Scaler>1</Scaler>
+    <Value Type="0" />
+  </GXDLMSRegister>
+  <GXDLMSRegister>
+    <LN>0.0.0.1.2.255</LN>
+    <Description>Billing Date</Description>
+    <Access>111</Access>
+    <MethodAccess>0</MethodAccess>
+    <Unit>255</Unit>
+    <Scaler>1</Scaler>
+    <Value Type="0" />
+  </GXDLMSRegister>
+  <GXDLMSRegister>
+    <LN>1.0.1.7.0.255</LN>
+    <Description>Active Power-W</Description>
+    <Access>111</Access>
+    <MethodAccess>0</MethodAccess>
+    <Unit>27</Unit>
+    <Scaler>1000</Scaler>
+    <Value Type="0" />
+  </GXDLMSRegister>
+  <GXDLMSRegister>
+    <LN>1.0.12.7.0.255</LN>
+    <Description>Voltage</Description>
+    <Access>111</Access>
+    <MethodAccess>0</MethodAccess>
+    <Unit>35</Unit>
+    <Scaler>1</Scaler>
+    <Value Type="0" />
+  </GXDLMSRegister>
+  <GXDLMSRegister>
+    <LN>1.0.11.7.0.255</LN>
+    <Description>Phase Current</Description>
+    <Access>111</Access>
+    <MethodAccess>0</MethodAccess>
+    <Unit>33</Unit>
+    <Scaler>1</Scaler>
+    <Value Type="0" />
+  </GXDLMSRegister>
+  <GXDLMSRegister>
+    <LN>1.0.91.7.0.255</LN>
+    <Description>Neutral Current</Description>
+    <Access>111</Access>
+    <MethodAccess>0</MethodAccess>
+    <Unit>33</Unit>
+    <Scaler>1</Scaler>
+    <Value Type="0" />
+  </GXDLMSRegister>
+  <GXDLMSRegister>
+    <LN>1.0.13.7.0.255</LN>
+    <Description>Signed Power Factor</Description>
+    <Access>111</Access>
+    <MethodAccess>0</MethodAccess>
+    <Unit>255</Unit>
+    <Scaler>1</Scaler>
+    <Value Type="0" />
+  </GXDLMSRegister>
+  <GXDLMSRegister>
+    <LN>1.0.14.7.0.255</LN>
+    <Description>Frequency-Hz</Description>
+    <Access>111</Access>
+    <MethodAccess>0</MethodAccess>
+    <Unit>44</Unit>
+    <Scaler>1</Scaler>
+    <Value Type="0" />
+  </GXDLMSRegister>
+  <GXDLMSRegister>
+    <LN>1.0.9.7.0.255</LN>
+    <Description>Apparent Power-VA</Description>
+    <Access>111</Access>
+    <MethodAccess>0</MethodAccess>
+    <Unit>28</Unit>
+    <Scaler>1000</Scaler>
+    <Value Type="0" />
+  </GXDLMSRegister>
+  <GXDLMSRegister>
+    <LN>1.0.1.8.0.255</LN>
+    <Description>Cum. Energy-Wh(Imp)</Description>
+    <Access>111</Access>
+    <MethodAccess>0</MethodAccess>
+    <Unit>30</Unit>
+    <Scaler>1000</Scaler>
+    <Value Type="0" />
+  </GXDLMSRegister>
+  <GXDLMSRegister>
+    <LN>1.0.9.8.0.255</LN>
+    <Description>Cum. Energy-VAh(Imp)</Description>
+    <Access>111</Access>
+    <MethodAccess>0</MethodAccess>
+    <Unit>31</Unit>
+    <Scaler>1000</Scaler>
+    <Value Type="0" />
+  </GXDLMSRegister>
+  <GXDLMSRegister>
+    <LN>1.0.2.8.0.255</LN>
+    <Description>Cum. Energy-Wh(Exp)</Description>
+    <Access>111</Access>
+    <MethodAccess>0</MethodAccess>
+    <Unit>30</Unit>
+    <Scaler>1000</Scaler>
+    <Value Type="0" />
+  </GXDLMSRegister>
+  <GXDLMSRegister>
+    <LN>1.0.10.8.0.255</LN>
+    <Description>Cum. Energy-VAh(Exp)</Description>
+    <Access>111</Access>
+    <MethodAccess>0</MethodAccess>
+    <Unit>31</Unit>
+    <Scaler>1000</Scaler>
+    <Value Type="0" />
+  </GXDLMSRegister>
+  <GXDLMSRegister>
+    <LN>0.0.94.91.8.255</LN>
+    <Description>Cum. Power Failure Duration</Description>
+    <Access>111</Access>
+    <MethodAccess>0</MethodAccess>
+    <Unit>6</Unit>
+    <Scaler>1</Scaler>
+    <Value Type="0" />
+  </GXDLMSRegister>
+  <GXDLMSRegister>
+    <LN>1.0.12.27.0.255</LN>
+    <Description>Average Voltage</Description>
+    <Access>111</Access>
+    <MethodAccess>0</MethodAccess>
+    <Unit>35</Unit>
+    <Scaler>1</Scaler>
+    <Value Type="0" />
+  </GXDLMSRegister>
+  <GXDLMSRegister>
+    <LN>1.0.11.27.0.255</LN>
+    <Description>Average Current</Description>
+    <Access>111</Access>
+    <MethodAccess>0</MethodAccess>
+    <Unit>33</Unit>
+    <Scaler>1</Scaler>
+    <Value Type="0" />
+  </GXDLMSRegister>
+  <GXDLMSRegister>
+    <LN>1.0.91.27.0.255</LN>
+    <Description>Ch. 0 Lo Current (neutral) Current avg. 5</Description>
+    <Access>111</Access>
+    <MethodAccess>0</MethodAccess>
+    <Unit>33</Unit>
+    <Scaler>1</Scaler>
+    <Value Type="0" />
+  </GXDLMSRegister>
+  <GXDLMSRegister>
+    <LN>1.0.1.29.0.255</LN>
+    <Description>Block Energy-Wh(Imp)</Description>
+    <Access>111</Access>
+    <MethodAccess>0</MethodAccess>
+    <Unit>30</Unit>
+    <Scaler>1000</Scaler>
+    <Value Type="0" />
+  </GXDLMSRegister>
+  <GXDLMSRegister>
+    <LN>1.0.9.29.0.255</LN>
+    <Description>Block Energy-VAh(Imp)</Description>
+    <Access>111</Access>
+    <MethodAccess>0</MethodAccess>
+    <Unit>31</Unit>
+    <Scaler>1000</Scaler>
+    <Value Type="0" />
+  </GXDLMSRegister>
+  <GXDLMSRegister>
+    <LN>1.0.2.29.0.255</LN>
+    <Description>Block Energy-Wh(Exp)</Description>
+    <Access>111</Access>
+    <MethodAccess>0</MethodAccess>
+    <Unit>30</Unit>
+    <Scaler>1000</Scaler>
+    <Value Type="0" />
+  </GXDLMSRegister>
+  <GXDLMSRegister>
+    <LN>1.0.10.29.0.255</LN>
+    <Description>Block Energy-VAh(Exp)</Description>
+    <Access>111</Access>
+    <MethodAccess>0</MethodAccess>
+    <Unit>31</Unit>
+    <Scaler>1000</Scaler>
+    <Value Type="0" />
+  </GXDLMSRegister>
+  <GXDLMSRegister>
+    <LN>1.0.13.0.0.255</LN>
+    <Description>Average Power Factor for Billing Period</Description>
+    <Access>111</Access>
+    <MethodAccess>0</MethodAccess>
+    <Unit>255</Unit>
+    <Scaler>1</Scaler>
+    <Value Type="0" />
+  </GXDLMSRegister>
+  <GXDLMSRegister>
+    <LN>1.0.84.0.0.255</LN>
+    <Description>Ch. 0 Sum Li Power factor- Billing period avg. (since last reset) Rate 0 (0 is total)</Description>
+    <Access>111</Access>
+    <MethodAccess>0</MethodAccess>
+    <Unit>255</Unit>
+    <Scaler>1</Scaler>
+    <Value Type="0" />
+  </GXDLMSRegister>
+  <GXDLMSRegister>
+    <LN>1.0.1.8.1.255</LN>
+    <Description>Cum. Energy-Wh(Imp)-TZ1</Description>
+    <Access>111</Access>
+    <MethodAccess>0</MethodAccess>
+    <Unit>30</Unit>
+    <Scaler>1000</Scaler>
+    <Value Type="0" />
+  </GXDLMSRegister>
+  <GXDLMSRegister>
+    <LN>1.0.1.8.2.255</LN>
+    <Description>Cum. Energy-Wh(Imp)-TZ2</Description>
+    <Access>111</Access>
+    <MethodAccess>0</MethodAccess>
+    <Unit>30</Unit>
+    <Scaler>1000</Scaler>
+    <Value Type="0" />
+  </GXDLMSRegister>
+  <GXDLMSRegister>
+    <LN>1.0.1.8.3.255</LN>
+    <Description>Cum. Energy-Wh(Imp)-TZ3</Description>
+    <Access>111</Access>
+    <MethodAccess>0</MethodAccess>
+    <Unit>30</Unit>
+    <Scaler>1000</Scaler>
+    <Value Type="0" />
+  </GXDLMSRegister>
+  <GXDLMSRegister>
+    <LN>1.0.1.8.4.255</LN>
+    <Description>Cum. Energy-Wh(Imp)-TZ4</Description>
+    <Access>111</Access>
+    <MethodAccess>0</MethodAccess>
+    <Unit>30</Unit>
+    <Scaler>1000</Scaler>
+    <Value Type="0" />
+  </GXDLMSRegister>
+  <GXDLMSRegister>
+    <LN>1.0.1.8.5.255</LN>
+    <Description>Cum. Energy-Wh(Imp)-TZ5</Description>
+    <Access>111</Access>
+    <MethodAccess>0</MethodAccess>
+    <Unit>30</Unit>
+    <Scaler>1000</Scaler>
+    <Value Type="0" />
+  </GXDLMSRegister>
+  <GXDLMSRegister>
+    <LN>1.0.1.8.6.255</LN>
+    <Description>Cum. Energy-Wh(Imp)-TZ6</Description>
+    <Access>111</Access>
+    <MethodAccess>0</MethodAccess>
+    <Unit>30</Unit>
+    <Scaler>1000</Scaler>
+    <Value Type="0" />
+  </GXDLMSRegister>
+  <GXDLMSRegister>
+    <LN>1.0.1.8.7.255</LN>
+    <Description>Cum. Energy-Wh(Imp)-TZ7</Description>
+    <Access>111</Access>
+    <MethodAccess>0</MethodAccess>
+    <Unit>30</Unit>
+    <Scaler>1000</Scaler>
+    <Value Type="0" />
+  </GXDLMSRegister>
+  <GXDLMSRegister>
+    <LN>1.0.1.8.8.255</LN>
+    <Description>Cum. Energy-Wh(Imp)-TZ8</Description>
+    <Access>111</Access>
+    <MethodAccess>0</MethodAccess>
+    <Unit>30</Unit>
+    <Scaler>1000</Scaler>
+    <Value Type="0" />
+  </GXDLMSRegister>
+  <GXDLMSRegister>
+    <LN>1.0.9.8.1.255</LN>
+    <Description>Cum. Energy-VAh(Imp)-TZ1</Description>
+    <Access>111</Access>
+    <MethodAccess>0</MethodAccess>
+    <Unit>31</Unit>
+    <Scaler>1000</Scaler>
+    <Value Type="0" />
+  </GXDLMSRegister>
+  <GXDLMSRegister>
+    <LN>1.0.9.8.2.255</LN>
+    <Description>Cum. Energy-VAh(Imp)-TZ2</Description>
+    <Access>111</Access>
+    <MethodAccess>0</MethodAccess>
+    <Unit>31</Unit>
+    <Scaler>1000</Scaler>
+    <Value Type="0" />
+  </GXDLMSRegister>
+  <GXDLMSRegister>
+    <LN>1.0.9.8.3.255</LN>
+    <Description>Cum. Energy-VAh(Imp)-TZ3</Description>
+    <Access>111</Access>
+    <MethodAccess>0</MethodAccess>
+    <Unit>31</Unit>
+    <Scaler>1000</Scaler>
+    <Value Type="0" />
+  </GXDLMSRegister>
+  <GXDLMSRegister>
+    <LN>1.0.9.8.4.255</LN>
+    <Description>Cum. Energy-VAh(Imp)-TZ4</Description>
+    <Access>111</Access>
+    <MethodAccess>0</MethodAccess>
+    <Unit>31</Unit>
+    <Scaler>1000</Scaler>
+    <Value Type="0" />
+  </GXDLMSRegister>
+  <GXDLMSRegister>
+    <LN>1.0.9.8.5.255</LN>
+    <Description>Cum. Energy-VAh(Imp)-TZ5</Description>
+    <Access>111</Access>
+    <MethodAccess>0</MethodAccess>
+    <Unit>31</Unit>
+    <Scaler>1000</Scaler>
+    <Value Type="0" />
+  </GXDLMSRegister>
+  <GXDLMSRegister>
+    <LN>1.0.9.8.6.255</LN>
+    <Description>Cum. Energy-VAh(Imp)-TZ6</Description>
+    <Access>111</Access>
+    <MethodAccess>0</MethodAccess>
+    <Unit>31</Unit>
+    <Scaler>1000</Scaler>
+    <Value Type="0" />
+  </GXDLMSRegister>
+  <GXDLMSRegister>
+    <LN>1.0.9.8.7.255</LN>
+    <Description>Cum. Energy-VAh(Imp)-TZ7</Description>
+    <Access>111</Access>
+    <MethodAccess>0</MethodAccess>
+    <Unit>31</Unit>
+    <Scaler>1000</Scaler>
+    <Value Type="0" />
+  </GXDLMSRegister>
+  <GXDLMSRegister>
+    <LN>1.0.9.8.8.255</LN>
+    <Description>Cum. Energy-VAh(Imp)-TZ8</Description>
+    <Access>111</Access>
+    <MethodAccess>0</MethodAccess>
+    <Unit>31</Unit>
+    <Scaler>1000</Scaler>
+    <Value Type="0" />
+  </GXDLMSRegister>
+  <GXDLMSRegister>
+    <LN>1.0.94.91.14.255</LN>
+    <Description>Current</Description>
+    <Access>111</Access>
+    <MethodAccess>0</MethodAccess>
+    <Unit>33</Unit>
+    <Scaler>1</Scaler>
+    <Value Type="0" />
+  </GXDLMSRegister>
+  <GXDLMSRegister>
+    <LN>1.0.94.91.128.255</LN>
+    <Description>Ch. 0 Identifiers for India</Description>
+    <Access>131</Access>
+    <MethodAccess>0</MethodAccess>
+    <Unit>33</Unit>
+    <Scaler>1</Scaler>
+    <Value Type="0" />
+  </GXDLMSRegister>
+  <GXDLMSRegister>
+    <LN>0.0.96.9.128.255</LN>
+    <Description>Manufacturer specific</Description>
+    <Access>111</Access>
+    <MethodAccess>0</MethodAccess>
+    <Unit>9</Unit>
+    <Scaler>1</Scaler>
+    <Value Type="0" />
+  </GXDLMSRegister>
+  <GXDLMSExtendedRegister>
+    <LN>1.0.1.6.0.255</LN>
+    <Description>MD-W(Imp)</Description>
+    <Access>11111</Access>
+    <MethodAccess>0</MethodAccess>
+    <Unit>27</Unit>
+    <Scaler>1000</Scaler>
+    <Value Type="0" />
+    <Status Type="0" />
+    <CaptureTime />
+  </GXDLMSExtendedRegister>
+  <GXDLMSExtendedRegister>
+    <LN>1.0.9.6.0.255</LN>
+    <Description>MD-VA(Imp)</Description>
+    <Access>11111</Access>
+    <MethodAccess>0</MethodAccess>
+    <Unit>28</Unit>
+    <Scaler>1000</Scaler>
+    <Value Type="0" />
+    <Status Type="0" />
+    <CaptureTime />
+  </GXDLMSExtendedRegister>
+  <GXDLMSExtendedRegister>
+    <LN>1.0.2.6.0.255</LN>
+    <Description>MD-W(Exp)</Description>
+    <Access>11111</Access>
+    <MethodAccess>0</MethodAccess>
+    <Unit>27</Unit>
+    <Scaler>1000</Scaler>
+    <Value Type="0" />
+    <Status Type="0" />
+    <CaptureTime />
+  </GXDLMSExtendedRegister>
+  <GXDLMSExtendedRegister>
+    <LN>1.0.10.6.0.255</LN>
+    <Description>MD-VA(Exp)</Description>
+    <Access>11111</Access>
+    <MethodAccess>0</MethodAccess>
+    <Unit>28</Unit>
+    <Scaler>1000</Scaler>
+    <Value Type="0" />
+    <Status Type="0" />
+    <CaptureTime />
+  </GXDLMSExtendedRegister>
+  <GXDLMSProfileGeneric>
+    <LN>0.0.94.91.10.255</LN>
+    <Version>1</Version>
+    <Description>Nameplate Profile</Description>
+    <Access>11111111</Access>
+    <MethodAccess>00</MethodAccess>
+    <Buffer>
+      <Row>
+        <Cell Type="10">SA1231166</Cell>
+        <Cell Type="10">CRYSA1231166</Cell>
+        <Cell Type="10">Sinhal Udyog Pvt. Ltd.</Cell>
+        <Cell Type="10">KU1 01.24</Cell>
+        <Cell Type="17">6</Cell>
+        <Cell Type="10">D1</Cell>
+        <Cell Type="10">(10-60) A</Cell>
+        <Cell Type="18">2025</Cell>
+      </Row>
+    </Buffer>
+    <CaptureObjects>
+      <Item>
+        <ObjectType>1</ObjectType>
+        <LN>0.0.96.1.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>1</ObjectType>
+        <LN>0.0.96.1.2.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>1</ObjectType>
+        <LN>0.0.96.1.1.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>1</ObjectType>
+        <LN>1.0.0.2.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>1</ObjectType>
+        <LN>0.0.94.91.9.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>1</ObjectType>
+        <LN>0.0.94.91.11.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>1</ObjectType>
+        <LN>0.0.94.91.12.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>1</ObjectType>
+        <LN>0.0.96.1.4.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+    </CaptureObjects>
+    <CapturePeriod>0</CapturePeriod>
+    <SortMethod>1</SortMethod>
+    <SortObject>
+      <ObjectType>8</ObjectType>
+      <LN>0.0.1.0.0.255</LN>
+    </SortObject>
+    <EntriesInUse>1</EntriesInUse>
+    <ProfileEntries>1</ProfileEntries>
+  </GXDLMSProfileGeneric>
+  <GXDLMSProfileGeneric>
+    <LN>1.0.94.91.0.255</LN>
+    <Version>1</Version>
+    <Description>Instantaneous Profile</Description>
+    <Access>11111111</Access>
+    <MethodAccess>00</MethodAccess>
+    <Buffer>
+      <Row>
+        <Cell Type="25">06/09/2026 19:04:57</Cell>
+        <Cell Type="23" UIType="23">244.6091</Cell>
+        <Cell Type="23" UIType="23">0.3755</Cell>
+        <Cell Type="23" UIType="23">0.3755</Cell>
+        <Cell Type="23" UIType="23">-0.9510064</Cell>
+        <Cell Type="23" UIType="23">50.1</Cell>
+        <Cell Type="24" UIType="24">91.981902718544</Cell>
+        <Cell Type="24" UIType="24">51.2065999209881</Cell>
+        <Cell Type="24" UIType="24">4684834.9609375</Cell>
+        <Cell Type="24" UIType="24">4883629.8828125</Cell>
+        <Cell Type="24" UIType="24">3887.59994506836</Cell>
+        <Cell Type="25">06/04/2026 03:45:00</Cell>
+        <Cell Type="24" UIType="24">3888.27991485596</Cell>
+        <Cell Type="25">06/04/2026 03:45:00</Cell>
+        <Cell Type="6">553852</Cell>
+        <Cell Type="18">7</Cell>
+        <Cell Type="6">14</Cell>
+        <Cell Type="18">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="3">True</Cell>
+        <Cell Type="23" UIType="23">15120</Cell>
+      </Row>
+    </Buffer>
+    <CaptureObjects>
+      <Item>
+        <ObjectType>8</ObjectType>
+        <LN>0.0.1.0.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.12.7.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.11.7.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.91.7.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.13.7.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.14.7.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.9.7.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.1.7.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.1.8.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.9.8.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>4</ObjectType>
+        <LN>1.0.1.6.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>4</ObjectType>
+        <LN>1.0.1.6.0.255</LN>
+        <Attribute>5</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>4</ObjectType>
+        <LN>1.0.9.6.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>4</ObjectType>
+        <LN>1.0.9.6.0.255</LN>
+        <Attribute>5</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>0.0.94.91.14.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>1</ObjectType>
+        <LN>0.0.94.91.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>1</ObjectType>
+        <LN>0.0.0.1.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>1</ObjectType>
+        <LN>0.0.96.2.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.2.8.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.10.8.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>70</ObjectType>
+        <LN>0.0.96.3.10.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>71</ObjectType>
+        <LN>0.0.17.0.0.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+    </CaptureObjects>
+    <CapturePeriod>0</CapturePeriod>
+    <SortMethod>1</SortMethod>
+    <SortObject>
+      <ObjectType>8</ObjectType>
+      <LN>0.0.1.0.0.255</LN>
+    </SortObject>
+    <EntriesInUse>1</EntriesInUse>
+    <ProfileEntries>1</ProfileEntries>
+  </GXDLMSProfileGeneric>
+  <GXDLMSProfileGeneric>
+    <LN>1.0.94.91.3.255</LN>
+    <Version>1</Version>
+    <Description>Scaler: Instantaneous Profile</Description>
+    <Access>11111111</Access>
+    <MethodAccess>00</MethodAccess>
+    <Buffer>
+      <Row>
+        <Cell Type="1" />
+        <Cell Type="1" />
+        <Cell Type="1" />
+        <Cell Type="1" />
+        <Cell Type="1" />
+        <Cell Type="1" />
+        <Cell Type="1" />
+        <Cell Type="1" />
+        <Cell Type="1" />
+        <Cell Type="1" />
+        <Cell Type="1" />
+        <Cell Type="1" />
+        <Cell Type="1" />
+        <Cell Type="1" />
+      </Row>
+    </Buffer>
+    <CaptureObjects>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.12.7.0.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.11.7.0.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.91.7.0.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.13.7.0.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.14.7.0.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.9.7.0.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.1.7.0.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.1.8.0.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.9.8.0.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>4</ObjectType>
+        <LN>1.0.1.6.0.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>4</ObjectType>
+        <LN>1.0.9.6.0.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>0.0.94.91.14.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.2.8.0.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.10.8.0.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+    </CaptureObjects>
+    <CapturePeriod>0</CapturePeriod>
+    <SortMethod>1</SortMethod>
+    <SortObject>
+      <ObjectType>8</ObjectType>
+      <LN>0.0.1.0.0.255</LN>
+    </SortObject>
+    <EntriesInUse>1</EntriesInUse>
+    <ProfileEntries>1</ProfileEntries>
+  </GXDLMSProfileGeneric>
+  <GXDLMSProfileGeneric>
+    <LN>1.0.99.1.0.255</LN>
+    <Version>1</Version>
+    <Description>BlockLoad Profile</Description>
+    <Access>11111111</Access>
+    <MethodAccess>00</MethodAccess>
+    <Buffer>
+      <Row>
+        <Cell Type="25">06/08/2026 18:30:00</Cell>
+        <Cell Type="23" UIType="23">244.18</Cell>
+        <Cell Type="24" UIType="24">4.61999978870153</Cell>
+        <Cell Type="24" UIType="24">10.5400001630187</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.16</Cell>
+        <Cell Type="23" UIType="23">0.16</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/08/2026 18:45:00</Cell>
+        <Cell Type="23" UIType="23">244.25</Cell>
+        <Cell Type="24" UIType="24">8.34999978542328</Cell>
+        <Cell Type="24" UIType="24">14.9699999019504</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.24</Cell>
+        <Cell Type="23" UIType="23">0.24</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/08/2026 19:00:00</Cell>
+        <Cell Type="23" UIType="23">244.52</Cell>
+        <Cell Type="24" UIType="24">1.97999994270504</Cell>
+        <Cell Type="24" UIType="24">6.26000016927719</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.1</Cell>
+        <Cell Type="23" UIType="23">0.1</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/08/2026 19:15:00</Cell>
+        <Cell Type="23" UIType="23">244.18</Cell>
+        <Cell Type="24" UIType="24">7.43999984115362</Cell>
+        <Cell Type="24" UIType="24">14.9699999019504</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.24</Cell>
+        <Cell Type="23" UIType="23">0.23</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/08/2026 19:30:00</Cell>
+        <Cell Type="23" UIType="23">245.13</Cell>
+        <Cell Type="24" UIType="24">4.61000017821789</Cell>
+        <Cell Type="24" UIType="24">10.2099999785423</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.17</Cell>
+        <Cell Type="23" UIType="23">0.17</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/08/2026 19:45:00</Cell>
+        <Cell Type="23" UIType="23">245.55</Cell>
+        <Cell Type="24" UIType="24">2.4600001052022</Cell>
+        <Cell Type="24" UIType="24">6.49000005796552</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.1</Cell>
+        <Cell Type="23" UIType="23">0.1</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/08/2026 20:00:00</Cell>
+        <Cell Type="23" UIType="23">245.52</Cell>
+        <Cell Type="24" UIType="24">12.640000320971</Cell>
+        <Cell Type="24" UIType="24">20.4300004988909</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.33</Cell>
+        <Cell Type="23" UIType="23">0.33</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/08/2026 20:15:00</Cell>
+        <Cell Type="23" UIType="23">246.05</Cell>
+        <Cell Type="24" UIType="24">7.75999994948506</Cell>
+        <Cell Type="24" UIType="24">14.0599999576807</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.22</Cell>
+        <Cell Type="23" UIType="23">0.22</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/08/2026 20:30:00</Cell>
+        <Cell Type="23" UIType="23">246.79</Cell>
+        <Cell Type="24" UIType="24">6.55000004917383</Cell>
+        <Cell Type="24" UIType="24">12.5799998641014</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.19</Cell>
+        <Cell Type="23" UIType="23">0.19</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/08/2026 20:45:00</Cell>
+        <Cell Type="23" UIType="23">247.44</Cell>
+        <Cell Type="24" UIType="24">12.190000154078</Cell>
+        <Cell Type="24" UIType="24">21.4799996465445</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.35</Cell>
+        <Cell Type="23" UIType="23">0.35</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/08/2026 21:00:00</Cell>
+        <Cell Type="23" UIType="23">247.19</Cell>
+        <Cell Type="24" UIType="24">7.28000001981854</Cell>
+        <Cell Type="24" UIType="24">12.8899998962879</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.2</Cell>
+        <Cell Type="23" UIType="23">0.2</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/08/2026 21:15:00</Cell>
+        <Cell Type="23" UIType="23">247.04</Cell>
+        <Cell Type="24" UIType="24">4.98999981209636</Cell>
+        <Cell Type="24" UIType="24">10.5100004002452</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.17</Cell>
+        <Cell Type="23" UIType="23">0.17</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/08/2026 21:30:00</Cell>
+        <Cell Type="23" UIType="23">247.32</Cell>
+        <Cell Type="24" UIType="24">11.5000000223517</Cell>
+        <Cell Type="24" UIType="24">20.3900001943111</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.33</Cell>
+        <Cell Type="23" UIType="23">0.33</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/08/2026 21:45:00</Cell>
+        <Cell Type="23" UIType="23">247.8</Cell>
+        <Cell Type="24" UIType="24">3.59999993816018</Cell>
+        <Cell Type="24" UIType="24">8.58999975025654</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.13</Cell>
+        <Cell Type="23" UIType="23">0.13</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/08/2026 22:00:00</Cell>
+        <Cell Type="23" UIType="23">248.52</Cell>
+        <Cell Type="24" UIType="24">2.55999993532896</Cell>
+        <Cell Type="24" UIType="24">7.36999977380037</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.11</Cell>
+        <Cell Type="23" UIType="23">0.11</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/08/2026 22:15:00</Cell>
+        <Cell Type="23" UIType="23">249.15</Cell>
+        <Cell Type="24" UIType="24">9.97000001370907</Cell>
+        <Cell Type="24" UIType="24">17.680000513792</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.28</Cell>
+        <Cell Type="23" UIType="23">0.28</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/08/2026 22:30:00</Cell>
+        <Cell Type="23" UIType="23">249.24</Cell>
+        <Cell Type="24" UIType="24">2.58000008761883</Cell>
+        <Cell Type="24" UIType="24">6.62000011652708</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.11</Cell>
+        <Cell Type="23" UIType="23">0.11</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/08/2026 22:45:00</Cell>
+        <Cell Type="23" UIType="23">248.09</Cell>
+        <Cell Type="24" UIType="24">2.33000004664063</Cell>
+        <Cell Type="24" UIType="24">7.00000021606684</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.1</Cell>
+        <Cell Type="23" UIType="23">0.1</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/08/2026 23:00:00</Cell>
+        <Cell Type="23" UIType="23">247.58</Cell>
+        <Cell Type="24" UIType="24">8.44999961555004</Cell>
+        <Cell Type="24" UIType="24">16.3100007921457</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.26</Cell>
+        <Cell Type="23" UIType="23">0.26</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/08/2026 23:15:00</Cell>
+        <Cell Type="23" UIType="23">248.1</Cell>
+        <Cell Type="24" UIType="24">3.58000001870096</Cell>
+        <Cell Type="24" UIType="24">7.93000031262636</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.12</Cell>
+        <Cell Type="23" UIType="23">0.12</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/08/2026 23:30:00</Cell>
+        <Cell Type="23" UIType="23">248.21</Cell>
+        <Cell Type="24" UIType="24">2.15999991632998</Cell>
+        <Cell Type="24" UIType="24">6.63000019267201</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.1</Cell>
+        <Cell Type="23" UIType="23">0.1</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/08/2026 23:45:00</Cell>
+        <Cell Type="23" UIType="23">247.51</Cell>
+        <Cell Type="24" UIType="24">7.80999986454844</Cell>
+        <Cell Type="24" UIType="24">14.639999717474</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.23</Cell>
+        <Cell Type="23" UIType="23">0.23</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 00:00:00</Cell>
+        <Cell Type="23" UIType="23">245.24</Cell>
+        <Cell Type="24" UIType="24">4.0799998678267</Cell>
+        <Cell Type="24" UIType="24">9.82999987900257</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.15</Cell>
+        <Cell Type="23" UIType="23">0.15</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 00:15:00</Cell>
+        <Cell Type="23" UIType="23">243.89</Cell>
+        <Cell Type="24" UIType="24">2.09000008180737</Cell>
+        <Cell Type="24" UIType="24">6.39000022783875</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.1</Cell>
+        <Cell Type="23" UIType="23">0.1</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 00:30:00</Cell>
+        <Cell Type="23" UIType="23">242.35</Cell>
+        <Cell Type="24" UIType="24">6.41999999061227</Cell>
+        <Cell Type="24" UIType="24">12.6200001686811</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.2</Cell>
+        <Cell Type="23" UIType="23">0.2</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 00:45:00</Cell>
+        <Cell Type="23" UIType="23">240.64</Cell>
+        <Cell Type="24" UIType="24">163.38999569416</Cell>
+        <Cell Type="24" UIType="24">167.620003223419</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">2.82</Cell>
+        <Cell Type="23" UIType="23">2.82</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 01:00:00</Cell>
+        <Cell Type="23" UIType="23">237.01</Cell>
+        <Cell Type="24" UIType="24">510.160028934479</Cell>
+        <Cell Type="24" UIType="24">510.380029678345</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">8.6</Cell>
+        <Cell Type="23" UIType="23">8.6</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 01:15:00</Cell>
+        <Cell Type="23" UIType="23">237.78</Cell>
+        <Cell Type="24" UIType="24">253.479987382889</Cell>
+        <Cell Type="24" UIType="24">256.900012493134</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">4.32</Cell>
+        <Cell Type="23" UIType="23">4.32</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 01:30:00</Cell>
+        <Cell Type="23" UIType="23">236.61</Cell>
+        <Cell Type="24" UIType="24">6.00000005215406</Cell>
+        <Cell Type="24" UIType="24">12.1400002390146</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.2</Cell>
+        <Cell Type="23" UIType="23">0.2</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 01:45:00</Cell>
+        <Cell Type="23" UIType="23">235.35</Cell>
+        <Cell Type="24" UIType="24">1.85000000055879</Cell>
+        <Cell Type="24" UIType="24">6.52999989688396</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.1</Cell>
+        <Cell Type="23" UIType="23">0.1</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 02:00:00</Cell>
+        <Cell Type="23" UIType="23">233.05</Cell>
+        <Cell Type="24" UIType="24">4.10000002011657</Cell>
+        <Cell Type="24" UIType="24">8.34000017493963</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.14</Cell>
+        <Cell Type="23" UIType="23">0.14</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 02:15:00</Cell>
+        <Cell Type="23" UIType="23">236.73</Cell>
+        <Cell Type="24" UIType="24">7.53000006079674</Cell>
+        <Cell Type="24" UIType="24">14.1700003296137</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.24</Cell>
+        <Cell Type="23" UIType="23">0.23</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 02:30:00</Cell>
+        <Cell Type="23" UIType="23">235.14</Cell>
+        <Cell Type="24" UIType="24">153.940007090569</Cell>
+        <Cell Type="24" UIType="24">160.769999027252</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">2.76</Cell>
+        <Cell Type="23" UIType="23">2.76</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 02:45:00</Cell>
+        <Cell Type="23" UIType="23">231.17</Cell>
+        <Cell Type="24" UIType="24">527.050018310547</Cell>
+        <Cell Type="24" UIType="24">526.719987392426</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">9.12</Cell>
+        <Cell Type="23" UIType="23">9.11</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 03:00:00</Cell>
+        <Cell Type="23" UIType="23">235.12</Cell>
+        <Cell Type="24" UIType="24">27.3199994117022</Cell>
+        <Cell Type="24" UIType="24">28.829999268055</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.48</Cell>
+        <Cell Type="23" UIType="23">0.48</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 03:15:00</Cell>
+        <Cell Type="23" UIType="23">232.07</Cell>
+        <Cell Type="24" UIType="24">22.6300004869699</Cell>
+        <Cell Type="24" UIType="24">34.4600006937981</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.59</Cell>
+        <Cell Type="23" UIType="23">0.59</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 03:30:00</Cell>
+        <Cell Type="23" UIType="23">230.44</Cell>
+        <Cell Type="24" UIType="24">251.399993896484</Cell>
+        <Cell Type="24" UIType="24">261.519998311996</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">4.58</Cell>
+        <Cell Type="23" UIType="23">4.58</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 03:45:00</Cell>
+        <Cell Type="23" UIType="23">231.23</Cell>
+        <Cell Type="24" UIType="24">86.2300023436546</Cell>
+        <Cell Type="24" UIType="24">103.469997644424</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">1.79</Cell>
+        <Cell Type="23" UIType="23">1.79</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 04:00:00</Cell>
+        <Cell Type="23" UIType="23">228.17</Cell>
+        <Cell Type="24" UIType="24">155.359998345375</Cell>
+        <Cell Type="24" UIType="24">166.09999537468</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">2.94</Cell>
+        <Cell Type="23" UIType="23">2.94</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 04:15:00</Cell>
+        <Cell Type="23" UIType="23">227.47</Cell>
+        <Cell Type="24" UIType="24">113.880001008511</Cell>
+        <Cell Type="24" UIType="24">120.489999651909</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">2.15</Cell>
+        <Cell Type="23" UIType="23">2.15</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 04:30:00</Cell>
+        <Cell Type="23" UIType="23">222.74</Cell>
+        <Cell Type="24" UIType="24">576.229989528656</Cell>
+        <Cell Type="24" UIType="24">579.029977321625</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">10.45</Cell>
+        <Cell Type="23" UIType="23">10.45</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 04:45:00</Cell>
+        <Cell Type="23" UIType="23">222.33</Cell>
+        <Cell Type="24" UIType="24">598.269999027252</Cell>
+        <Cell Type="24" UIType="24">601.509988307953</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">10.87</Cell>
+        <Cell Type="23" UIType="23">10.86</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 05:00:00</Cell>
+        <Cell Type="23" UIType="23">225.5</Cell>
+        <Cell Type="24" UIType="24">110.250003635883</Cell>
+        <Cell Type="24" UIType="24">117.499999701977</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">2.11</Cell>
+        <Cell Type="23" UIType="23">2.11</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 05:15:00</Cell>
+        <Cell Type="23" UIType="23">229.63</Cell>
+        <Cell Type="24" UIType="24">24.8700007796288</Cell>
+        <Cell Type="24" UIType="24">31.470000743866</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.54</Cell>
+        <Cell Type="23" UIType="23">0.54</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 05:30:00</Cell>
+        <Cell Type="23" UIType="23">223.06</Cell>
+        <Cell Type="24" UIType="24">433.400005102158</Cell>
+        <Cell Type="24" UIType="24">434.089988470078</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">7.81</Cell>
+        <Cell Type="23" UIType="23">7.81</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 05:45:00</Cell>
+        <Cell Type="23" UIType="23">221.32</Cell>
+        <Cell Type="24" UIType="24">471.089988946915</Cell>
+        <Cell Type="24" UIType="24">471.810013055801</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">8.52</Cell>
+        <Cell Type="23" UIType="23">8.51</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 06:00:00</Cell>
+        <Cell Type="23" UIType="23">226.23</Cell>
+        <Cell Type="24" UIType="24">151.620000600815</Cell>
+        <Cell Type="24" UIType="24">157.079994678497</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">2.8</Cell>
+        <Cell Type="23" UIType="23">2.8</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 06:15:00</Cell>
+        <Cell Type="23" UIType="23">227.69</Cell>
+        <Cell Type="24" UIType="24">15.0399999693036</Cell>
+        <Cell Type="24" UIType="24">22.6700007915497</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.39</Cell>
+        <Cell Type="23" UIType="23">0.39</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 06:30:00</Cell>
+        <Cell Type="23" UIType="23">224.61</Cell>
+        <Cell Type="24" UIType="24">336.739987134933</Cell>
+        <Cell Type="24" UIType="24">344.980001449585</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">6.18</Cell>
+        <Cell Type="23" UIType="23">6.18</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 06:45:00</Cell>
+        <Cell Type="23" UIType="23">228.11</Cell>
+        <Cell Type="24" UIType="24">43.2199984788895</Cell>
+        <Cell Type="24" UIType="24">57.2899989783764</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.99</Cell>
+        <Cell Type="23" UIType="23">0.99</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 07:00:00</Cell>
+        <Cell Type="23" UIType="23">227.64</Cell>
+        <Cell Type="24" UIType="24">29.8699997365475</Cell>
+        <Cell Type="24" UIType="24">45.549999922514</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.8</Cell>
+        <Cell Type="23" UIType="23">0.8</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 07:15:00</Cell>
+        <Cell Type="23" UIType="23">231.65</Cell>
+        <Cell Type="24" UIType="24">125.410005450249</Cell>
+        <Cell Type="24" UIType="24">137.219995260239</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">2.4</Cell>
+        <Cell Type="23" UIType="23">2.4</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 07:30:00</Cell>
+        <Cell Type="23" UIType="23">233.43</Cell>
+        <Cell Type="24" UIType="24">37.2699983417988</Cell>
+        <Cell Type="24" UIType="24">50.9199984371662</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.87</Cell>
+        <Cell Type="23" UIType="23">0.87</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 07:45:00</Cell>
+        <Cell Type="23" UIType="23">235.18</Cell>
+        <Cell Type="24" UIType="24">21.2500002235174</Cell>
+        <Cell Type="24" UIType="24">34.5400013029575</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.59</Cell>
+        <Cell Type="23" UIType="23">0.58</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 08:00:00</Cell>
+        <Cell Type="23" UIType="23">234.09</Cell>
+        <Cell Type="24" UIType="24">20.6199996173382</Cell>
+        <Cell Type="24" UIType="24">33.9000001549721</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.57</Cell>
+        <Cell Type="23" UIType="23">0.57</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 08:15:00</Cell>
+        <Cell Type="23" UIType="23">233.54</Cell>
+        <Cell Type="24" UIType="24">2.09000008180737</Cell>
+        <Cell Type="24" UIType="24">7.49999983236194</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.13</Cell>
+        <Cell Type="23" UIType="23">0.13</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 08:30:00</Cell>
+        <Cell Type="23" UIType="23">232.99</Cell>
+        <Cell Type="24" UIType="24">8.82000010460615</Cell>
+        <Cell Type="24" UIType="24">14.4300004467368</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.24</Cell>
+        <Cell Type="23" UIType="23">0.24</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 08:45:00</Cell>
+        <Cell Type="23" UIType="23">232.63</Cell>
+        <Cell Type="24" UIType="24">19.1799998283386</Cell>
+        <Cell Type="24" UIType="24">25.560000911355</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.44</Cell>
+        <Cell Type="23" UIType="23">0.44</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 09:00:00</Cell>
+        <Cell Type="23" UIType="23">231.07</Cell>
+        <Cell Type="24" UIType="24">49.320001155138</Cell>
+        <Cell Type="24" UIType="24">58.9900016784668</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">1.02</Cell>
+        <Cell Type="23" UIType="23">1.02</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 09:15:00</Cell>
+        <Cell Type="23" UIType="23">226.39</Cell>
+        <Cell Type="24" UIType="24">278.160005807877</Cell>
+        <Cell Type="24" UIType="24">281.50001168251</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">5.03</Cell>
+        <Cell Type="23" UIType="23">5.03</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 09:30:00</Cell>
+        <Cell Type="23" UIType="23">229.8</Cell>
+        <Cell Type="24" UIType="24">5.00999996438622</Cell>
+        <Cell Type="24" UIType="24">11.119999922812</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.19</Cell>
+        <Cell Type="23" UIType="23">0.19</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 09:45:00</Cell>
+        <Cell Type="23" UIType="23">229</Cell>
+        <Cell Type="24" UIType="24">6.88999984413385</Cell>
+        <Cell Type="24" UIType="24">15.2799999341369</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.26</Cell>
+        <Cell Type="23" UIType="23">0.26</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 10:00:00</Cell>
+        <Cell Type="23" UIType="23">229.28</Cell>
+        <Cell Type="24" UIType="24">4.44999989122152</Cell>
+        <Cell Type="24" UIType="24">12.640000320971</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.22</Cell>
+        <Cell Type="23" UIType="23">0.21</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 10:15:00</Cell>
+        <Cell Type="23" UIType="23">232.8</Cell>
+        <Cell Type="24" UIType="24">2.12999992072582</Cell>
+        <Cell Type="24" UIType="24">9.39999986439943</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.15</Cell>
+        <Cell Type="23" UIType="23">0.15</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 10:30:00</Cell>
+        <Cell Type="23" UIType="23">232.97</Cell>
+        <Cell Type="24" UIType="24">8.44999961555004</Cell>
+        <Cell Type="24" UIType="24">17.4599997699261</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.3</Cell>
+        <Cell Type="23" UIType="23">0.3</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 10:45:00</Cell>
+        <Cell Type="23" UIType="23">232.39</Cell>
+        <Cell Type="24" UIType="24">4.00000018998981</Cell>
+        <Cell Type="24" UIType="24">11.5299997851253</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.19</Cell>
+        <Cell Type="23" UIType="23">0.19</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 11:00:00</Cell>
+        <Cell Type="23" UIType="23">232.36</Cell>
+        <Cell Type="24" UIType="24">153.459995985031</Cell>
+        <Cell Type="24" UIType="24">162.95999288559</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">2.85</Cell>
+        <Cell Type="23" UIType="23">2.85</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 11:15:00</Cell>
+        <Cell Type="23" UIType="23">231.19</Cell>
+        <Cell Type="24" UIType="24">109.679996967316</Cell>
+        <Cell Type="24" UIType="24">122.179999947548</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">2.11</Cell>
+        <Cell Type="23" UIType="23">2.11</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 11:30:00</Cell>
+        <Cell Type="23" UIType="23">231.83</Cell>
+        <Cell Type="24" UIType="24">20.9500007331371</Cell>
+        <Cell Type="24" UIType="24">33.5900001227856</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.57</Cell>
+        <Cell Type="23" UIType="23">0.57</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 11:45:00</Cell>
+        <Cell Type="23" UIType="23">233.42</Cell>
+        <Cell Type="24" UIType="24">17.3099990934134</Cell>
+        <Cell Type="24" UIType="24">27.3400004953146</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.46</Cell>
+        <Cell Type="23" UIType="23">0.46</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 12:00:00</Cell>
+        <Cell Type="23" UIType="23">236.12</Cell>
+        <Cell Type="24" UIType="24">24.4800001382828</Cell>
+        <Cell Type="24" UIType="24">35.5399996042252</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.6</Cell>
+        <Cell Type="23" UIType="23">0.6</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 12:15:00</Cell>
+        <Cell Type="23" UIType="23">235.97</Cell>
+        <Cell Type="24" UIType="24">26.2100007385015</Cell>
+        <Cell Type="24" UIType="24">36.8699990212917</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.62</Cell>
+        <Cell Type="23" UIType="23">0.62</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 12:30:00</Cell>
+        <Cell Type="23" UIType="23">236.23</Cell>
+        <Cell Type="24" UIType="24">26.3800006359816</Cell>
+        <Cell Type="24" UIType="24">36.6600006818771</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.62</Cell>
+        <Cell Type="23" UIType="23">0.62</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 12:45:00</Cell>
+        <Cell Type="23" UIType="23">238.71</Cell>
+        <Cell Type="24" UIType="24">29.8800002783537</Cell>
+        <Cell Type="24" UIType="24">40.0299988687038</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.67</Cell>
+        <Cell Type="23" UIType="23">0.67</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 13:00:00</Cell>
+        <Cell Type="23" UIType="23">240.75</Cell>
+        <Cell Type="24" UIType="24">11.629999615252</Cell>
+        <Cell Type="24" UIType="24">14.299999922514</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.23</Cell>
+        <Cell Type="23" UIType="23">0.23</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 13:15:00</Cell>
+        <Cell Type="23" UIType="23">241.77</Cell>
+        <Cell Type="24" UIType="24">20.0500003993511</Cell>
+        <Cell Type="24" UIType="24">27.6699997484684</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.45</Cell>
+        <Cell Type="23" UIType="23">0.45</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 13:30:00</Cell>
+        <Cell Type="23" UIType="23">243.22</Cell>
+        <Cell Type="24" UIType="24">14.9699999019504</Cell>
+        <Cell Type="24" UIType="24">19.8899991810322</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.32</Cell>
+        <Cell Type="23" UIType="23">0.32</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 13:45:00</Cell>
+        <Cell Type="23" UIType="23">241.05</Cell>
+        <Cell Type="24" UIType="24">41.5799990296364</Cell>
+        <Cell Type="24" UIType="24">49.090001732111</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.82</Cell>
+        <Cell Type="23" UIType="23">0.82</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 14:00:00</Cell>
+        <Cell Type="23" UIType="23">238.12</Cell>
+        <Cell Type="24" UIType="24">25.8900001645088</Cell>
+        <Cell Type="24" UIType="24">30.9399999678135</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.51</Cell>
+        <Cell Type="23" UIType="23">0.51</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 14:15:00</Cell>
+        <Cell Type="23" UIType="23">238.64</Cell>
+        <Cell Type="24" UIType="24">21.0400000214577</Cell>
+        <Cell Type="24" UIType="24">24.9499995261431</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.41</Cell>
+        <Cell Type="23" UIType="23">0.41</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 14:30:00</Cell>
+        <Cell Type="23" UIType="23">239.41</Cell>
+        <Cell Type="24" UIType="24">20.5499995499849</Cell>
+        <Cell Type="24" UIType="24">25.6600007414818</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.43</Cell>
+        <Cell Type="23" UIType="23">0.43</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 14:45:00</Cell>
+        <Cell Type="23" UIType="23">240.23</Cell>
+        <Cell Type="24" UIType="24">15.4499998316169</Cell>
+        <Cell Type="24" UIType="24">18.5000002384186</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.3</Cell>
+        <Cell Type="23" UIType="23">0.3</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 15:00:00</Cell>
+        <Cell Type="23" UIType="23">239.65</Cell>
+        <Cell Type="24" UIType="24">21.5499997138977</Cell>
+        <Cell Type="24" UIType="24">27.4700000882149</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.46</Cell>
+        <Cell Type="23" UIType="23">0.46</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 15:15:00</Cell>
+        <Cell Type="23" UIType="23">238.36</Cell>
+        <Cell Type="24" UIType="24">16.4500009268522</Cell>
+        <Cell Type="24" UIType="24">20.8700001239777</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.34</Cell>
+        <Cell Type="23" UIType="23">0.34</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 15:30:00</Cell>
+        <Cell Type="23" UIType="23">239.17</Cell>
+        <Cell Type="24" UIType="24">15.0800002738833</Cell>
+        <Cell Type="24" UIType="24">18.0699992924929</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.3</Cell>
+        <Cell Type="23" UIType="23">0.3</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 15:45:00</Cell>
+        <Cell Type="23" UIType="23">241.06</Cell>
+        <Cell Type="24" UIType="24">22.2900006920099</Cell>
+        <Cell Type="24" UIType="24">28.9699994027615</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.47</Cell>
+        <Cell Type="23" UIType="23">0.47</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 16:00:00</Cell>
+        <Cell Type="23" UIType="23">242.08</Cell>
+        <Cell Type="24" UIType="24">15.1100000366569</Cell>
+        <Cell Type="24" UIType="24">16.950000077486</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.28</Cell>
+        <Cell Type="23" UIType="23">0.28</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 16:15:00</Cell>
+        <Cell Type="23" UIType="23">241.99</Cell>
+        <Cell Type="24" UIType="24">23.369999602437</Cell>
+        <Cell Type="24" UIType="24">26.2100007385015</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.43</Cell>
+        <Cell Type="23" UIType="23">0.43</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 16:30:00</Cell>
+        <Cell Type="23" UIType="23">239.57</Cell>
+        <Cell Type="24" UIType="24">31.5200015902519</Cell>
+        <Cell Type="24" UIType="24">35.3300012648106</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.58</Cell>
+        <Cell Type="23" UIType="23">0.58</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 16:45:00</Cell>
+        <Cell Type="23" UIType="23">238.39</Cell>
+        <Cell Type="24" UIType="24">24.9799992889166</Cell>
+        <Cell Type="24" UIType="24">26.6699995845556</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.44</Cell>
+        <Cell Type="23" UIType="23">0.44</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 17:00:00</Cell>
+        <Cell Type="23" UIType="23">239.01</Cell>
+        <Cell Type="24" UIType="24">30.0600007176399</Cell>
+        <Cell Type="24" UIType="24">32.4500016868114</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.54</Cell>
+        <Cell Type="23" UIType="23">0.54</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 17:15:00</Cell>
+        <Cell Type="23" UIType="23">238.88</Cell>
+        <Cell Type="24" UIType="24">69.470003247261</Cell>
+        <Cell Type="24" UIType="24">76.8700018525124</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">1.29</Cell>
+        <Cell Type="23" UIType="23">1.28</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 17:30:00</Cell>
+        <Cell Type="23" UIType="23">239.54</Cell>
+        <Cell Type="24" UIType="24">29.9999993294477</Cell>
+        <Cell Type="24" UIType="24">34.1899991035461</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.57</Cell>
+        <Cell Type="23" UIType="23">0.57</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 17:45:00</Cell>
+        <Cell Type="23" UIType="23">239.67</Cell>
+        <Cell Type="24" UIType="24">67.7499994635582</Cell>
+        <Cell Type="24" UIType="24">77.4400010704994</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">1.3</Cell>
+        <Cell Type="23" UIType="23">1.3</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 18:00:00</Cell>
+        <Cell Type="23" UIType="23">241.3</Cell>
+        <Cell Type="24" UIType="24">77.8900012373924</Cell>
+        <Cell Type="24" UIType="24">86.8199989199638</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">1.43</Cell>
+        <Cell Type="23" UIType="23">1.43</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 18:15:00</Cell>
+        <Cell Type="23" UIType="23">242.56</Cell>
+        <Cell Type="24" UIType="24">15.5699998140335</Cell>
+        <Cell Type="24" UIType="24">18.0799998342991</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.3</Cell>
+        <Cell Type="23" UIType="23">0.3</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 18:30:00</Cell>
+        <Cell Type="23" UIType="23">239.01</Cell>
+        <Cell Type="24" UIType="24">473.760008811951</Cell>
+        <Cell Type="24" UIType="24">476.949989795685</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">8.06</Cell>
+        <Cell Type="23" UIType="23">8.05</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 18:45:00</Cell>
+        <Cell Type="23" UIType="23">244.06</Cell>
+        <Cell Type="24" UIType="24">13.5199995711446</Cell>
+        <Cell Type="24" UIType="24">18.6500009149313</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.3</Cell>
+        <Cell Type="23" UIType="23">0.3</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 19:00:00</Cell>
+        <Cell Type="23" UIType="23">244.3</Cell>
+        <Cell Type="24" UIType="24">3.04999994114041</Cell>
+        <Cell Type="24" UIType="24">7.00999982655048</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.11</Cell>
+        <Cell Type="23" UIType="23">0.11</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">05/05/2026 19:15:00</Cell>
+        <Cell Type="23" UIType="23">253.18</Cell>
+        <Cell Type="24" UIType="24">5.90999983251095</Cell>
+        <Cell Type="24" UIType="24">13.6500000953674</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="23" UIType="23">0.2</Cell>
+        <Cell Type="23" UIType="23">0.2</Cell>
+      </Row>
+    </Buffer>
+    <CaptureObjects>
+      <Item>
+        <ObjectType>8</ObjectType>
+        <LN>0.0.1.0.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.12.27.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.1.29.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.9.29.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.2.29.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.10.29.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.11.27.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.91.27.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+    </CaptureObjects>
+    <CapturePeriod>900</CapturePeriod>
+    <SortMethod>1</SortMethod>
+    <SortObject>
+      <ObjectType>8</ObjectType>
+      <LN>0.0.1.0.0.255</LN>
+    </SortObject>
+    <EntriesInUse>3360</EntriesInUse>
+    <ProfileEntries>3360</ProfileEntries>
+  </GXDLMSProfileGeneric>
+  <GXDLMSProfileGeneric>
+    <LN>1.0.94.91.4.255</LN>
+    <Version>1</Version>
+    <Description>Scaler: Block Load Profile</Description>
+    <Access>11111111</Access>
+    <MethodAccess>00</MethodAccess>
+    <Buffer>
+      <Row>
+        <Cell Type="1" />
+        <Cell Type="1" />
+        <Cell Type="1" />
+        <Cell Type="1" />
+        <Cell Type="1" />
+        <Cell Type="1" />
+        <Cell Type="1" />
+      </Row>
+    </Buffer>
+    <CaptureObjects>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.12.27.0.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.1.29.0.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.9.29.0.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.2.29.0.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.10.29.0.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.11.27.0.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.91.27.0.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+    </CaptureObjects>
+    <CapturePeriod>0</CapturePeriod>
+    <SortMethod>1</SortMethod>
+    <SortObject>
+      <ObjectType>8</ObjectType>
+      <LN>0.0.1.0.0.255</LN>
+    </SortObject>
+    <EntriesInUse>1</EntriesInUse>
+    <ProfileEntries>1</ProfileEntries>
+  </GXDLMSProfileGeneric>
+  <GXDLMSProfileGeneric>
+    <LN>1.0.99.2.0.255</LN>
+    <Version>1</Version>
+    <Description>Daily Load Profile</Description>
+    <Access>11111111</Access>
+    <MethodAccess>00</MethodAccess>
+    <Buffer>
+      <Row>
+        <Cell Type="25">06/08/2026 18:30:00</Cell>
+        <Cell Type="24" UIType="24">4677488.76953125</Cell>
+        <Cell Type="24" UIType="24">4875637.20703125</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">06/09/2026 18:30:00</Cell>
+        <Cell Type="24" UIType="24">4684814.453125</Cell>
+        <Cell Type="24" UIType="24">4883597.16796875</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+      </Row>
+      <Row>
+        <Cell Type="25">04/01/2026 18:30:00</Cell>
+        <Cell Type="24" UIType="24">3931662.35351563</Cell>
+        <Cell Type="24" UIType="24">4093066.16210938</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+        <Cell Type="24" UIType="24">0</Cell>
+      </Row>
+    </Buffer>
+    <CaptureObjects>
+      <Item>
+        <ObjectType>8</ObjectType>
+        <LN>0.0.1.0.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.1.8.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.9.8.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.2.8.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.10.8.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+    </CaptureObjects>
+    <CapturePeriod>86400</CapturePeriod>
+    <SortMethod>1</SortMethod>
+    <SortObject>
+      <ObjectType>8</ObjectType>
+      <LN>0.0.1.0.0.255</LN>
+    </SortObject>
+    <EntriesInUse>70</EntriesInUse>
+    <ProfileEntries>70</ProfileEntries>
+  </GXDLMSProfileGeneric>
+  <GXDLMSProfileGeneric>
+    <LN>1.0.94.91.5.255</LN>
+    <Version>1</Version>
+    <Description>Scaler: Daily Load Profile</Description>
+    <Access>11111111</Access>
+    <MethodAccess>00</MethodAccess>
+    <Buffer>
+      <Row>
+        <Cell Type="1" />
+        <Cell Type="1" />
+        <Cell Type="1" />
+        <Cell Type="1" />
+      </Row>
+    </Buffer>
+    <CaptureObjects>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.1.8.0.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.9.8.0.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.2.8.0.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.10.8.0.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+    </CaptureObjects>
+    <CapturePeriod>0</CapturePeriod>
+    <SortMethod>1</SortMethod>
+    <SortObject>
+      <ObjectType>8</ObjectType>
+      <LN>0.0.1.0.0.255</LN>
+    </SortObject>
+    <EntriesInUse>1</EntriesInUse>
+    <ProfileEntries>1</ProfileEntries>
+  </GXDLMSProfileGeneric>
+  <GXDLMSProfileGeneric>
+    <LN>1.0.98.1.0.255</LN>
+    <Version>1</Version>
+    <Description>Billing Profile</Description>
+    <Access>11111111</Access>
+    <MethodAccess>00</MethodAccess>
+    <Buffer />
+    <CaptureObjects>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>0.0.0.1.2.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.13.0.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.1.8.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.1.8.1.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.1.8.2.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.1.8.3.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.1.8.4.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.1.8.5.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.1.8.6.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.1.8.7.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.1.8.8.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.9.8.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.9.8.1.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.9.8.2.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.9.8.3.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.9.8.4.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.9.8.5.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.9.8.6.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.9.8.7.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.9.8.8.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>4</ObjectType>
+        <LN>1.0.1.6.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>4</ObjectType>
+        <LN>1.0.1.6.0.255</LN>
+        <Attribute>5</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>4</ObjectType>
+        <LN>1.0.9.6.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>4</ObjectType>
+        <LN>1.0.9.6.0.255</LN>
+        <Attribute>5</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>0.0.94.91.13.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.2.8.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.10.8.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>4</ObjectType>
+        <LN>1.0.2.6.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>4</ObjectType>
+        <LN>1.0.2.6.0.255</LN>
+        <Attribute>5</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>4</ObjectType>
+        <LN>1.0.10.6.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>4</ObjectType>
+        <LN>1.0.10.6.0.255</LN>
+        <Attribute>5</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>4</ObjectType>
+        <LN>1.0.84.6.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+    </CaptureObjects>
+    <CapturePeriod>0</CapturePeriod>
+    <SortMethod>1</SortMethod>
+    <SortObject>
+      <ObjectType>8</ObjectType>
+      <LN>0.0.1.0.0.255</LN>
+    </SortObject>
+    <EntriesInUse>13</EntriesInUse>
+    <ProfileEntries>13</ProfileEntries>
+  </GXDLMSProfileGeneric>
+  <GXDLMSProfileGeneric>
+    <LN>1.0.94.91.6.255</LN>
+    <Version>1</Version>
+    <Description>Scaler: Billing Profile</Description>
+    <Access>11111111</Access>
+    <MethodAccess>00</MethodAccess>
+    <Buffer>
+      <Row>
+        <Cell Type="1" />
+        <Cell Type="1" />
+        <Cell Type="1" />
+        <Cell Type="1" />
+        <Cell Type="1" />
+        <Cell Type="1" />
+        <Cell Type="1" />
+        <Cell Type="1" />
+        <Cell Type="1" />
+        <Cell Type="1" />
+        <Cell Type="1" />
+        <Cell Type="1" />
+        <Cell Type="1" />
+        <Cell Type="1" />
+        <Cell Type="1" />
+        <Cell Type="1" />
+        <Cell Type="1" />
+        <Cell Type="1" />
+        <Cell Type="1" />
+        <Cell Type="1" />
+        <Cell Type="1" />
+        <Cell Type="1" />
+        <Cell Type="1" />
+        <Cell Type="1" />
+        <Cell Type="1" />
+        <Cell Type="1" />
+        <Cell Type="1" />
+        <Cell Type="1" />
+      </Row>
+    </Buffer>
+    <CaptureObjects>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>0.0.0.1.2.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.13.0.0.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.1.8.0.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.1.8.1.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.1.8.2.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.1.8.3.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.1.8.4.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.1.8.5.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.1.8.6.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.1.8.7.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.1.8.8.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.9.8.0.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.9.8.1.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.9.8.2.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.9.8.3.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.9.8.4.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.9.8.5.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.9.8.6.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.9.8.7.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.9.8.8.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>4</ObjectType>
+        <LN>1.0.1.6.0.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>4</ObjectType>
+        <LN>1.0.9.6.0.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>0.0.94.91.13.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.2.8.0.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.10.8.0.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>4</ObjectType>
+        <LN>1.0.2.6.0.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>4</ObjectType>
+        <LN>1.0.10.6.0.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>4</ObjectType>
+        <LN>1.0.84.6.0.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+    </CaptureObjects>
+    <CapturePeriod>0</CapturePeriod>
+    <SortMethod>1</SortMethod>
+    <SortObject>
+      <ObjectType>8</ObjectType>
+      <LN>0.0.1.0.0.255</LN>
+    </SortObject>
+    <EntriesInUse>1</EntriesInUse>
+    <ProfileEntries>1</ProfileEntries>
+  </GXDLMSProfileGeneric>
+  <GXDLMSProfileGeneric>
+    <LN>1.0.94.91.7.255</LN>
+    <Version>1</Version>
+    <Description>Scaler: Events Profile</Description>
+    <Access>11111111</Access>
+    <MethodAccess>00</MethodAccess>
+    <Buffer>
+      <Row>
+        <Cell Type="1" />
+        <Cell Type="1" />
+        <Cell Type="1" />
+        <Cell Type="1" />
+        <Cell Type="1" />
+      </Row>
+    </Buffer>
+    <CaptureObjects>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.94.91.14.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.12.7.0.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.13.7.0.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.1.8.0.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.2.8.0.255</LN>
+        <Attribute>3</Attribute>
+        <Data>0</Data>
+      </Item>
+    </CaptureObjects>
+    <CapturePeriod>0</CapturePeriod>
+    <SortMethod>1</SortMethod>
+    <SortObject>
+      <ObjectType>8</ObjectType>
+      <LN>0.0.1.0.0.255</LN>
+    </SortObject>
+    <EntriesInUse>1</EntriesInUse>
+    <ProfileEntries>1</ProfileEntries>
+  </GXDLMSProfileGeneric>
+  <GXDLMSProfileGeneric>
+    <LN>0.0.99.98.0.255</LN>
+    <Version>1</Version>
+    <Description>Voltage Related Events Profile</Description>
+    <Access>11111111</Access>
+    <MethodAccess>00</MethodAccess>
+    <Buffer />
+    <CaptureObjects>
+      <Item>
+        <ObjectType>8</ObjectType>
+        <LN>0.0.1.0.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>1</ObjectType>
+        <LN>0.0.96.11.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.94.91.14.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.12.7.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.13.7.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.1.8.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.2.8.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>1</ObjectType>
+        <LN>0.0.94.91.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+    </CaptureObjects>
+    <CapturePeriod>0</CapturePeriod>
+    <SortMethod>1</SortMethod>
+    <SortObject>
+      <ObjectType>8</ObjectType>
+      <LN>0.0.1.0.0.255</LN>
+    </SortObject>
+    <EntriesInUse>2</EntriesInUse>
+    <ProfileEntries>50</ProfileEntries>
+  </GXDLMSProfileGeneric>
+  <GXDLMSProfileGeneric>
+    <LN>0.0.99.98.1.255</LN>
+    <Version>1</Version>
+    <Description>Current Related Events Profile</Description>
+    <Access>11111111</Access>
+    <MethodAccess>00</MethodAccess>
+    <Buffer />
+    <CaptureObjects>
+      <Item>
+        <ObjectType>8</ObjectType>
+        <LN>0.0.1.0.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>1</ObjectType>
+        <LN>0.0.96.11.1.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.94.91.14.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.12.7.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.13.7.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.1.8.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.2.8.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>1</ObjectType>
+        <LN>0.0.94.91.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+    </CaptureObjects>
+    <CapturePeriod>0</CapturePeriod>
+    <SortMethod>1</SortMethod>
+    <SortObject>
+      <ObjectType>8</ObjectType>
+      <LN>0.0.1.0.0.255</LN>
+    </SortObject>
+    <EntriesInUse>0</EntriesInUse>
+    <ProfileEntries>50</ProfileEntries>
+  </GXDLMSProfileGeneric>
+  <GXDLMSProfileGeneric>
+    <LN>0.0.99.98.2.255</LN>
+    <Version>1</Version>
+    <Description>Power Related Events Profile</Description>
+    <Access>11111111</Access>
+    <MethodAccess>00</MethodAccess>
+    <Buffer />
+    <CaptureObjects>
+      <Item>
+        <ObjectType>8</ObjectType>
+        <LN>0.0.1.0.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>1</ObjectType>
+        <LN>0.0.96.11.2.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+    </CaptureObjects>
+    <CapturePeriod>0</CapturePeriod>
+    <SortMethod>1</SortMethod>
+    <SortObject>
+      <ObjectType>8</ObjectType>
+      <LN>0.0.1.0.0.255</LN>
+    </SortObject>
+    <EntriesInUse>50</EntriesInUse>
+    <ProfileEntries>50</ProfileEntries>
+  </GXDLMSProfileGeneric>
+  <GXDLMSProfileGeneric>
+    <LN>0.0.99.98.3.255</LN>
+    <Version>1</Version>
+    <Description>Transaction Events Profile</Description>
+    <Access>11111111</Access>
+    <MethodAccess>00</MethodAccess>
+    <Buffer />
+    <CaptureObjects>
+      <Item>
+        <ObjectType>8</ObjectType>
+        <LN>0.0.1.0.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>1</ObjectType>
+        <LN>0.0.96.11.3.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+    </CaptureObjects>
+    <CapturePeriod>0</CapturePeriod>
+    <SortMethod>1</SortMethod>
+    <SortObject>
+      <ObjectType>8</ObjectType>
+      <LN>0.0.1.0.0.255</LN>
+    </SortObject>
+    <EntriesInUse>0</EntriesInUse>
+    <ProfileEntries>50</ProfileEntries>
+  </GXDLMSProfileGeneric>
+  <GXDLMSProfileGeneric>
+    <LN>0.0.99.98.4.255</LN>
+    <Version>1</Version>
+    <Description>Other Tamper Events Profile</Description>
+    <Access>11111111</Access>
+    <MethodAccess>00</MethodAccess>
+    <Buffer />
+    <CaptureObjects>
+      <Item>
+        <ObjectType>8</ObjectType>
+        <LN>0.0.1.0.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>1</ObjectType>
+        <LN>0.0.96.11.4.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.94.91.14.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.12.7.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.13.7.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.1.8.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>3</ObjectType>
+        <LN>1.0.2.8.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>1</ObjectType>
+        <LN>0.0.94.91.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+    </CaptureObjects>
+    <CapturePeriod>0</CapturePeriod>
+    <SortMethod>1</SortMethod>
+    <SortObject>
+      <ObjectType>8</ObjectType>
+      <LN>0.0.1.0.0.255</LN>
+    </SortObject>
+    <EntriesInUse>12</EntriesInUse>
+    <ProfileEntries>50</ProfileEntries>
+  </GXDLMSProfileGeneric>
+  <GXDLMSProfileGeneric>
+    <LN>0.0.99.98.5.255</LN>
+    <Version>1</Version>
+    <Description>Non Roll Over Events Profile</Description>
+    <Access>11111111</Access>
+    <MethodAccess>00</MethodAccess>
+    <Buffer />
+    <CaptureObjects>
+      <Item>
+        <ObjectType>8</ObjectType>
+        <LN>0.0.1.0.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>1</ObjectType>
+        <LN>0.0.96.11.5.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+    </CaptureObjects>
+    <CapturePeriod>0</CapturePeriod>
+    <SortMethod>1</SortMethod>
+    <SortObject>
+      <ObjectType>8</ObjectType>
+      <LN>0.0.1.0.0.255</LN>
+    </SortObject>
+    <EntriesInUse>0</EntriesInUse>
+    <ProfileEntries>2</ProfileEntries>
+  </GXDLMSProfileGeneric>
+  <GXDLMSProfileGeneric>
+    <LN>0.0.99.98.6.255</LN>
+    <Version>1</Version>
+    <Description>Control Events Profile</Description>
+    <Access>11111111</Access>
+    <MethodAccess>00</MethodAccess>
+    <Buffer />
+    <CaptureObjects>
+      <Item>
+        <ObjectType>8</ObjectType>
+        <LN>0.0.1.0.0.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+      <Item>
+        <ObjectType>1</ObjectType>
+        <LN>0.0.96.11.6.255</LN>
+        <Attribute>2</Attribute>
+        <Data>0</Data>
+      </Item>
+    </CaptureObjects>
+    <CapturePeriod>0</CapturePeriod>
+    <SortMethod>1</SortMethod>
+    <SortObject>
+      <ObjectType>8</ObjectType>
+      <LN>0.0.1.0.0.255</LN>
+    </SortObject>
+    <EntriesInUse>0</EntriesInUse>
+    <ProfileEntries>50</ProfileEntries>
+  </GXDLMSProfileGeneric>
+  <GXDLMSClock>
+    <LN>0.0.1.0.0.255</LN>
+    <Description>Clock</Description>
+    <Access>131111111</Access>
+    <MethodAccess>000000</MethodAccess>
+    <Time>06/09/2026 18:57:45</Time>
+    <TimeZone>0</TimeZone>
+    <Status>0</Status>
+    <Begin />
+    <End />
+    <Deviation>0</Deviation>
+    <Enabled>0</Enabled>
+    <ClockBase>0</ClockBase>
+  </GXDLMSClock>
+  <GXDLMSScriptTable>
+    <LN>0.0.10.0.1.255</LN>
+    <Description>MD Reset Action</Description>
+    <Access>11</Access>
+    <MethodAccess>1</MethodAccess>
+    <Scripts />
+  </GXDLMSScriptTable>
+  <GXDLMSScriptTable>
+    <LN>0.0.10.0.100.255</LN>
+    <Description>Ch. 0 Tariffication script table</Description>
+    <Access>11</Access>
+    <MethodAccess>0</MethodAccess>
+    <Scripts />
+  </GXDLMSScriptTable>
+  <GXDLMSScriptTable>
+    <LN>0.0.10.0.107.255</LN>
+    <Description>Ch. 0 Image activation</Description>
+    <Access>11</Access>
+    <MethodAccess>0</MethodAccess>
+    <Scripts />
+  </GXDLMSScriptTable>
+  <GXDLMSScriptTable>
+    <LN>0.0.10.0.108.255</LN>
+    <Description>Ch. 0 Push script table</Description>
+    <Access>11</Access>
+    <MethodAccess>0</MethodAccess>
+    <Scripts />
+  </GXDLMSScriptTable>
+  <GXDLMSAssociationLogicalName>
+    <LN>0.0.40.0.0.255</LN>
+    <Version>1</Version>
+    <Description>Current Association</Description>
+    <Access>111111011</Access>
+    <MethodAccess>1011</MethodAccess>
+    <ObjectList />
+    <ClientSAP>0</ClientSAP>
+    <ServerSAP>0</ServerSAP>
+    <ApplicationContextName>
+      <JointIsoCtt>2</JointIsoCtt>
+      <Country>16</Country>
+      <CountryName>756</CountryName>
+      <IdentifiedOrganization>5</IdentifiedOrganization>
+      <DlmsUA>8</DlmsUA>
+      <ApplicationContext>1</ApplicationContext>
+      <ContextId>1</ContextId>
+    </ApplicationContextName>
+    <XDLMSContextInfo>
+      <Conformance>0</Conformance>
+      <MaxReceivePduSize>0</MaxReceivePduSize>
+      <MaxSendPduSize>0</MaxSendPduSize>
+      <DlmsVersionNumber>6</DlmsVersionNumber>
+      <QualityOfService>0</QualityOfService>
+      <CypheringInfo />
+    </XDLMSContextInfo>
+    <AuthenticationMechanismName>
+      <JointIsoCtt>2</JointIsoCtt>
+      <Country>16</Country>
+      <CountryName>756</CountryName>
+      <IdentifiedOrganization>5</IdentifiedOrganization>
+      <DlmsUA>8</DlmsUA>
+      <AuthenticationMechanismName>2</AuthenticationMechanismName>
+      <MechanismId>0</MechanismId>
+    </AuthenticationMechanismName>
+    <Secret />
+    <AssociationStatus>0</AssociationStatus>
+    <SecuritySetupReference>0.0.0.0.0.0</SecuritySetupReference>
+    <Users />
+    <MultipleAssociationViews>0</MultipleAssociationViews>
+  </GXDLMSAssociationLogicalName>
+  <GXDLMSAssociationLogicalName>
+    <LN>0.0.40.0.1.255</LN>
+    <Version>1</Version>
+    <Description>PC Association</Description>
+    <Access>111111010</Access>
+    <MethodAccess>0000</MethodAccess>
+    <ObjectList />
+    <ClientSAP>0</ClientSAP>
+    <ServerSAP>0</ServerSAP>
+    <ApplicationContextName>
+      <JointIsoCtt>2</JointIsoCtt>
+      <Country>16</Country>
+      <CountryName>756</CountryName>
+      <IdentifiedOrganization>5</IdentifiedOrganization>
+      <DlmsUA>8</DlmsUA>
+      <ApplicationContext>1</ApplicationContext>
+      <ContextId>1</ContextId>
+    </ApplicationContextName>
+    <XDLMSContextInfo>
+      <Conformance>0</Conformance>
+      <MaxReceivePduSize>0</MaxReceivePduSize>
+      <MaxSendPduSize>0</MaxSendPduSize>
+      <DlmsVersionNumber>6</DlmsVersionNumber>
+      <QualityOfService>0</QualityOfService>
+      <CypheringInfo />
+    </XDLMSContextInfo>
+    <AuthenticationMechanismName>
+      <JointIsoCtt>2</JointIsoCtt>
+      <Country>16</Country>
+      <CountryName>756</CountryName>
+      <IdentifiedOrganization>5</IdentifiedOrganization>
+      <DlmsUA>8</DlmsUA>
+      <AuthenticationMechanismName>2</AuthenticationMechanismName>
+      <MechanismId>0</MechanismId>
+    </AuthenticationMechanismName>
+    <Secret />
+    <AssociationStatus>0</AssociationStatus>
+    <SecuritySetupReference>0.0.0.0.0.0</SecuritySetupReference>
+    <Users />
+    <MultipleAssociationViews>0</MultipleAssociationViews>
+  </GXDLMSAssociationLogicalName>
+  <GXDLMSAssociationLogicalName>
+    <LN>0.0.40.0.2.255</LN>
+    <Version>1</Version>
+    <Description>MR Association (LLS)</Description>
+    <Access>111111210</Access>
+    <MethodAccess>0000</MethodAccess>
+    <ObjectList />
+    <ClientSAP>0</ClientSAP>
+    <ServerSAP>0</ServerSAP>
+    <ApplicationContextName>
+      <JointIsoCtt>2</JointIsoCtt>
+      <Country>16</Country>
+      <CountryName>756</CountryName>
+      <IdentifiedOrganization>5</IdentifiedOrganization>
+      <DlmsUA>8</DlmsUA>
+      <ApplicationContext>1</ApplicationContext>
+      <ContextId>1</ContextId>
+    </ApplicationContextName>
+    <XDLMSContextInfo>
+      <Conformance>0</Conformance>
+      <MaxReceivePduSize>0</MaxReceivePduSize>
+      <MaxSendPduSize>0</MaxSendPduSize>
+      <DlmsVersionNumber>6</DlmsVersionNumber>
+      <QualityOfService>0</QualityOfService>
+      <CypheringInfo />
+    </XDLMSContextInfo>
+    <AuthenticationMechanismName>
+      <JointIsoCtt>2</JointIsoCtt>
+      <Country>16</Country>
+      <CountryName>756</CountryName>
+      <IdentifiedOrganization>5</IdentifiedOrganization>
+      <DlmsUA>8</DlmsUA>
+      <AuthenticationMechanismName>2</AuthenticationMechanismName>
+      <MechanismId>0</MechanismId>
+    </AuthenticationMechanismName>
+    <Secret />
+    <AssociationStatus>0</AssociationStatus>
+    <SecuritySetupReference>0.0.0.0.0.0</SecuritySetupReference>
+    <Users />
+    <MultipleAssociationViews>0</MultipleAssociationViews>
+  </GXDLMSAssociationLogicalName>
+  <GXDLMSAssociationLogicalName>
+    <LN>0.0.40.0.3.255</LN>
+    <Version>1</Version>
+    <Description>US Association (HLS)</Description>
+    <Access>111111011</Access>
+    <MethodAccess>1100</MethodAccess>
+    <ObjectList />
+    <ClientSAP>0</ClientSAP>
+    <ServerSAP>0</ServerSAP>
+    <ApplicationContextName>
+      <JointIsoCtt>2</JointIsoCtt>
+      <Country>16</Country>
+      <CountryName>756</CountryName>
+      <IdentifiedOrganization>5</IdentifiedOrganization>
+      <DlmsUA>8</DlmsUA>
+      <ApplicationContext>1</ApplicationContext>
+      <ContextId>1</ContextId>
+    </ApplicationContextName>
+    <XDLMSContextInfo>
+      <Conformance>0</Conformance>
+      <MaxReceivePduSize>0</MaxReceivePduSize>
+      <MaxSendPduSize>0</MaxSendPduSize>
+      <DlmsVersionNumber>6</DlmsVersionNumber>
+      <QualityOfService>0</QualityOfService>
+      <CypheringInfo />
+    </XDLMSContextInfo>
+    <AuthenticationMechanismName>
+      <JointIsoCtt>2</JointIsoCtt>
+      <Country>16</Country>
+      <CountryName>756</CountryName>
+      <IdentifiedOrganization>5</IdentifiedOrganization>
+      <DlmsUA>8</DlmsUA>
+      <AuthenticationMechanismName>2</AuthenticationMechanismName>
+      <MechanismId>0</MechanismId>
+    </AuthenticationMechanismName>
+    <Secret />
+    <AssociationStatus>0</AssociationStatus>
+    <SecuritySetupReference>0.0.0.0.0.0</SecuritySetupReference>
+    <Users />
+    <MultipleAssociationViews>0</MultipleAssociationViews>
+  </GXDLMSAssociationLogicalName>
+  <GXDLMSAssociationLogicalName>
+    <LN>0.0.40.0.4.255</LN>
+    <Version>1</Version>
+    <Description>Push Association (HLS)</Description>
+    <Access>111111010</Access>
+    <MethodAccess>0000</MethodAccess>
+    <ObjectList />
+    <ClientSAP>0</ClientSAP>
+    <ServerSAP>0</ServerSAP>
+    <ApplicationContextName>
+      <JointIsoCtt>2</JointIsoCtt>
+      <Country>16</Country>
+      <CountryName>756</CountryName>
+      <IdentifiedOrganization>5</IdentifiedOrganization>
+      <DlmsUA>8</DlmsUA>
+      <ApplicationContext>1</ApplicationContext>
+      <ContextId>1</ContextId>
+    </ApplicationContextName>
+    <XDLMSContextInfo>
+      <Conformance>0</Conformance>
+      <MaxReceivePduSize>0</MaxReceivePduSize>
+      <MaxSendPduSize>0</MaxSendPduSize>
+      <DlmsVersionNumber>6</DlmsVersionNumber>
+      <QualityOfService>0</QualityOfService>
+      <CypheringInfo />
+    </XDLMSContextInfo>
+    <AuthenticationMechanismName>
+      <JointIsoCtt>2</JointIsoCtt>
+      <Country>16</Country>
+      <CountryName>756</CountryName>
+      <IdentifiedOrganization>5</IdentifiedOrganization>
+      <DlmsUA>8</DlmsUA>
+      <AuthenticationMechanismName>2</AuthenticationMechanismName>
+      <MechanismId>0</MechanismId>
+    </AuthenticationMechanismName>
+    <Secret />
+    <AssociationStatus>0</AssociationStatus>
+    <SecuritySetupReference>0.0.0.0.0.0</SecuritySetupReference>
+    <Users />
+    <MultipleAssociationViews>0</MultipleAssociationViews>
+  </GXDLMSAssociationLogicalName>
+  <GXDLMSAssociationLogicalName>
+    <LN>0.0.40.0.5.255</LN>
+    <Version>1</Version>
+    <Description>Firmware Upgrade Association (HLS)</Description>
+    <Access>111111010</Access>
+    <MethodAccess>0100</MethodAccess>
+    <ObjectList />
+    <ClientSAP>0</ClientSAP>
+    <ServerSAP>0</ServerSAP>
+    <ApplicationContextName>
+      <JointIsoCtt>2</JointIsoCtt>
+      <Country>16</Country>
+      <CountryName>756</CountryName>
+      <IdentifiedOrganization>5</IdentifiedOrganization>
+      <DlmsUA>8</DlmsUA>
+      <ApplicationContext>1</ApplicationContext>
+      <ContextId>1</ContextId>
+    </ApplicationContextName>
+    <XDLMSContextInfo>
+      <Conformance>0</Conformance>
+      <MaxReceivePduSize>0</MaxReceivePduSize>
+      <MaxSendPduSize>0</MaxSendPduSize>
+      <DlmsVersionNumber>6</DlmsVersionNumber>
+      <QualityOfService>0</QualityOfService>
+      <CypheringInfo />
+    </XDLMSContextInfo>
+    <AuthenticationMechanismName>
+      <JointIsoCtt>2</JointIsoCtt>
+      <Country>16</Country>
+      <CountryName>756</CountryName>
+      <IdentifiedOrganization>5</IdentifiedOrganization>
+      <DlmsUA>8</DlmsUA>
+      <AuthenticationMechanismName>2</AuthenticationMechanismName>
+      <MechanismId>0</MechanismId>
+    </AuthenticationMechanismName>
+    <Secret />
+    <AssociationStatus>0</AssociationStatus>
+    <SecuritySetupReference>0.0.0.0.0.0</SecuritySetupReference>
+    <Users />
+    <MultipleAssociationViews>0</MultipleAssociationViews>
+  </GXDLMSAssociationLogicalName>
+  <GXDLMSAssociationLogicalName>
+    <LN>0.0.40.0.10.255</LN>
+    <Version>1</Version>
+    <Description>Ch. 0 Association  #10</Description>
+    <Access>111111011</Access>
+    <MethodAccess>1100</MethodAccess>
+    <ObjectList />
+    <ClientSAP>0</ClientSAP>
+    <ServerSAP>0</ServerSAP>
+    <ApplicationContextName>
+      <JointIsoCtt>2</JointIsoCtt>
+      <Country>16</Country>
+      <CountryName>756</CountryName>
+      <IdentifiedOrganization>5</IdentifiedOrganization>
+      <DlmsUA>8</DlmsUA>
+      <ApplicationContext>1</ApplicationContext>
+      <ContextId>1</ContextId>
+    </ApplicationContextName>
+    <XDLMSContextInfo>
+      <Conformance>0</Conformance>
+      <MaxReceivePduSize>0</MaxReceivePduSize>
+      <MaxSendPduSize>0</MaxSendPduSize>
+      <DlmsVersionNumber>6</DlmsVersionNumber>
+      <QualityOfService>0</QualityOfService>
+      <CypheringInfo />
+    </XDLMSContextInfo>
+    <AuthenticationMechanismName>
+      <JointIsoCtt>2</JointIsoCtt>
+      <Country>16</Country>
+      <CountryName>756</CountryName>
+      <IdentifiedOrganization>5</IdentifiedOrganization>
+      <DlmsUA>8</DlmsUA>
+      <AuthenticationMechanismName>2</AuthenticationMechanismName>
+      <MechanismId>0</MechanismId>
+    </AuthenticationMechanismName>
+    <Secret />
+    <AssociationStatus>0</AssociationStatus>
+    <SecuritySetupReference>0.0.0.0.0.0</SecuritySetupReference>
+    <Users />
+    <MultipleAssociationViews>0</MultipleAssociationViews>
+  </GXDLMSAssociationLogicalName>
+  <GXDLMSImageTransfer>
+    <LN>0.0.44.0.0.255</LN>
+    <Description>Image Activation Info</Description>
+    <Access>1111111</Access>
+    <MethodAccess>1111</MethodAccess>
+    <ImageBlockSize>200</ImageBlockSize>
+    <ImageTransferredBlocksStatus />
+    <ImageFirstNotTransferredBlockNumber>0</ImageFirstNotTransferredBlockNumber>
+    <ImageTransferEnabled>1</ImageTransferEnabled>
+    <ImageTransferStatus>0</ImageTransferStatus>
+    <ImageActivateInfo />
+  </GXDLMSImageTransfer>
+  <GXDLMSActivityCalendar>
+    <LN>0.0.13.0.0.255</LN>
+    <Description>Activity Calendar Active Time</Description>
+    <Access>1111133333</Access>
+    <MethodAccess>1</MethodAccess>
+    <CalendarNameActive />
+    <CalendarNamePassive />
+    <Time />
+  </GXDLMSActivityCalendar>
+  <GXDLMSActionSchedule>
+    <LN>0.0.15.0.0.255</LN>
+    <Description>Single Action Schedule for Billing Dates</Description>
+    <Access>1113</Access>
+    <MethodAccess />
+    <ExecutedScriptSelector>0</ExecutedScriptSelector>
+    <Type>0</Type>
+  </GXDLMSActionSchedule>
+  <GXDLMSActionSchedule>
+    <LN>0.0.15.0.4.255</LN>
+    <Description>Single Action Schedule for PUSH</Description>
+    <Access>1113</Access>
+    <MethodAccess />
+    <ExecutedScriptSelector>0</ExecutedScriptSelector>
+    <Type>0</Type>
+  </GXDLMSActionSchedule>
+  <GXDLMSActionSchedule>
+    <LN>0.0.15.0.2.255</LN>
+    <Description>Single Action Schedule for Image Activation</Description>
+    <Access>1111</Access>
+    <MethodAccess />
+    <ExecutedScriptSelector>0</ExecutedScriptSelector>
+    <Type>0</Type>
+  </GXDLMSActionSchedule>
+  <GXDLMSIecHdlcSetup>
+    <LN>0.0.22.0.0.255</LN>
+    <Version>1</Version>
+    <Description>Ch. 0 IEC HDLC setup</Description>
+    <Access>111111111</Access>
+    <MethodAccess />
+    <Speed>5</Speed>
+    <WindowSizeTx>1</WindowSizeTx>
+    <WindowSizeRx>1</WindowSizeRx>
+    <MaximumInfoLengthTx>128</MaximumInfoLengthTx>
+    <MaximumInfoLengthRx>128</MaximumInfoLengthRx>
+    <InterCharachterTimeout>30</InterCharachterTimeout>
+    <InactivityTimeout>120</InactivityTimeout>
+    <DeviceAddress>0</DeviceAddress>
+  </GXDLMSIecHdlcSetup>
+  <GXDLMSPushSetup>
+    <LN>0.0.25.9.0.255</LN>
+    <Description>Instant Push Setup</Description>
+    <Access>1131111</Access>
+    <MethodAccess>0</MethodAccess>
+    <ObjectList />
+    <Service>0</Service>
+    <Destination />
+    <Message>0</Message>
+    <CommunicationWindow />
+    <RandomisationStartInterval>0</RandomisationStartInterval>
+    <NumberOfRetries>0</NumberOfRetries>
+    <RepetitionDelay>0</RepetitionDelay>
+  </GXDLMSPushSetup>
+  <GXDLMSPushSetup>
+    <LN>0.4.25.9.0.255</LN>
+    <Description>Alert Push Setup</Description>
+    <Access>1131111</Access>
+    <MethodAccess>0</MethodAccess>
+    <ObjectList />
+    <Service>0</Service>
+    <Destination />
+    <Message>0</Message>
+    <CommunicationWindow />
+    <RandomisationStartInterval>0</RandomisationStartInterval>
+    <NumberOfRetries>0</NumberOfRetries>
+    <RepetitionDelay>0</RepetitionDelay>
+  </GXDLMSPushSetup>
+  <GXDLMSTcpUdpSetup>
+    <LN>0.0.25.0.0.255</LN>
+    <Description>Ch. 0 TCP-UDP setup</Description>
+    <Access>131111</Access>
+    <MethodAccess />
+    <Port>4059</Port>
+    <IPReference />
+    <MaximumSegmentSize>576</MaximumSegmentSize>
+    <MaximumSimultaneousConnections>0</MaximumSimultaneousConnections>
+    <InactivityTimeout>180</InactivityTimeout>
+  </GXDLMSTcpUdpSetup>
+  <GXDLMSIp4Setup>
+    <LN>0.0.25.1.0.255</LN>
+    <Description>Ch. 0 IPv4 setup</Description>
+    <Access>1111111111</Access>
+    <MethodAccess>000</MethodAccess>
+    <DataLinkLayerReference />
+    <IPAddress />
+    <MulticastIPAddress />
+    <IPOptions />
+    <SubnetMask />
+    <GatewayIPAddress />
+    <UseDHCP>0</UseDHCP>
+    <PrimaryDNSAddress />
+    <SecondaryDNSAddress />
+  </GXDLMSIp4Setup>
+  <GXDLMSIp6Setup>
+    <LN>0.0.25.7.0.255</LN>
+    <Description>Ch. 0 IPv6 setup</Description>
+    <Access>1111111111</Access>
+    <MethodAccess>00</MethodAccess>
+    <DataLinkLayerReference />
+    <AddressConfigMode>0</AddressConfigMode>
+    <TrafficClass>0</TrafficClass>
+  </GXDLMSIp6Setup>
+  <GXDLMSSecuritySetup>
+    <LN>0.0.43.0.2.255</LN>
+    <Description>Global Key Change #2 (LLS)</Description>
+    <Access>11111</Access>
+    <MethodAccess>11</MethodAccess>
+    <SecurityPolicy>0</SecurityPolicy>
+    <SecuritySuite>0</SecuritySuite>
+    <ClientSystemTitle />
+    <ServerSystemTitle />
+    <Certificates />
+    <Guek>000102030405060708090A0B0C0D0E0F</Guek>
+    <Gbek>000102030405060708090A0B0C0D0E0F</Gbek>
+    <Gak>D0D1D2D3D4D5D6D7D8D9DADBDCDDDEDF</Gak>
+  </GXDLMSSecuritySetup>
+  <GXDLMSSecuritySetup>
+    <LN>0.0.43.0.3.255</LN>
+    <Description>Global Key Change #3 (HLS)</Description>
+    <Access>11111</Access>
+    <MethodAccess>11</MethodAccess>
+    <SecurityPolicy>0</SecurityPolicy>
+    <SecuritySuite>0</SecuritySuite>
+    <ClientSystemTitle />
+    <ServerSystemTitle />
+    <Certificates />
+    <Guek>000102030405060708090A0B0C0D0E0F</Guek>
+    <Gbek>000102030405060708090A0B0C0D0E0F</Gbek>
+    <Gak>D0D1D2D3D4D5D6D7D8D9DADBDCDDDEDF</Gak>
+  </GXDLMSSecuritySetup>
+  <GXDLMSSecuritySetup>
+    <LN>0.0.43.0.4.255</LN>
+    <Description>Global Key Change #4 (Push)</Description>
+    <Access>11111</Access>
+    <MethodAccess>11</MethodAccess>
+    <SecurityPolicy>0</SecurityPolicy>
+    <SecuritySuite>0</SecuritySuite>
+    <ClientSystemTitle />
+    <ServerSystemTitle />
+    <Certificates />
+    <Guek>000102030405060708090A0B0C0D0E0F</Guek>
+    <Gbek>000102030405060708090A0B0C0D0E0F</Gbek>
+    <Gak>D0D1D2D3D4D5D6D7D8D9DADBDCDDDEDF</Gak>
+  </GXDLMSSecuritySetup>
+  <GXDLMSSecuritySetup>
+    <LN>0.0.43.0.5.255</LN>
+    <Description>Global Key Change #5 (Firmware Upgrade)</Description>
+    <Access>11111</Access>
+    <MethodAccess>11</MethodAccess>
+    <SecurityPolicy>0</SecurityPolicy>
+    <SecuritySuite>0</SecuritySuite>
+    <ClientSystemTitle />
+    <ServerSystemTitle />
+    <Certificates />
+    <Guek>000102030405060708090A0B0C0D0E0F</Guek>
+    <Gbek>000102030405060708090A0B0C0D0E0F</Gbek>
+    <Gak>D0D1D2D3D4D5D6D7D8D9DADBDCDDDEDF</Gak>
+  </GXDLMSSecuritySetup>
+  <GXDLMSDisconnectControl>
+    <LN>0.0.96.3.10.255</LN>
+    <Description>Load Limit Function Status</Description>
+    <Access>1113</Access>
+    <MethodAccess>11</MethodAccess>
+    <OutputState>0</OutputState>
+    <ControlState>0</ControlState>
+    <ControlMode>0</ControlMode>
+  </GXDLMSDisconnectControl>
+  <GXDLMSLimiter>
+    <LN>0.0.17.0.0.255</LN>
+    <Description>Load Limit Value</Description>
+    <Access>11131331111</Access>
+    <MethodAccess />
+    <MonitoredValue />
+    <ThresholdActive Type="0" />
+    <ThresholdNormal Type="0" />
+    <ThresholdEmergency Type="0" />
+    <MinOverThresholdDuration>0</MinOverThresholdDuration>
+    <MinUnderThresholdDuration>0</MinUnderThresholdDuration>
+    <EmergencyProfile>
+      <ID>0</ID>
+      <Time />
+      <Duration>0</Duration>
+    </EmergencyProfile>
+    <EmergencyProfileGroupIDs />
+    <Active>0</Active>
+    <ActionOverThreshold>
+      <LN />
+      <ScriptSelector>0</ScriptSelector>
+    </ActionOverThreshold>
+    <ActionUnderThreshold>
+      <LN />
+      <ScriptSelector>0</ScriptSelector>
+    </ActionUnderThreshold>
+  </GXDLMSLimiter>
+</Objects>

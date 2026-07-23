@@ -6,6 +6,13 @@ public class TcpOptions
 
     public int ListenPort { get; set; } = 4059;
 
+    /// <summary>
+    /// The IPv6 /64 the simulated meter fleet lives in. **Per-deployment infrastructure value** —
+    /// it MUST match the /64 actually routed to this host (e.g. the AWS ENI-assigned prefix plus
+    /// `ip -6 route add local &lt;prefix&gt;/64 dev …`). Override it per server via
+    /// appsettings.Production.json or the environment variable <c>Tcp__AddressPrefix</c>. The value
+    /// below is only a documentation/dev default (a ULA example) and is validated at startup.
+    /// </summary>
     public string AddressPrefix { get; set; } = "fd00:6d65:7472::/64";
 
     /// <summary>A connection with no activity for longer than this is closed by the idle sweep.</summary>

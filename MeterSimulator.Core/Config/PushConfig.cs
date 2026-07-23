@@ -1,10 +1,11 @@
 namespace MeterSimulator.Config
 {
     /// <summary>
-    /// Periodic push (DataNotification) settings, bound from appsettings.json
-    /// under MeterConfig:Push.  The meter's push DESTINATION (IP) and transport
-    /// come from the PushSetup DLMS object (loaded from XML); this config only
-    /// carries what the object model can't express for an outbound socket:
+    /// Periodic push (DataNotification) settings. NOTE: push is currently DEFERRED — the host
+    /// builds sessions with a null PushConfig and never starts the push timer (see
+    /// merge_task.md #12/#15). This type is kept for when push is wired: the meter's push
+    /// DESTINATION (IP) and transport come from the PushSetup DLMS object (loaded from XML);
+    /// this config only carries what the object model can't express for an outbound socket:
     /// whether push is on, how often, the fallback port, and ciphering.
     /// </summary>
     public class PushConfig

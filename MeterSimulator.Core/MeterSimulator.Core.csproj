@@ -1,7 +1,8 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
-		<OutputType>Exe</OutputType>
+		<!-- Class library: the DLMS "brain". Hosted in-process by ManyMeterSimulator
+		     (no standalone Program.cs / TCP listener anymore). -->
 		<TargetFramework>net10.0</TargetFramework>
 		<RootNamespace>MeterSimulator</RootNamespace>
 
@@ -12,24 +13,6 @@
 		<LangVersion>latest</LangVersion>
 		<InvariantGlobalization>true</InvariantGlobalization>
 	</PropertyGroup>
-
-	<ItemGroup>
-	  <None Remove="appsettings.json" />
-	  <None Remove="Config\AddNameplate.sql" />
-	  <None Remove="Config\DeleteNameplate.sql" />
-	</ItemGroup>
-
-	<ItemGroup>
-	  <Content Include="appsettings.json">
-	    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-	  </Content>
-	</ItemGroup>
-
-	<ItemGroup>
-	  <Folder Include="Networking\" />
-	  <Folder Include="Logging\" />
-	  <Folder Include="Utils\" />
-	</ItemGroup>
 
 	<ItemGroup>
 	  <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.5" />
@@ -43,4 +26,3 @@
 	</ItemGroup>
 
 </Project>
-
