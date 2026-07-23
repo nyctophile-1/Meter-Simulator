@@ -1,0 +1,196 @@
+@page "/"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using ManyMeterSimulator.Auth
+@inject MeterRegistry MeterRegistry
+@inject IOptions<TcpOptions> TcpOptionsAccessor
+
+<PageTitle>MAYA - Setup</PageTitle>
+
+<h1>Setup</h1>
+
+<p>Address prefix: <code>@AddressPrefix</code> &middot; max supported meters: <code>@MeterRegistry.MaxIndex.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</code></p>
+
+@if (IsAdmin)
+{
+    <div class="field">
+        <label for="batchName">Batch name:</label>
+        <input id="batchName" type="text" @bind="BatchName" @bind:event="onchange" placeholder="e.g. batch-1" />
+    </div>
+
+    <div class="field">
+        <label for="meterCount">Number of meters (N):</label>
+        <input id="meterCount" type="number" min="1" @bind="MeterCount" @bind:event="onchange" />
+    </div>
+
+    @if (MeterCount > 0)
+    {
+        BatchPreview preview = MeterRegistry.PreviewNextBatch(AddressPrefix, MeterCount);
+        <p>
+            Will reserve: <code>@preview.FirstAddress</code> to <code>@preview.LastAddress</code>
+            &middot; meter numbers <code>@preview.FirstSerial</code> to <code>@preview.LastSerial</code>
+            (@MeterCount meter(s))
+        </p>
+    }
+
+    <button @onclick="AddBatch" disabled="@(MeterCount <= 0 || string.IsNullOrWhiteSpace(BatchName))">Add Batch</button>
+
+    @if (ErrorMessage is not null)
+    {
+        <p class="error">@ErrorMessage</p>
+    }
+}
+
+<h2>Batches (@MeterRegistry.Batches.Count)</h2>
+@{
+    IReadOnlyList<MeterBatch> batches = MeterRegistry.Batches;
+}
+@if (batches.Count == 0)
+{
+    <p>None yet.</p>
+}
+else
+{
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Count</th>
+                <th>IP range</th>
+                <th>Meter# range</th>
+                <th>Status</th>
+                @if (CanOperate)
+                {
+                    <th>Actions</th>
+                }
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (MeterBatch batch in batches)
+            {
+                (IPAddress firstAddr, IPAddress lastAddr) = MeterRegistry.GetAddressRange(batch, AddressPrefix);
+                <tr class="batch-row" @onclick="() => ToggleExpanded(batch.Id)">
+                    <td>@batch.Name</td>
+                    <td>@batch.Count.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</td>
+                    <td>@firstAddr - @lastAddr</td>
+                    <td>@MeterRegistry.FormatSerial(batch.StartIndex) - @MeterRegistry.FormatSerial(batch.EndIndex)</td>
+                    <td class="status-@batch.Status.ToString().ToLowerInvariant()">@batch.Status</td>
+                    @if (CanOperate)
+                    {
+                        <td>
+                            <button @onclick="() => Start(batch.Id)" @onclick:stopPropagation="true" disabled="@(batch.Status == BatchStatus.Running)">Start</button>
+                            <button @onclick="() => Stop(batch.Id)" @onclick:stopPropagation="true" disabled="@(batch.Status == BatchStatus.Stopped)">Stop</button>
+                            @if (IsAdmin)
+                            {
+                                <button @onclick="() => Delete(batch.Id)" @onclick:stopPropagation="true" class="danger">Delete</button>
+                            }
+                        </td>
+                    }
+                </tr>
+                @if (ExpandedBatchId == batch.Id)
+                {
+                    <tr class="detail-row">
+                        <td colspan="6">
+                            @{
+                                const int maxShown = 50;
+                                var meters = MeterRegistry.GetMeters(batch, AddressPrefix).Take(maxShown).ToList();
+                            }
+                            <ul>
+                                @foreach (var m in meters)
+                                {
+                                    <li><code>@m.Address</code> &rarr; <code>@m.Serial</code></li>
+                                }
+                            </ul>
+                            @if (batch.Count > maxShown)
+                            {
+                                <p>...and @(batch.Count - maxShown) more.</p>
+                            }
+                        </td>
+                    </tr>
+                }
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthStateTask { get; set; }
+
+    private ClaimsPrincipal? _user;
+
+    private string BatchName { get; set; } = "";
+    private int MeterCount { get; set; } = 100;
+    private string? ErrorMessage;
+    private int? ExpandedBatchId;
+
+    private string AddressPrefix => TcpOptionsAccessor.Value.AddressPrefix;
+
+    // Utility role includes Viewer, and Admin role includes Utility+Viewer (see AuthEndpoints) -
+    // checking a single role here correctly covers everyone entitled to that permission level.
+    private bool IsAdmin => _user?.IsInRole(AppRoles.Admin) ?? false;
+    private bool CanOperate => _user?.IsInRole(AppRoles.Utility) ?? false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthStateTask is not null)
+        {
+            AuthenticationState state = await AuthStateTask;
+            _user = state.User;
+        }
+    }
+
+    private void AddBatch()
+    {
+        if (!IsAdmin)
+        {
+            return; // defense in depth - the button is hidden for non-admins, this shouldn't be reachable
+        }
+
+        ErrorMessage = null;
+        try
+        {
+            MeterRegistry.AddBatch(BatchName, MeterCount);
+            BatchName = "";
+        }
+        catch (Exception ex) when (ex is ArgumentOutOfRangeException or InvalidOperationException)
+        {
+            ErrorMessage = ex.Message;
+        }
+    }
+
+    private void Start(int batchId)
+    {
+        if (CanOperate)
+        {
+            MeterRegistry.TryStart(batchId);
+        }
+    }
+
+    private void Stop(int batchId)
+    {
+        if (CanOperate)
+        {
+            MeterRegistry.TryStop(batchId);
+        }
+    }
+
+    private void Delete(int batchId)
+    {
+        if (!IsAdmin)
+        {
+            return;
+        }
+
+        MeterRegistry.Delete(batchId);
+        if (ExpandedBatchId == batchId)
+        {
+            ExpandedBatchId = null;
+        }
+    }
+
+    private void ToggleExpanded(int batchId) => ExpandedBatchId = ExpandedBatchId == batchId ? null : batchId;
+}

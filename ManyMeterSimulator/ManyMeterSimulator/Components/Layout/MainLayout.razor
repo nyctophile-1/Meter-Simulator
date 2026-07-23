@@ -1,0 +1,16 @@
+@inherits LayoutComponentBase
+
+<div class="page">
+    <header class="top-bar">
+        <span class="brand">MAYA</span>
+        <span class="brand-sub">Many-Meter Simulator</span>
+        <AuthorizeView>
+            <Authorized>
+                <span class="session-info">logged in as <strong>@context.User.Identity?.Name</strong> &middot; <a href="/logout">log out</a></span>
+            </Authorized>
+        </AuthorizeView>
+    </header>
+    <main>
+        @Body
+    </main>
+</div>
