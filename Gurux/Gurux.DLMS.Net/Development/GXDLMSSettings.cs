@@ -1265,7 +1265,8 @@ namespace Gurux.DLMS
           bool encrypt,
           CryptoKeyType keyType)
         {
-            if (CryptoNotifier.crypto != null)
+            // GXDLMSSettings.cs:1268
+            if (CryptoNotifier != null && CryptoNotifier.crypto != null)
             {
                 GXCryptoKeyParameter args = new GXCryptoKeyParameter();
                 args.KeyType = keyType;

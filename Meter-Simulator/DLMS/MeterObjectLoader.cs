@@ -48,6 +48,14 @@ namespace MeterSimulator.DLMS
             RewireCaptureObjects(objects);
             FixProfileBufferTypes(objects);
 
+            // Step 3.5 ── Roll the snapshot forward to "now"
+            // The XML is a frozen snapshot from some past date, so its profile buffer
+            // timestamps are stale.  Per profile, shift every concrete row timestamp
+            // by one delta so the NEWEST row lands exactly on now (UTC) and all older
+            // rows keep their original spacing.  Runs after FixProfileBufferTypes so
+            // the cells are already GXDateTime, before hand-off ("before loading").
+            ShiftBufferTimestamps(objects);
+
             // Step 4 ── Seed live values (registers, clock, data — NOT profile buffers)
             // Profile buffer rows come from the XML as-is.
             SeedClock(objects);
@@ -105,6 +113,66 @@ namespace MeterSimulator.DLMS
                     }
                 }
             }
+        }
+
+        // ════════════════════════════════════════════════════════════════════════
+        // STEP 3.5 — SHIFT BUFFER TIMESTAMPS TO "NOW"
+        // Per profile: find the newest concrete row timestamp, compute a single
+        // delta = now − newest, and add it to every concrete timestamp in that
+        // profile.  Newest row → exactly now (UTC); older rows keep their exact
+        // original spacing (so a daily profile becomes now, now−1d, now−2d …).
+        // ════════════════════════════════════════════════════════════════════════
+        private static void ShiftBufferTimestamps(GXDLMSObjectCollection objects)
+        {
+            var nowUtc = new DateTimeOffset(DateTime.UtcNow);
+
+            foreach (var profile in objects.OfType<GXDLMSProfileGeneric>())
+            {
+                if (profile.Buffer.Count == 0) continue;
+
+                // Distinct GXDateTime instances (reference-based) so a shared cell
+                // is never shifted twice.  Only concrete Y/M/D timestamps count —
+                // wildcard/template cells (e.g. "*/*/* *:*:*") are left untouched.
+                var stamps = new HashSet<GXDateTime>();
+                foreach (var row in profile.Buffer)
+                    foreach (var cell in row)
+                        if (cell is GXDateTime dt && IsConcreteDate(dt))
+                            stamps.Add(dt);
+
+                if (stamps.Count == 0)
+                {
+                    Console.WriteLine($"[Shift] {profile.LogicalName}: no concrete timestamps, skipped");
+                    continue;
+                }
+
+                DateTimeOffset latest = stamps.Max(s => s.Value);
+                TimeSpan delta = nowUtc - latest;
+
+                if (delta <= TimeSpan.Zero)
+                {
+                    Console.WriteLine(
+                        $"[Shift] {profile.LogicalName}: latest {latest:u} already >= now — no shift");
+                    continue;
+                }
+
+                foreach (var dt in stamps)
+                    dt.Value = dt.Value + delta;
+
+                Console.WriteLine(
+                    $"[Shift] {profile.LogicalName}: {stamps.Count} timestamps +{delta.TotalDays:F2}d " +
+                    $"(latest {latest:u} → now {nowUtc:u})");
+            }
+        }
+
+        // A real profile row timestamp has a concrete year/month/day.  Template rows
+        // that skip those (wildcards) are not real instants and must not be shifted.
+        private static bool IsConcreteDate(GXDateTime dt)
+        {
+            if (dt == null) return false;
+            var s = dt.Skip;
+            return !s.HasFlag(DateTimeSkips.Year)
+                && !s.HasFlag(DateTimeSkips.Month)
+                && !s.HasFlag(DateTimeSkips.Day);
         }
 
         // Returns the wider of two DataTypes so no value in the column overflows.

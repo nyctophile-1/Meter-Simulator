@@ -1,24 +1,22 @@
 ﻿using Gurux.Common;
 using Gurux.Net;
-using MeterSimulator.Models;
 using System;
 using System.Buffers.Binary;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Text;
 
 namespace MeterSimulator.DLMS
 {
     public class DLMSTCPGateway
     {
-        private readonly Dictionary<int, DLMSMeter> _meters;
+        // serverAddress → pre-built, already-Initialized session.  Sessions are
+        // created eagerly in MeterManager (loaded from XML at startup), so the
+        // gateway only routes incoming bytes to the right meter's session.
+        private readonly Dictionary<int, DLMSServerSession> _sessions;
         private readonly GXNet _network;
-        private readonly ConcurrentDictionary<string, DLMSServerSession> _sessions =
-            new ConcurrentDictionary<string, DLMSServerSession>();
 
-        public DLMSTCPGateway(Dictionary<int, DLMSMeter> meters, int port)
+        public DLMSTCPGateway(Dictionary<int, DLMSServerSession> sessions, int port)
         {
-            _meters = meters;
+            _sessions = sessions;
             _network = new GXNet(NetworkType.Tcp, port);
             _network.OnReceived += OnDataReceived;
             _network.OnClientDisconnected += OnClientDisconnected;
@@ -39,22 +37,12 @@ namespace MeterSimulator.DLMS
                 ushort serverAddress =
                     BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(4));
 
-                if (!_meters.TryGetValue(serverAddress, out var meter))
+                // Route to the meter's pre-built session (loaded from XML at startup).
+                if (!_sessions.TryGetValue(serverAddress, out var session))
                 {
                     Console.WriteLine($"Meter not found: {serverAddress}");
                     return;
                 }
-
-                // Get or create session
-                string clientKey = e.SenderInfo.ToString();
-                string sessionKey = $"{clientKey}_{serverAddress}";
-
-                var session = _sessions.GetOrAdd(sessionKey, key =>
-                {
-                    var s = new DLMSServerSession(meter);
-                    s.Initialize(true);
-                    return s;
-                });
 
                 byte[] reply = session.HandleRequest(data);
                 Console.WriteLine($"HandleRequest reply: {(reply == null ? "NULL" : reply.Length + " bytes")}");
@@ -74,10 +62,11 @@ namespace MeterSimulator.DLMS
 
         private void OnClientDisconnected(object sender, ConnectionEventArgs e)
         {
-            if (_sessions.TryRemove(e.Info, out var session))
-            {
-                Console.WriteLine($"Session removed: {e.Info}");
-            }
+            // Persistent sessions are NOT torn down on disconnect — a meter outlives
+            // any single HES connection.  Gurux resets the session's connection state
+            // automatically on the next SNRM/AARQ, so the same instance serves the
+            // next client cleanly.
+            Console.WriteLine($"Client disconnected: {e.Info}");
         }
 
         public void Start()

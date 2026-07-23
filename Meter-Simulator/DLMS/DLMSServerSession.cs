@@ -5,11 +5,14 @@ using Gurux.DLMS.Objects;
 using Gurux.DLMS.Objects.Enums;
 using Gurux.DLMS.Secure;
 using Gurux.Net;
+using MeterSimulator.Config;
 using MeterSimulator.Models;
 using System.Diagnostics;
 using System.Linq;
+using System.Net.Sockets;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace MeterSimulator.DLMS
 {
@@ -20,7 +23,17 @@ namespace MeterSimulator.DLMS
         private readonly GXDLMSObjectCollection _objects = new();
         private readonly GXDLMSObjectCollection _objectsFromFile = new();
 
-        public DLMSServerSession(DLMSMeter meter)
+        // ── Push (outbound DataNotification) ──────────────────────────────────
+        // The meter acts as a TCP CLIENT for push: on a timer it builds a
+        // DataNotification from each PushSetup's push_object_list and connects out
+        // to that object's Destination.  Gurux does NOT transmit push itself, so
+        // the encoder (_notify), the timer, and the socket are ours.
+        private readonly PushConfig? _pushConfig;
+        private readonly GXDLMSSecureNotify _notify;
+        private readonly object _pushLock = new();
+        private Timer? _pushTimer;
+
+        public DLMSServerSession(DLMSMeter meter, PushConfig? pushConfig = null)
         : base(
             true,
             InterfaceType.WRAPPER)
@@ -31,6 +44,12 @@ namespace MeterSimulator.DLMS
             Ciphering.AuthenticationKey = meter.AuthenticationKey;
             Settings.UseLogicalNameReferencing = true;
             _meter = meter;
+            _pushConfig = pushConfig;
+
+            // Encoder for outbound DataNotification frames.  Meter is the source
+            // (server address); the client/HES is the destination address.
+            _notify = new GXDLMSSecureNotify(
+                true, meter.ClientAddress, meter.ServerAddress, InterfaceType.WRAPPER);
 
             Settings.Authentication = Authentication.High;
             //_network = new GXNet(NetworkType.Tcp, port)
@@ -42,8 +61,16 @@ namespace MeterSimulator.DLMS
 
             Items.Clear();
 
-            var loader = new MeterObjectLoader("C:\\Users\\AkshitaGupta\\Desktop\\Values_SZ0000014HP - Copy.xml");
+            //var loader = new MeterObjectLoader("C:\\Users\\AkshitaGupta\\OneDrive - Sinhal Udyog pvt ltd\\Desktop\\SZ0000014HP_Only_Push.xml");
+            var loader = new MeterObjectLoader("C:\\Users\\AkshitaGupta\\OneDrive - Sinhal Udyog pvt ltd\\Desktop\\Values_SZ0000014HP.xml");
+
             loader.Load(_objectsFromFile);
+
+            // The XML template bakes in a push Destination (often a real head-end
+            // address). If a Destination override is configured, rewrite it on every
+            // PushSetup NOW — before the objects are registered in Items — so both
+            // the push sender and the value the HES reads back reflect our target.
+            ApplyPushDestinationOverride(_objectsFromFile);
 
             foreach (var obj in _objectsFromFile)
             {
@@ -92,6 +119,10 @@ namespace MeterSimulator.DLMS
                     _objects.Add(obj);
                     publicAssoc?.ObjectList.Add(obj);
                     association?.ObjectList.Add(obj);
+                    if(obj.LogicalName == "0.0.25.9.0.255")
+                    {
+                        Console.WriteLine($"PUSHHHHHHH [Session] Registered: {obj.ObjectType} {obj.LogicalName}");
+                    }
                     Console.WriteLine($"[Session] Registered: {obj.ObjectType} {obj.LogicalName}");
                 }
             }
@@ -100,6 +131,234 @@ namespace MeterSimulator.DLMS
             // not in Items, re-wire it now.  With a clean load this is a no-op.
             RewireProfileCaptureObjects();
         }
+
+        #region Push (outbound DataNotification)
+
+        /// <summary>
+        /// Replaces the Destination on every PushSetup with the configured override
+        /// (if any).  No-op when the override is empty — the XML value is kept.
+        /// </summary>
+        private void ApplyPushDestinationOverride(GXDLMSObjectCollection objects)
+        {
+            var dest = _pushConfig?.Destination;
+            if (string.IsNullOrWhiteSpace(dest))
+                return;
+
+            foreach (var push in objects.OfType<GXDLMSPushSetup>())
+            {
+                Console.WriteLine(
+                    $"[Push] {_meter.MeterNo}: rewriting Destination on {push.LogicalName} " +
+                    $"'{push.Destination}' → '{dest}'");
+                push.Destination = dest;
+            }
+        }
+
+        /// <summary>
+        /// Starts the periodic push timer if enabled in config.  Called by
+        /// MeterManager after the meter is fully loaded from XML.
+        /// </summary>
+        public void StartPush()
+        {
+            if (_pushConfig == null || !_pushConfig.Enabled)
+                return;
+
+            int seconds = Math.Max(1, _pushConfig.IntervalSeconds);
+            var period = TimeSpan.FromSeconds(seconds);
+            _pushTimer = new Timer(_ => SafeSendPush(), null, period, period);
+
+            Console.WriteLine(
+                $"[Push] {_meter.MeterNo}: enabled — every {seconds}s, " +
+                $"ciphering={(_pushConfig.UseCiphering ? "on" : "off")}");
+        }
+
+        /// <summary>Stops the push timer.  Called on shutdown.</summary>
+        public void StopPush()
+        {
+            _pushTimer?.Dispose();
+            _pushTimer = null;
+        }
+
+        private void SafeSendPush()
+        {
+            try
+            {
+                SendPush();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Push] {_meter.MeterNo}: unexpected error: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Builds and sends a DataNotification for every PushSetup that has a
+        /// non-empty Destination.  Values are synced from the meter first so the
+        /// payload is current; Gurux encodes the frames, we open the socket.
+        /// </summary>
+        private void SendPush()
+        {
+            var pushObjects = _objects.OfType<GXDLMSPushSetup>()
+                .Where(p => !string.IsNullOrWhiteSpace(p.Destination))
+                .ToList();
+
+            if (pushObjects.Count == 0)
+            {
+                Console.WriteLine($"[Push] {_meter.MeterNo}: no PushSetup with a Destination, skipping");
+                return;
+            }
+
+            foreach (var push in pushObjects)                
+            {
+                if (!TryParseDestination(push.Destination, _pushConfig!.Port,
+                        out string host, out int port))
+                {
+                    Console.WriteLine($"[Push] {_meter.MeterNo}: bad Destination '{push.Destination}'");
+                    continue;
+                }
+
+                // Make the push carry live meter values (GeneratePushSetupMessages
+                // reads each object's GetValue directly, NOT via the server PreRead).
+                SyncPushValues(push);
+
+                ConfigureNotifyCiphering();
+
+                byte[][] frames;
+                lock (_pushLock)
+                {
+                    frames = _notify.GeneratePushSetupMessages(DateTime.UtcNow, push);
+                }
+
+                SendFrames(push, host, port, frames);
+            }
+        }
+
+        /// <summary>
+        /// Copies current values from the DLMSMeter onto the objects referenced by
+        /// the push_object_list so the outbound payload reflects live data.
+        /// </summary>
+        private void SyncPushValues(GXDLMSPushSetup push)
+        {
+            foreach (var kv in push.PushObjectList)
+            {
+                var obj = kv.Key;
+                switch (obj)
+                {
+                    case GXDLMSRegister reg:
+                        var rv = _meter.GetValue(reg.LogicalName);
+                        if (rv != null) reg.Value = rv;
+                        break;
+                    case GXDLMSData data:
+                        var dv = _meter.GetValue(data.LogicalName);
+                        if (dv != null) data.Value = dv;
+                        break;
+                    case GXDLMSClock clk:
+                        clk.Time = new GXDateTime(DateTime.UtcNow);
+                        break;
+                }
+            }
+        }
+
+        /// <summary>Applies plaintext or general-glo-ciphering per config.</summary>
+        private void ConfigureNotifyCiphering()
+        {
+            if (_pushConfig!.UseCiphering)
+            {
+                _notify.Ciphering.Security = Security.AuthenticationEncryption;
+                _notify.Ciphering.SystemTitle = _meter.SystemTitle;
+                _notify.Ciphering.BlockCipherKey = _meter.BlockCipherKey;
+                _notify.Ciphering.AuthenticationKey = _meter.AuthenticationKey;
+            }
+            else
+            {
+                _notify.Ciphering.Security = Security.None;
+            }
+        }
+
+        /// <summary>
+        /// Opens a TCP connection to host:port and writes the frames.  Honors the
+        /// PushSetup NumberOfRetries / RepetitionDelay so a missing receiver doesn't
+        /// kill the timer.
+        /// </summary>
+        private void SendFrames(GXDLMSPushSetup push, string host, int port, byte[][] frames)
+        {
+            int attempts = Math.Max(1, (int)push.NumberOfRetries);
+
+            for (int attempt = 1; attempt <= attempts; attempt++)
+            {
+                try
+                {
+                    using var client = new TcpClient();
+                    if (!client.ConnectAsync(host, port).Wait(TimeSpan.FromSeconds(5)))
+                        throw new TimeoutException("connect timeout");
+
+                    using var stream = client.GetStream();
+                    foreach (var frame in frames)
+                        stream.Write(frame, 0, frame.Length);
+                    stream.Flush();
+
+                    Console.WriteLine(
+                        $"[Push] {_meter.MeterNo}: sent {frames.Length} frame(s) to {host}:{port}");
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine(
+                        $"[Push] {_meter.MeterNo}: attempt {attempt}/{attempts} to " +
+                        $"{host}:{port} failed: {ex.Message}");
+
+                    if (attempt < attempts && push.RepetitionDelay > 0)
+                        Thread.Sleep(push.RepetitionDelay * 1000);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Splits a PushSetup Destination into host + port.
+        ///   "127.0.0.1:7000"        → 127.0.0.1 / 7000
+        ///   "127.0.0.1"             → 127.0.0.1 / defaultPort
+        ///   "[2406:da1a:..]:7000"   → 2406:da1a:.. / 7000   (bracketed IPv6)
+        ///   "2406:da1a:.."          → 2406:da1a:.. / defaultPort (bare IPv6)
+        /// </summary>
+        private static bool TryParseDestination(string dest, int defaultPort,
+            out string host, out int port)
+        {
+            host = string.Empty;
+            port = defaultPort;
+
+            if (string.IsNullOrWhiteSpace(dest))
+                return false;
+
+            dest = dest.Trim();
+
+            // Bracketed IPv6: [addr] or [addr]:port
+            if (dest.StartsWith("["))
+            {
+                int close = dest.IndexOf(']');
+                if (close < 0) return false;
+                host = dest.Substring(1, close - 1);
+                var rest = dest.Substring(close + 1);
+                if (rest.StartsWith(":") && int.TryParse(rest.Substring(1), out int p6))
+                    port = p6;
+                return host.Length > 0;
+            }
+
+            // Exactly one colon → host:port (IPv4 / hostname).
+            // Zero colons → bare IPv4/hostname.  More than one → bare IPv6.
+            int colons = dest.Count(c => c == ':');
+            if (colons == 1)
+            {
+                var parts = dest.Split(':');
+                host = parts[0];
+                if (int.TryParse(parts[1], out int p))
+                    port = p;
+                return host.Length > 0;
+            }
+
+            host = dest;
+            return true;
+        }
+
+        #endregion
 
         /// <summary>
         /// For every ProfileGeneric in _objects, replace each CaptureObject's key
@@ -426,9 +685,12 @@ namespace MeterSimulator.DLMS
                 return AccessMode.Read;
 
             if (arg.Target is GXDLMSData && arg.Index == 2)
-                return AccessMode.ReadWrite; 
+                return AccessMode.ReadWrite;
 
-            return AccessMode.NoAccess;
+            if (arg.Target is GXDLMSPushSetup)
+                return AccessMode.ReadWrite;
+
+            return AccessMode.Read;
         }
 
         protected override AccessMode3 GetAttributeAccess3(ValueEventArgs arg)

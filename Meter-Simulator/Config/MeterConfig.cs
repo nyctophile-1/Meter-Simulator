@@ -11,5 +11,8 @@ namespace MeterSimulator.Config
         public int ClientAddress { get; set; } = 16;
         public int ServerAddressStart { get; set; } = 1;
         public string LogicalName { get; set; } = "1.0.0.0.0.255";
+
+        /// <summary>Periodic push (DataNotification) settings. Disabled by default.</summary>
+        public PushConfig Push { get; set; } = new PushConfig();
     }
 }

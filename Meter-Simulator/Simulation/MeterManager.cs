@@ -11,6 +11,7 @@ namespace MeterSimulator.Simulation
         private readonly MeterConfig _config;
         private readonly List<DLMSTCPGateway> _gateways = new();
         private readonly Dictionary<int, DLMSMeter> _meters = new();
+        private readonly List<DLMSServerSession> _sessions = new();
 
         public MeterManager(MeterConfig config)
         {
@@ -21,6 +22,7 @@ namespace MeterSimulator.Simulation
         {
             _meters.Clear();
             _gateways.Clear();
+            _sessions.Clear();
 
             for (int i = 0; i < _config.MeterCount; i++)
             {
@@ -37,12 +39,21 @@ namespace MeterSimulator.Simulation
 
                 _meters[meter.ServerAddress] = meter;
 
-                var meterMap = new Dictionary<int, DLMSMeter>
+                // Build the meter's DLMS object model from XML NOW, before any HES
+                // request arrives.  The session (XML load + object build + association
+                // setup) used to be created lazily on first byte received; doing it
+                // here means every meter is fully live at startup and independent of
+                // any client connection — the foundation the push service needs.
+                var session = new DLMSServerSession(meter, _config.Push);
+                session.Initialize(true);
+                _sessions.Add(session);
+
+                var sessionMap = new Dictionary<int, DLMSServerSession>
                 {
-                    [meter.ServerAddress] = meter
+                    [meter.ServerAddress] = session
                 };
 
-                var gateway = new DLMSTCPGateway(meterMap, port);
+                var gateway = new DLMSTCPGateway(sessionMap, port);
                 _gateways.Add(gateway);
 
                 Console.WriteLine(
@@ -57,12 +68,23 @@ namespace MeterSimulator.Simulation
                 gateway.Start();
             }
 
+            // Meters are fully loaded and listening — now start their push timers.
+            foreach (var session in _sessions)
+            {
+                session.StartPush();
+            }
+
             Console.WriteLine(
                 $"Started {_config.MeterCount} meters on ports {_config.BasePort} to {_config.BasePort + _config.MeterCount - 1}.");
         }
 
         public void StopAll()
         {
+            foreach (var session in _sessions)
+            {
+                session.StopPush();
+            }
+
             foreach (var gateway in _gateways)
             {
                 gateway.Stop();
