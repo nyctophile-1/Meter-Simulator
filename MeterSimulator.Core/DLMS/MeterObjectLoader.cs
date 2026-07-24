@@ -56,6 +56,13 @@ namespace MeterSimulator.DLMS
             // the cells are already GXDateTime, before hand-off ("before loading").
             ShiftBufferTimestamps(objects);
 
+            // Step 3.6 ── Make profile selective access work
+            // Gurux's server can only apply selective access (Read last / date range / entry range)
+            // when each ProfileGeneric has a SortObject (the column to compare — the Clock) and a
+            // correct EntriesInUse. XML-loaded profiles usually have neither, so the server returns
+            // the whole buffer regardless of the request. Set them here.
+            NormalizeProfilesForSelectiveAccess(objects);
+
             // Step 4 ── Seed live values (registers, clock, data — NOT profile buffers)
             // Profile buffer rows come from the XML as-is.
             SeedClock(objects);
@@ -66,6 +73,54 @@ namespace MeterSimulator.DLMS
             // Step 5 ── Hand off
             target.AddRange(objects);
         }
+        // ════════════════════════════════════════════════════════════════════════
+        // STEP 3.6 — PROFILE SELECTIVE ACCESS
+        // For every ProfileGeneric: set EntriesInUse to the real row count and, if no
+        // SortObject is set, choose one (prefer the Clock column, else the first column)
+        // with its capture attribute index. Without this Gurux can't filter a profile read
+        // by range/entry and returns the entire buffer on every read.
+        // ════════════════════════════════════════════════════════════════════════
+        private static void NormalizeProfilesForSelectiveAccess(GXDLMSObjectCollection objects)
+        {
+            foreach (var profile in objects.OfType<GXDLMSProfileGeneric>())
+            {
+                profile.EntriesInUse = (uint)profile.Buffer.Count;
+
+                if (profile.SortObject != null || profile.CaptureObjects.Count == 0)
+                {
+                    Console.WriteLine(
+                        $"[Sort] {profile.LogicalName}: EntriesInUse={profile.EntriesInUse}, " +
+                        $"SortObject={(profile.SortObject?.LogicalName ?? "null")} (left as-is)");
+                    continue;
+                }
+
+                // Prefer the Clock capture column (enables range-by-date); else the first column.
+                GXDLMSObject? sortObj = null;
+                int sortAttr = 2;
+                foreach (var co in profile.CaptureObjects)
+                {
+                    if (co.Key is GXDLMSClock)
+                    {
+                        sortObj = co.Key;
+                        sortAttr = co.Value.AttributeIndex;
+                        break;
+                    }
+                }
+                if (sortObj == null)
+                {
+                    sortObj = profile.CaptureObjects[0].Key;
+                    sortAttr = profile.CaptureObjects[0].Value.AttributeIndex;
+                }
+
+                profile.SortObject = sortObj;
+                profile.SortAttributeIndex = sortAttr;
+
+                Console.WriteLine(
+                    $"[Sort] {profile.LogicalName}: SortObject set to {sortObj.LogicalName} " +
+                    $"attr {sortAttr}, EntriesInUse={profile.EntriesInUse}");
+            }
+        }
+
         private static void FixProfileBufferTypes(GXDLMSObjectCollection objects)
         {
             foreach (var profile in objects.OfType<GXDLMSProfileGeneric>())
