@@ -40,7 +40,10 @@ namespace MeterSimulator.DLMS
         {
             if (string.IsNullOrWhiteSpace(templatePath))
                 throw new ArgumentException("A meter template (XML) path is required.", nameof(templatePath));
-            //Ciphering.Security = Security.AuthenticationEncryption;
+            // Enable server-side ciphering so the meter supports the ciphered LN association
+            // (application-context LN_WITH_CIPHERING) that a secured HES/GXDLMSDirector uses.
+            // Without this the server downgrades to plain LN and permanently rejects the AARQ.
+            Ciphering.Security = Security.AuthenticationEncryption;
             Ciphering.SystemTitle = meter.SystemTitle;
             Ciphering.BlockCipherKey = meter.BlockCipherKey;
             Ciphering.AuthenticationKey = meter.AuthenticationKey;

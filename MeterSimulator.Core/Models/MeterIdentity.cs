@@ -9,9 +9,8 @@ namespace MeterSimulator.Models
     /// the host portion of its IPv6 address (see ManyMeterSimulator.Provisioning.MeterAddressing).
     ///
     /// This is the SINGLE source of truth for a meter's system title and cryptographic
-    /// keys so the simulator (DLMS server) and any HES / test client derive IDENTICAL
-    /// values from the same index — never two divergent schemes. HESTestClient references
-    /// this same helper (task 13).
+    /// keys so the simulator (DLMS server) and any HES derive IDENTICAL values from the
+    /// same index — never two divergent schemes.
     ///
     /// Scheme (simple + replicable — deliberately NOT a real KDF; a real HES would get
     /// per-meter keys from its own key management, and must be told these to interop):

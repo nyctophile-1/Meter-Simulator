@@ -17,7 +17,6 @@ public class TcpNicListenerService : BackgroundService
     private readonly TcpOptions _options;
     private readonly ConnectionRegistry _registry;
     private readonly IMeterSimBridge _bridge;
-    private readonly SimulatedBridgeOptions _simulatedBridgeOptions;
     private readonly SimulatorMetrics _metrics;
     private readonly MeterRegistry _meterRegistry;
     private readonly TemplateRegistry _templateRegistry;
@@ -38,7 +37,6 @@ public class TcpNicListenerService : BackgroundService
         IOptions<TcpOptions> options,
         ConnectionRegistry registry,
         IMeterSimBridge bridge,
-        IOptions<SimulatedBridgeOptions> simulatedBridgeOptions,
         SimulatorMetrics metrics,
         MeterRegistry meterRegistry,
         TemplateRegistry templateRegistry,
@@ -48,7 +46,6 @@ public class TcpNicListenerService : BackgroundService
         _options = options.Value;
         _registry = registry;
         _bridge = bridge;
-        _simulatedBridgeOptions = simulatedBridgeOptions.Value;
         _metrics = metrics;
         _meterRegistry = meterRegistry;
         _templateRegistry = templateRegistry;
@@ -301,23 +298,10 @@ public class TcpNicListenerService : BackgroundService
                     }
                     state.Touch();
 
+                    exchangeCount++;
                     _logger.LogInformation(
                         "Meter {MeterId}: exchange {Count} complete (bridge latency {LatencyMs}ms)",
-                        state.MeterId, exchangeCount + 1, bridgeStopwatch.Elapsed.TotalMilliseconds);
-
-                    // TEMPORARY, tied to IMeterSimBridge being the simulated stand-in: bounds
-                    // session length so local testing can't run forever with no real bridge to
-                    // end it. MUST be removed (or made real-bridge-aware) once Phase 4's real
-                    // MQTT bridge replaces SimulatedMeterSimBridge - a real HES session should
-                    // not be force-closed at N exchanges.
-                    exchangeCount++;
-                    if (exchangeCount >= _simulatedBridgeOptions.MaxRequestsPerSession)
-                    {
-                        _logger.LogInformation(
-                            "Meter {MeterId}: reached simulated-bridge session limit ({Count} exchanges), closing connection",
-                            state.MeterId, exchangeCount);
-                        break;
-                    }
+                        state.MeterId, exchangeCount, bridgeStopwatch.Elapsed.TotalMilliseconds);
                 }
                 catch (OperationCanceledException)
                 {

@@ -9,6 +9,5 @@
   <Folder Name="/NIC/">
     <Project Path="ManyMeterSimulator/ManyMeterSimulator/ManyMeterSimulator.csproj" />
     <Project Path="ManyMeterSimulator/ManyMeterSimulator.Tests/ManyMeterSimulator.Tests.csproj" />
-    <Project Path="ManyMeterSimulator/HESTestClient/HESTestClient.csproj" />
   </Folder>
 </Solution>

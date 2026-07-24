@@ -21,7 +21,6 @@ Two halves, now merged into one process:
 | **NIC / MMS host** | `ManyMeterSimulator` (ASP.NET Core Web) | Blazor control-panel UI, the single TCP listener that fronts every meter IP, batch provisioning, connection lifecycle. |
 | **DLMS brain** | `MeterSimulator.Core` (class library) | The Gurux-based DLMS/COSEM server engine: parses requests, applies the meter's object model, produces replies. |
 | Shared dep | `Gurux.DLMS.Net`, `Gurux.Net` | DLMS protocol libraries. |
-| Test HES | `HESTestClient` | Local stand-in HES that opens sessions and does read exchanges. |
 
 The brain used to be a standalone console app with its own TCP code. In the merge that TCP code was
 removed — **the NIC owns all HES-facing networking**, and the brain is called **in-process** as the
@@ -234,7 +233,8 @@ the listener binds.
   TCP listener on 4059 in the same process.
 - **Provision:** open the dashboard → Setup → choose a template, name a batch, set N, **Add Batch**,
   then **Start** it.
-- **Drive traffic:** run `HESTestClient` (local HES stand-in) against the listener.
+- **Drive traffic:** point a DLMS client (e.g. GXDLMSDirector) or the real HES at a meter IP in the
+  batch's range on port 4059.
 
 On Windows, non-loopback meter IPs need the loopback-address + firewall setup described in
 implementation.md §4.2; plain loopback (`::1`) works without it. Production is Linux with the kernel

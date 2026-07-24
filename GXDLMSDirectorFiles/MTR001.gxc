@@ -5,7 +5,7 @@
     <ResendCount>1</ResendCount>
     <Authentication>High</Authentication>
     <AuthenticationName>US</AuthenticationName>
-    <Password>N/ldHcqO6hqWO+NdWbDtyQ==</Password>
+    <Password>3XQtMgRJpwgTIJw/xTP6V/3VIT3OYgrt86/+5GibpZI=</Password>
     <Security>AuthenticationEncryption</Security>
     <KeyAgreementScheme>0</KeyAgreementScheme>
     <SystemTitle>53494D554C415452</SystemTitle>
@@ -32,7 +32,7 @@
     <UseProtectedRelease>false</UseProtectedRelease>
     <SecurityChangeCheck>false</SecurityChangeCheck>
     <MediaType>Gurux.Net.GXNet</MediaType>
-    <MediaSettings>&lt;IP&gt;127.0.0.1&lt;/IP&gt;
+    <MediaSettings>&lt;IP&gt;fd00:6d65:7472::1&lt;/IP&gt;
 &lt;Port&gt;4059&lt;/Port&gt;
 </MediaSettings>
     <UseLN>true</UseLN>
