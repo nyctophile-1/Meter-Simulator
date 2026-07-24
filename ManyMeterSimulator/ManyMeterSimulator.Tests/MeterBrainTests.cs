@@ -2,6 +2,7 @@ using Gurux.DLMS.Enums;
 using Gurux.DLMS.Objects;
 using MeterSimulator.DLMS;
 using MeterSimulator.Models;
+using System.Text;
 using Xunit;
 
 namespace ManyMeterSimulator.Tests;
@@ -46,7 +47,11 @@ public class MeterBrainTests
     }
 }
 
-/// <summary>Per-meter identity derivation must be deterministic and distinct per index.</summary>
+/// <summary>
+/// Meter identity is a FIXED shared crypto identity (system title + keys are the same
+/// for every meter so a client configured with them can talk to any meter); only the
+/// serial number is per-index.
+/// </summary>
 public class MeterIdentityTests
 {
     [Fact]
@@ -61,11 +66,21 @@ public class MeterIdentityTests
     }
 
     [Fact]
-    public void Identity_IsDistinctPerIndex()
+    public void CryptoIdentity_IsShared_ButSerialIsDistinctPerIndex()
     {
-        Assert.NotEqual(MeterIdentity.SystemTitle(1), MeterIdentity.SystemTitle(2));
-        Assert.NotEqual(MeterIdentity.BlockCipherKey(1), MeterIdentity.BlockCipherKey(2));
-        Assert.NotEqual(MeterIdentity.AuthenticationKey(1), MeterIdentity.AuthenticationKey(2));
+        // System title + keys are FIXED/shared across meters (reverted from per-index),
+        // so any client configured with them can talk to any meter.
+        Assert.Equal(MeterIdentity.SystemTitle(1), MeterIdentity.SystemTitle(2));
+        Assert.Equal(MeterIdentity.BlockCipherKey(1), MeterIdentity.BlockCipherKey(2));
+        Assert.Equal(MeterIdentity.AuthenticationKey(1), MeterIdentity.AuthenticationKey(2));
+        Assert.Equal(MeterIdentity.HlsKey(1), MeterIdentity.HlsKey(2));
+
+        // The fixed values are the well-known test identity.
+        Assert.Equal(Encoding.ASCII.GetBytes("SIMULATR"), MeterIdentity.SystemTitle(1));
+        Assert.Equal(Encoding.ASCII.GetBytes("AAAAAAAAAAAAAAAA"), MeterIdentity.BlockCipherKey(1));
+
+        // Only the serial number stays per-index.
+        Assert.NotEqual(MeterIdentity.Serial(1), MeterIdentity.Serial(2));
     }
 
     [Fact]
