@@ -45,7 +45,21 @@ owns the HES-facing TCP. See `ManyMeterSimulator/implementation.md` §10.6.
 - [x] **#15** Reserve push-readiness seams (source-IP bind, `MaterializeBatch`) — documented, not built
 - [x] **#14** End-to-end verification + tests + docs (no hand-rolled DLMS client; real HES is the true end-to-end)
 
-**ALL TASKS COMPLETE.** Solution builds; 24/24 tests pass; app runtime-smoke verified.
+**ALL TASKS COMPLETE.** Solution builds; 33/33 tests pass; app runtime-smoke verified.
+
+## Post-merge fix — GXDLMSDirector "application context name not supported"
+
+Diagnosed: the merged **association logic is intact** — a repro drove a Gurux client against a session
+built from `Values_SZ0000014HP.xml` and the server returned an **accepted** AARE (result 0, diag 0,
+context = LN). The regression was the meter's **identity**: tasks #4 (per-meter keys/system-title) and
+#5 (serial rewrite) replaced the fixed pre-merge identity (`AAAA…` keys, template serial) the HES was
+configured for, breaking the secured association.
+
+**Fix:** made both opt-in via `Brain:PerMeterIdentity` (default false → legacy fixed identity) and
+`Brain:OverrideSerial` (default false → template's native serial). Defaults now reproduce pre-merge
+behaviour, so GXDLMSDirector works unchanged; per-meter distinctness is one flag away for scale.
+`DLMSMeter(..., perMeterIdentity)` and `DLMSServerSession(..., overrideSerial)` gate it; MeterIdentity
+gained `LegacySystemTitle/LegacyKey16/LegacyLlsKey`. Tests updated (33/33).
 
 ## Notes / log
 

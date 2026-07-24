@@ -168,6 +168,13 @@ the logical device address stays a fixed configured value (`Brain:ServerAddress`
 `DLMSServerSession.IsTarget` accepts whatever the HES dials. The meaningful per-meter distinctness is
 the crypto identity above.
 
+**Per-meter identity is OPT-IN.** By default (`Brain:PerMeterIdentity = false`) every meter uses a
+**legacy fixed identity** — shared keys (`AAAA…`) and a server-address-based system title, matching the
+pre-merge simulator — so an HES / GXDLMSDirector configured for a single meter interoperates unchanged.
+Set `Brain:PerMeterIdentity = true` for distinct index-derived keys (scale; the HES must then know each
+meter's keys). Likewise the serial rewrite (§5) is gated by `Brain:OverrideSerial` (default false → the
+template's native serial is presented; true → `MY…` per-meter serial).
+
 ---
 
 ## 7. Session lifecycle & concurrency
