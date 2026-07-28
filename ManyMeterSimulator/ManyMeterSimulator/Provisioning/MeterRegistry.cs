@@ -120,6 +120,22 @@ public sealed class MeterRegistry
         }
     }
 
+    /// <summary>
+    /// Removes every batch and rewinds the allocation cursor so provisioning starts from index 1
+    /// again — a clean slate ("start from scratch"). Persisted like any other mutation, so the empty
+    /// state survives a restart. Does NOT touch live brain sessions — the caller clears those.
+    /// </summary>
+    public void Reset()
+    {
+        lock (_lock)
+        {
+            _batches.Clear();
+            _nextIndex = 1;
+            _nextBatchId = 1;
+            Persist();
+        }
+    }
+
     /// <summary>The IP address, meter serial for every index in a batch. Lazy - caller controls how many are enumerated/rendered.</summary>
     public IEnumerable<(long Index, IPAddress Address, string Serial)> GetMeters(MeterBatch batch, string addressPrefixCidr)
     {

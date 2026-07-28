@@ -64,6 +64,8 @@
 @code {
     private static readonly (string Title, string Desc)[] Capabilities =
     {
+        ("Live monitoring dashboard", "real-time connection, throughput, and packet-rate stats for a running load test."),
+        ("Validation", "reconcile simulator-side logs and compare with HES-side records to prove what was sent was received."),
         ("Fleet at scale", "simulate many thousands of meters on one host (validated end-to-end at 10,000)."),
         ("Individually addressable", "every simulated meter has its own network address and a unique meter serial number, so the HES talks to each one exactly as it would a real meter."),
         ("Real DLMS behaviour", "meters answer standard DLMS/COSEM requests, so reads and commands behave like the real thing."),
@@ -82,8 +84,7 @@
 
     private static readonly (string Title, string Desc)[] Future =
     {
-        ("Live monitoring dashboard", "real-time connection, throughput, and packet-rate stats for a running load test."),
-        ("Closed-loop validation", "reconcile simulator-side counters against HES-side records to prove what was sent was received."),
+        ("Different virtual NICs", "MQTT RF (custom+dlms), MQTT 4G, KMESH support"),
         ("Push / unsolicited reporting", "meters that report on their own schedule, not only when the HES polls them."),
         ("Fault & edge-case injection", "slow, unresponsive, or malformed meters to test how the HES copes under stress."),
         ("Richer data profiles", "more configurable per-meter data models and value generation."),

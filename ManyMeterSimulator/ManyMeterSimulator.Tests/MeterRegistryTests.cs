@@ -210,6 +210,29 @@ public class MeterRegistryTests
     }
 
     [Fact]
+    public void Reset_ClearsAllBatchesAndRewindsCursorToOne()
+    {
+        var store = new InMemoryBatchStore();
+        var registry = new MeterRegistry(store);
+        registry.AddBatch("a", Tpl, 100);
+        registry.AddBatch("b", Tpl, 50);
+
+        registry.Reset();
+
+        Assert.Empty(registry.Batches);
+
+        // Numbering starts over: next batch is index 1 / id 1 again, and it survives a restart.
+        MeterBatch fresh = registry.AddBatch("fresh", Tpl, 1);
+        Assert.Equal(1, fresh.StartIndex);
+        Assert.Equal(1, fresh.Id);
+
+        var restarted = new MeterRegistry(store);
+        MeterBatch reloaded = Assert.Single(restarted.Batches);
+        Assert.Equal("fresh", reloaded.Name);
+        Assert.Equal(1, reloaded.StartIndex);
+    }
+
+    [Fact]
     public void Persistence_RehydratesBatchesStatusAndCursor_AcrossRestart()
     {
         var store = new InMemoryBatchStore();

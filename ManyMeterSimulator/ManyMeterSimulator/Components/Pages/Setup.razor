@@ -5,11 +5,14 @@
 @using Microsoft.AspNetCore.Authorization
 @using Microsoft.AspNetCore.Components.Authorization
 @using ManyMeterSimulator.Auth
+@using ManyMeterSimulator.Brain
 @using Microsoft.AspNetCore.Components.Forms
 @inject MeterRegistry MeterRegistry
 @inject TemplateRegistry TemplateRegistry
+@inject MeterSessionManager Sessions
 @inject IOptions<TcpOptions> TcpOptionsAccessor
 @inject IDialogService DialogService
+@inject IJSRuntime JS
 
 <PageTitle>MAYA - Meter Batches</PageTitle>
 
@@ -90,7 +93,14 @@
     </MudPaper>
 }
 
-<MudText Typo="Typo.h6" GutterBottom="true">Batches (@MeterRegistry.Batches.Count)</MudText>
+<div class="d-flex align-center justify-space-between mb-2" style="gap:12px;">
+    <MudText Typo="Typo.h6" Class="mb-0">Batches (@MeterRegistry.Batches.Count)</MudText>
+    @if (IsAdmin && MeterRegistry.Batches.Count > 0)
+    {
+        <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Error"
+                   StartIcon="@Icons.Material.Filled.RestartAlt" OnClick="ResetAll">Reset all batches</MudButton>
+    }
+</div>
 
 @{
     IReadOnlyList<MeterBatch> batches = MeterRegistry.Batches;
@@ -122,10 +132,12 @@ else
             {
                 (IPAddress firstAddr, IPAddress lastAddr) = MeterRegistry.GetAddressRange(batch, AddressPrefix);
                 <tr>
-                    <td>
+                    <td style="white-space:nowrap">
                         <MudIconButton Size="Size.Small"
                                        Icon="@(ExpandedBatchId == batch.Id ? Icons.Material.Filled.ExpandMore : Icons.Material.Filled.ChevronRight)"
                                        OnClick="() => ToggleExpanded(batch.Id)" />
+                        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Download"
+                                       Title="Download meter list (CSV)" OnClick="() => DownloadCsv(batch.Id)" />
                     </td>
                     <td>@batch.Name</td>
                     <td><code>@batch.TemplateName</code></td>
@@ -310,4 +322,30 @@ else
     }
 
     private void ToggleExpanded(int batchId) => ExpandedBatchId = ExpandedBatchId == batchId ? null : batchId;
+
+    private async Task DownloadCsv(int batchId) =>
+        await JS.InvokeVoidAsync("mayaDownload", $"/batches/{batchId}/meters.csv");
+
+    private async Task ResetAll()
+    {
+        if (!IsAdmin)
+        {
+            return;
+        }
+
+        bool? confirmed = await DialogService.ShowMessageBoxAsync(
+            "Reset all batches?",
+            "This permanently deletes ALL batches and restarts meter numbering from 1 (MY000000001). " +
+            "Live meter sessions are cleared too. This cannot be undone.",
+            yesText: "Reset everything", cancelText: "Cancel");
+
+        if (confirmed != true)
+        {
+            return;
+        }
+
+        MeterRegistry.Reset();
+        Sessions.Clear();
+        ExpandedBatchId = null;
+    }
 }

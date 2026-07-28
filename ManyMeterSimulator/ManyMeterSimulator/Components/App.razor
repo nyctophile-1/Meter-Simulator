@@ -15,6 +15,14 @@
     <script src="_content/MudBlazor/MudBlazor.min.js"></script>
     <script>
         window.mayaScrollToBottom = (el) => { if (el) { el.scrollTop = el.scrollHeight; } };
+        window.mayaDownload = (url) => {
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = '';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+        };
     </script>
 </body>
 </html>

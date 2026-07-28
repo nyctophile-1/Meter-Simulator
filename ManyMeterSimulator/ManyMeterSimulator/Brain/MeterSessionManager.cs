@@ -47,6 +47,13 @@ public sealed class MeterSessionManager
     public int LiveMeterCount => _sessions.Count;
 
     /// <summary>
+    /// Drops every live meter session. Used by the admin "reset batches" flow so a fresh batch that
+    /// reuses an address (numbering restarts at 1) doesn't resolve a stale, previously-built session.
+    /// In-flight connections keep the instance they already resolved; new ones rebuild from template.
+    /// </summary>
+    public void Clear() => _sessions.Clear();
+
+    /// <summary>
     /// Returns the authoritative session for a meter, building it once on first touch.
     /// Throws if the meter belongs to no batch or its template can't be resolved — callers on
     /// the inbound path should already have rejected such connections (see the listener's

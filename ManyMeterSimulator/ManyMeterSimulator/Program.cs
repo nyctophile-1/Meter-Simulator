@@ -135,6 +135,7 @@ app.UseAuthorization();
 app.UseAntiforgery();
 
 app.MapAuthEndpoints();
+app.MapBatchEndpoints();
 
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
