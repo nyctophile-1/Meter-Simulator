@@ -2,6 +2,7 @@ using Gurux.DLMS;
 using Gurux.DLMS.Enums;
 using Gurux.DLMS.Objects;
 using Gurux.DLMS.Objects.Enums;
+using MeterSimulator.Diagnostics;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -27,7 +28,7 @@ namespace MeterSimulator.DLMS
             // the same LN (one full definition + several lightweight stubs inside
             // each Association's ObjectList).
             GXDLMSObjectCollection raw = GXDLMSObjectCollection.Load(_xmlPath);
-            Console.WriteLine($"[Loader] Raw XML loaded: {raw.Count} objects");
+            CoreLog.Debug($"[Loader] Raw XML loaded: {raw.Count} objects");
 
             // Step 2 ── Deduplicate
             // For each (ObjectType, LN) pair keep only the richest instance so that
@@ -36,7 +37,7 @@ namespace MeterSimulator.DLMS
             //   • Everything else → keep the first occurrence (full definition
             //     always appears before association stubs in Gurux XML exports)
             GXDLMSObjectCollection objects = Deduplicate(raw);
-            Console.WriteLine($"[Loader] After dedup: {objects.Count} objects");
+            CoreLog.Debug($"[Loader] After dedup: {objects.Count} objects");
 
             // Step 3 ── Internal CaptureObject rewire
             // The XML deserializer creates brand-new stub instances for each
@@ -88,7 +89,7 @@ namespace MeterSimulator.DLMS
 
                 if (profile.SortObject != null || profile.CaptureObjects.Count == 0)
                 {
-                    Console.WriteLine(
+                    CoreLog.Debug(
                         $"[Sort] {profile.LogicalName}: EntriesInUse={profile.EntriesInUse}, " +
                         $"SortObject={(profile.SortObject?.LogicalName ?? "null")} (left as-is)");
                     continue;
@@ -115,7 +116,7 @@ namespace MeterSimulator.DLMS
                 profile.SortObject = sortObj;
                 profile.SortAttributeIndex = sortAttr;
 
-                Console.WriteLine(
+                CoreLog.Debug(
                     $"[Sort] {profile.LogicalName}: SortObject set to {sortObj.LogicalName} " +
                     $"attr {sortAttr}, EntriesInUse={profile.EntriesInUse}");
             }
@@ -163,7 +164,7 @@ namespace MeterSimulator.DLMS
                     {
                         var co = profile.CaptureObjects[i];
                         co.Key.SetDataType(co.Value.AttributeIndex, columnTypes[i]);
-                        Console.WriteLine($"[Fix] {profile.LogicalName} col[{i}] " +
+                        CoreLog.Debug($"[Fix] {profile.LogicalName} col[{i}] " +
                             $"{co.Key.LogicalName} → DataType={columnTypes[i]}");
                     }
                 }
@@ -196,7 +197,7 @@ namespace MeterSimulator.DLMS
 
                 if (stamps.Count == 0)
                 {
-                    Console.WriteLine($"[Shift] {profile.LogicalName}: no concrete timestamps, skipped");
+                    CoreLog.Debug($"[Shift] {profile.LogicalName}: no concrete timestamps, skipped");
                     continue;
                 }
 
@@ -205,7 +206,7 @@ namespace MeterSimulator.DLMS
 
                 if (delta <= TimeSpan.Zero)
                 {
-                    Console.WriteLine(
+                    CoreLog.Debug(
                         $"[Shift] {profile.LogicalName}: latest {latest:u} already >= now — no shift");
                     continue;
                 }
@@ -213,7 +214,7 @@ namespace MeterSimulator.DLMS
                 foreach (var dt in stamps)
                     dt.Value = dt.Value + delta;
 
-                Console.WriteLine(
+                CoreLog.Debug(
                     $"[Shift] {profile.LogicalName}: {stamps.Count} timestamps +{delta.TotalDays:F2}d " +
                     $"(latest {latest:u} → now {nowUtc:u})");
             }
@@ -295,7 +296,7 @@ namespace MeterSimulator.DLMS
                     best = group.First();
                 }
 
-                Console.WriteLine($"[Dedup] Kept {best.ObjectType} {best.LogicalName}" +
+                CoreLog.Debug($"[Dedup] Kept {best.ObjectType} {best.LogicalName}" +
                     (best is GXDLMSProfileGeneric pg
                         ? $" ({pg.CaptureObjects.Count} capture cols, {group.Count()} duplicates in XML)"
                         : $" ({group.Count()} duplicates in XML)"));
@@ -331,7 +332,7 @@ namespace MeterSimulator.DLMS
                         // Object referenced by CaptureObjects but not present as a
                         // top-level object in the XML — add the stub itself so Gurux
                         // can at least resolve its DataType during encoding.
-                        Console.WriteLine($"  [Rewire] WARNING: {kv.Key.ObjectType} " +
+                        CoreLog.Warn($"  [Rewire] WARNING: {kv.Key.ObjectType} " +
                             $"{kv.Key.LogicalName} not found — registering stub");
                         objects.Add(kv.Key);
                         canonical = kv.Key;
@@ -344,7 +345,7 @@ namespace MeterSimulator.DLMS
                 profile.CaptureObjects.Clear();
                 profile.CaptureObjects.AddRange(rewired);
 
-                Console.WriteLine($"[Rewire] {profile.LogicalName}: " +
+                CoreLog.Debug($"[Rewire] {profile.LogicalName}: " +
                     $"{rewired.Count} capture columns wired to canonical instances");
             }
         }
@@ -471,7 +472,7 @@ namespace MeterSimulator.DLMS
         private static void LogProfiles(GXDLMSObjectCollection objects)
         {
             foreach (var p in objects.OfType<GXDLMSProfileGeneric>())
-                Console.WriteLine($"[Profile] {p.LogicalName}: " +
+                CoreLog.Debug($"[Profile] {p.LogicalName}: " +
                     $"{p.CaptureObjects.Count} cols, {p.Buffer.Count} rows, " +
                     $"EntriesInUse={p.EntriesInUse}");
         }

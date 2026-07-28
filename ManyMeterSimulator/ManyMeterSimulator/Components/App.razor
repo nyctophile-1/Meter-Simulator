@@ -13,5 +13,8 @@
     <Routes @rendermode="InteractiveServer" />
     <script src="_framework/blazor.web.js"></script>
     <script src="_content/MudBlazor/MudBlazor.min.js"></script>
+    <script>
+        window.mayaScrollToBottom = (el) => { if (el) { el.scrollTop = el.scrollHeight; } };
+    </script>
 </body>
 </html>

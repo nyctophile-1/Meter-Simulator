@@ -22,14 +22,36 @@ var builder = WebApplication.CreateBuilder(args);
 string logDirectory = Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPath, "..", "logs"));
 Directory.CreateDirectory(logDirectory);
 
+// A runtime-adjustable minimum level: the live-logs UI's "Include debug" toggle flips this between
+// Information (default) and Debug, so Debug events are only ever generated on demand. The bounded
+// in-memory broadcaster backs the live-logs page.
+var logLevelSwitch = new Serilog.Core.LoggingLevelSwitch(Serilog.Events.LogEventLevel.Information);
+var logBroadcaster = new LogBroadcaster(1000);
+builder.Services.AddSingleton(logLevelSwitch);
+builder.Services.AddSingleton(logBroadcaster);
+
 builder.Services.AddSerilog((_, loggerConfiguration) => loggerConfiguration
-    .MinimumLevel.Information()
+    .MinimumLevel.ControlledBy(logLevelSwitch)
+    // Keep framework namespaces at Information even when the switch is raised to Debug, so the UI's
+    // "Include debug" only reveals OUR debug (ManyMeterSimulator + MeterSimulator.Core) — not Blazor's
+    // per-render "Rendering component N" spam or other Microsoft/System internals.
+    .MinimumLevel.Override("Microsoft", Serilog.Events.LogEventLevel.Information)
+    .MinimumLevel.Override("System", Serilog.Events.LogEventLevel.Information)
     .Enrich.FromLogContext()
-    .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss.fff} {Level:u3}] {SourceContext}: {Message:lj}{NewLine}{Exception}")
+    // Console stays at Information even when the switch is raised to Debug, so journald isn't flooded.
+    .WriteTo.Console(
+        restrictedToMinimumLevel: Serilog.Events.LogEventLevel.Information,
+        outputTemplate: "[{Timestamp:HH:mm:ss.fff} {Level:u3}] {SourceContext}: {Message:lj}{NewLine}{Exception}")
+    // File keeps ONLY Warning+ to bound disk growth (console/journald and the live-logs UI still
+    // carry the full Information stream). Chatty per-frame/per-build lines are Debug now, so at the
+    // default Information level they don't reach any sink unless the UI toggle raises the switch.
     .WriteTo.File(
         Path.Combine(logDirectory, "nicsim-.log"),
+        restrictedToMinimumLevel: Serilog.Events.LogEventLevel.Warning,
         rollingInterval: RollingInterval.Day,
-        outputTemplate: "[{Timestamp:yyyy-MM-dd HH:mm:ss.fff} {Level:u3}] {SourceContext}: {Message:lj}{NewLine}{Exception}"));
+        outputTemplate: "[{Timestamp:yyyy-MM-dd HH:mm:ss.fff} {Level:u3}] {SourceContext}: {Message:lj}{NewLine}{Exception}")
+    // Live-logs UI stream — receives whatever the switch currently allows.
+    .WriteTo.Sink(new LogBroadcastSink(logBroadcaster)));
 
 builder.Services.Configure<TcpOptions>(builder.Configuration.GetSection(TcpOptions.SectionName));
 builder.Services.Configure<SimulatedBridgeOptions>(builder.Configuration.GetSection(SimulatedBridgeOptions.SectionName));
@@ -96,6 +118,11 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
 var app = builder.Build();
+
+// Route the Core library's diagnostics (formerly Console.WriteLine) through the same ILogger/Serilog
+// pipeline as everything else, so they obey the level rules and show up in the live-logs UI.
+MeterSimulator.Diagnostics.CoreLog.Configure(
+    app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("MeterSimulator.Core"));
 
 if (!app.Environment.IsDevelopment())
 {

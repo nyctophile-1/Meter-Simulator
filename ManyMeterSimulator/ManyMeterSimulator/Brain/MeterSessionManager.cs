@@ -84,7 +84,7 @@ public sealed class MeterSessionManager
         var session = new DLMSServerSession(meter, templatePath, pushConfig: null);
         session.Initialize(true);
 
-        _logger.LogInformation(
+        _logger.LogDebug(
             "Built meter session {MeterId} (index {Index}, serial {Serial}, template {Template})",
             meterId, index, meter.MeterNo, batch.TemplateName);
 

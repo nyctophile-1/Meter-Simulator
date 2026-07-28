@@ -281,7 +281,7 @@ public class TcpNicListenerService : BackgroundService
                     }
 
                     state.Touch();
-                    _logger.LogInformation(
+                    _logger.LogDebug(
                         "Meter {MeterId}: received frame (srcWPort={Src}, dstWPort={Dst}, {Length} payload bytes)",
                         state.MeterId, frame.SourceWPort, frame.DestinationWPort, frame.Payload.Length);
 
@@ -299,7 +299,7 @@ public class TcpNicListenerService : BackgroundService
                     state.Touch();
 
                     exchangeCount++;
-                    _logger.LogInformation(
+                    _logger.LogDebug(
                         "Meter {MeterId}: exchange {Count} complete (bridge latency {LatencyMs}ms)",
                         state.MeterId, exchangeCount, bridgeStopwatch.Elapsed.TotalMilliseconds);
                 }

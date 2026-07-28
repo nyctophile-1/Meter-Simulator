@@ -6,6 +6,7 @@ using Gurux.DLMS.Objects.Enums;
 using Gurux.DLMS.Secure;
 using Gurux.Net;
 using MeterSimulator.Config;
+using MeterSimulator.Diagnostics;
 using MeterSimulator.Models;
 using System.Diagnostics;
 using System.Linq;
@@ -106,7 +107,7 @@ namespace MeterSimulator.DLMS
 
             foreach (var obj in _objects)
             {
-                Console.WriteLine($"Added object: {obj.ObjectType} - {obj.LogicalName}");
+                CoreLog.Debug($"Added object: {obj.ObjectType} - {obj.LogicalName}");
                 Items.Add(obj);
             }
 
@@ -124,7 +125,7 @@ namespace MeterSimulator.DLMS
                 {
                     // Already registered (e.g. associations created by InitializeAssociation).
                     // Nothing to sync — the loader has already seeded the incoming object.
-                    Console.WriteLine($"[Session] Skipping duplicate: {obj.ObjectType} {obj.LogicalName}");
+                    CoreLog.Debug($"[Session] Skipping duplicate: {obj.ObjectType} {obj.LogicalName}");
                 }
                 else
                 {
@@ -134,9 +135,9 @@ namespace MeterSimulator.DLMS
                     association?.ObjectList.Add(obj);
                     if(obj.LogicalName == "0.0.25.9.0.255")
                     {
-                        Console.WriteLine($"PUSHHHHHHH [Session] Registered: {obj.ObjectType} {obj.LogicalName}");
+                        CoreLog.Debug($"PUSHHHHHHH [Session] Registered: {obj.ObjectType} {obj.LogicalName}");
                     }
-                    Console.WriteLine($"[Session] Registered: {obj.ObjectType} {obj.LogicalName}");
+                    CoreLog.Debug($"[Session] Registered: {obj.ObjectType} {obj.LogicalName}");
                 }
             }
 
@@ -159,7 +160,7 @@ namespace MeterSimulator.DLMS
 
             foreach (var push in objects.OfType<GXDLMSPushSetup>())
             {
-                Console.WriteLine(
+                CoreLog.Debug(
                     $"[Push] {_meter.MeterNo}: rewriting Destination on {push.LogicalName} " +
                     $"'{push.Destination}' → '{dest}'");
                 push.Destination = dest;
@@ -180,11 +181,11 @@ namespace MeterSimulator.DLMS
         {
             if (objects.FindByLN(ObjectType.Data, SerialNumberLN) is not GXDLMSData serial)
             {
-                Console.WriteLine($"[Serial] {_meter.MeterNo}: no {SerialNumberLN} in template, skipping");
+                CoreLog.Debug($"[Serial] {_meter.MeterNo}: no {SerialNumberLN} in template, skipping");
                 return;
             }
 
-            Console.WriteLine(
+            CoreLog.Debug(
                 $"[Serial] {_meter.MeterNo}: rewriting {SerialNumberLN} '{serial.Value}' → '{_meter.MeterNo}'");
             serial.Value = _meter.MeterNo;
             serial.SetDataType(2, DataType.String);
@@ -203,7 +204,7 @@ namespace MeterSimulator.DLMS
             var period = TimeSpan.FromSeconds(seconds);
             _pushTimer = new Timer(_ => SafeSendPush(), null, period, period);
 
-            Console.WriteLine(
+            CoreLog.Debug(
                 $"[Push] {_meter.MeterNo}: enabled — every {seconds}s, " +
                 $"ciphering={(_pushConfig.UseCiphering ? "on" : "off")}");
         }
@@ -223,7 +224,7 @@ namespace MeterSimulator.DLMS
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[Push] {_meter.MeterNo}: unexpected error: {ex.Message}");
+                CoreLog.Warn($"[Push] {_meter.MeterNo}: unexpected error: {ex.Message}");
             }
         }
 
@@ -240,7 +241,7 @@ namespace MeterSimulator.DLMS
 
             if (pushObjects.Count == 0)
             {
-                Console.WriteLine($"[Push] {_meter.MeterNo}: no PushSetup with a Destination, skipping");
+                CoreLog.Debug($"[Push] {_meter.MeterNo}: no PushSetup with a Destination, skipping");
                 return;
             }
 
@@ -249,7 +250,7 @@ namespace MeterSimulator.DLMS
                 if (!TryParseDestination(push.Destination, _pushConfig!.Port,
                         out string host, out int port))
                 {
-                    Console.WriteLine($"[Push] {_meter.MeterNo}: bad Destination '{push.Destination}'");
+                    CoreLog.Warn($"[Push] {_meter.MeterNo}: bad Destination '{push.Destination}'");
                     continue;
                 }
 
@@ -343,13 +344,13 @@ namespace MeterSimulator.DLMS
                         stream.Write(frame, 0, frame.Length);
                     stream.Flush();
 
-                    Console.WriteLine(
+                    CoreLog.Debug(
                         $"[Push] {_meter.MeterNo}: sent {frames.Length} frame(s) to {host}:{port}");
                     return;
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine(
+                    CoreLog.Debug(
                         $"[Push] {_meter.MeterNo}: attempt {attempt}/{attempts} to " +
                         $"{host}:{port} failed: {ex.Message}");
 
@@ -419,7 +420,7 @@ namespace MeterSimulator.DLMS
             {
                 if (profile.CaptureObjects.Count == 0) continue;
 
-                Console.WriteLine($"Re-wiring CaptureObjects for {profile.LogicalName} " +
+                CoreLog.Debug($"Re-wiring CaptureObjects for {profile.LogicalName} " +
                                   $"({profile.CaptureObjects.Count} columns, {profile.Buffer.Count} rows)");
 
                 var rewired = new List<GXKeyValuePair<GXDLMSObject, GXDLMSCaptureObject>>();
@@ -430,7 +431,7 @@ namespace MeterSimulator.DLMS
                     {
                         // Referenced object not in Items — register the stub so Gurux
                         // can at least determine the column DataType.
-                        Console.WriteLine($"  WARNING: {kv.Key.ObjectType} {kv.Key.LogicalName} not in Items — adding stub");
+                        CoreLog.Warn($"  WARNING: {kv.Key.ObjectType} {kv.Key.LogicalName} not in Items — adding stub");
                         Items.Add(kv.Key);
                         real = kv.Key;
                     }
@@ -613,20 +614,20 @@ namespace MeterSimulator.DLMS
         //    {
         //        data = (byte[])e.Data;
 
-        //        //Console.WriteLine($"Hex Received: {BitConverter.ToString(data)}");
+        //        //CoreLog.Debug($"Hex Received: {BitConverter.ToString(data)}");
 
         //        byte[] reply = HandleRequest(data);
         //        if (reply.Length != 0)
         //        {
-        //            //Console.WriteLine($"Sending reply: {BitConverter.ToString(reply)}");
+        //            //CoreLog.Debug($"Sending reply: {BitConverter.ToString(reply)}");
         //            _network.Send(reply, e.SenderInfo);
         //        }
         //    }
         //    catch (Exception ex)
         //    {
-        //        Console.WriteLine($"DLMS error: {ex.Message}");
-        //        //Console.WriteLine($"Data Received: {BitConverter.ToString(data)}");
-        //        Console.WriteLine($"Stack: {ex.StackTrace}");
+        //        CoreLog.Debug($"DLMS error: {ex.Message}");
+        //        //CoreLog.Debug($"Data Received: {BitConverter.ToString(data)}");
+        //        CoreLog.Debug($"Stack: {ex.StackTrace}");
         //    }
         //}
 
@@ -636,7 +637,7 @@ namespace MeterSimulator.DLMS
             {
                 try
                 {
-                    Console.WriteLine($"PreRead: {arg.Target.ObjectType} - {arg.Target.LogicalName}, Attr={arg.Index}");
+                    CoreLog.Debug($"PreRead: {arg.Target.ObjectType} - {arg.Target.LogicalName}, Attr={arg.Index}");
 
                     if (arg.Target is GXDLMSAssociationLogicalName && arg.Index == 2)
                     {
@@ -649,7 +650,7 @@ namespace MeterSimulator.DLMS
 
                         if (ic0 != null)
                         {
-                            Console.WriteLine($"IC Value : {ic0.Value}");
+                            CoreLog.Debug($"IC Value : {ic0.Value}");
                             arg.Value = ic0.Value;
                             arg.Handled = true;
                         }
@@ -671,7 +672,7 @@ namespace MeterSimulator.DLMS
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"PreRead ERROR: {arg.Target?.LogicalName} attr{arg.Index}: {ex}");
+                    CoreLog.Error($"PreRead ERROR: {arg.Target?.LogicalName} attr{arg.Index}: {ex}");
                 }
             }
         }
@@ -680,7 +681,7 @@ namespace MeterSimulator.DLMS
         //    Initialize(true);
         //    _network.OnReceived += OnDataReceived;
         //    _network.Open();
-        //    Console.WriteLine($"DLMS Meter {_meter.MeterNo} listening on port {_network.Port}");
+        //    CoreLog.Debug($"DLMS Meter {_meter.MeterNo} listening on port {_network.Port}");
         //}
         
 
@@ -782,12 +783,12 @@ namespace MeterSimulator.DLMS
 
         protected override void Connected(GXDLMSConnectionEventArgs e)
         {
-            Console.WriteLine($"Client connected");
+            CoreLog.Debug($"Client connected");
         }
 
         protected override void Disconnected(GXDLMSConnectionEventArgs connectionInfo)
         {
-            Console.WriteLine( $"DLMS client Disconnected");
+            CoreLog.Debug( $"DLMS client Disconnected");
         }
 
         protected override void PreWrite(ValueEventArgs[] args)
@@ -873,7 +874,7 @@ namespace MeterSimulator.DLMS
                 if (arg.Target is GXDLMSRegister || arg.Target is GXDLMSData)
                 {
                     _meter.SetValue(obis, arg.Value);
-                    Console.WriteLine($"Synchronized client write to meter: {arg.Target.ObjectType} - {obis} = {arg.Value}");
+                    CoreLog.Debug($"Synchronized client write to meter: {arg.Target.ObjectType} - {obis} = {arg.Value}");
                 }
             }
         }

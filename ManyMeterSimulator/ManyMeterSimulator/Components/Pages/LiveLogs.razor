@@ -1,9 +1,213 @@
 @page "/logs"
 @attribute [Authorize]
+@rendermode InteractiveServer
 @using Microsoft.AspNetCore.Authorization
+@using ManyMeterSimulator.Diagnostics
+@using Serilog.Core
+@using Serilog.Events
+@inject LogBroadcaster Broadcaster
+@inject LoggingLevelSwitch LevelSwitch
+@inject IJSRuntime JS
+@implements IDisposable
 
 <PageTitle>MAYA - Live Logs</PageTitle>
 
-<MudText Typo="Typo.h4" Class="page-title">Live Logs</MudText>
+@{
+    var filtered = Filtered();
+}
 
-<p class="muted">Coming soon &mdash; a live, streaming view of simulator activity.</p>
+<div class="d-flex align-center justify-space-between flex-wrap mb-2" style="gap:12px;">
+    <MudText Typo="Typo.h4" Class="page-title mb-0">Live Logs</MudText>
+    <div class="d-flex align-center flex-wrap" style="gap:16px;">
+        <MudSwitch T="bool" @bind-Value="IncludeDebug" Color="Color.Warning" Label="Include debug" />
+        <MudSwitch T="bool" @bind-Value="_autoScroll" Color="Color.Primary" Label="Auto-scroll" />
+        <MudSwitch T="bool" @bind-Value="_paused" Color="Color.Secondary" Label="Pause" />
+        <MudButton Size="Size.Small" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Delete" OnClick="Clear">Clear</MudButton>
+    </div>
+</div>
+
+@if (IncludeDebug)
+{
+    <MudAlert Severity="Severity.Warning" Dense="true" Variant="Variant.Outlined" Class="mb-2">
+        Debug level is on &mdash; this is very verbose under load (per-frame / per-read / per-build lines).
+    </MudAlert>
+}
+
+<MudPaper Elevation="1" Class="pa-3 mb-3">
+    <div class="d-flex align-center flex-wrap" style="gap:16px;">
+        <MudTextField T="string" @bind-Value="_search" @bind-Value:after="StateHasChanged" Immediate="true"
+                      Placeholder="Search message or source…" Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Filled.Search" Clearable="true"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Class="log-search" />
+        <MudSelect T="string" @bind-Value="_levelFilter" @bind-Value:after="StateHasChanged" Label="Level"
+                   Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:150px;">
+            <MudSelectItem Value="@("all")">All</MudSelectItem>
+            <MudSelectItem Value="@("info")">Info +</MudSelectItem>
+            <MudSelectItem Value="@("warn")">Warn +</MudSelectItem>
+            <MudSelectItem Value="@("error")">Error</MudSelectItem>
+        </MudSelect>
+        <MudSpacer />
+        <MudText Typo="Typo.caption" Class="mud-text-secondary">@filtered.Count / @_entries.Count shown</MudText>
+    </div>
+</MudPaper>
+
+<div class="log-view" @ref="_logContainer">
+    @if (_entries.Count == 0)
+    {
+        <div class="log-empty">Waiting for activity&hellip;</div>
+    }
+    else if (filtered.Count == 0)
+    {
+        <div class="log-empty">No lines match the current filter.</div>
+    }
+    else
+    {
+        @foreach (LogEntry e in filtered)
+        {
+            <div class="log-line log-@LevelClass(e.Level)">
+                <span class="log-ts">@e.Timestamp.ToLocalTime().ToString("HH:mm:ss.fff")</span>
+                <span class="log-lvl">@LevelShort(e.Level)</span>
+                <span class="log-src">@e.Source</span>
+                <span class="log-msg">@e.Message</span>
+            </div>
+            @if (e.Exception is not null)
+            {
+                <div class="log-line log-error"><span class="log-exc">@e.Exception</span></div>
+            }
+        }
+    }
+</div>
+
+@code {
+    private const int Capacity = 1000;
+
+    private readonly List<LogEntry> _entries = new();
+    private readonly System.Collections.Concurrent.ConcurrentQueue<LogEntry> _incoming = new();
+
+    private string _search = "";
+    private string _levelFilter = "all";
+    private bool _autoScroll = true;
+    private bool _paused;
+    private bool _includeDebug;
+
+    private System.Threading.Timer? _timer;
+    private ElementReference _logContainer;
+    private bool _pendingScroll;
+
+    private bool IncludeDebug
+    {
+        get => _includeDebug;
+        set
+        {
+            _includeDebug = value;
+            LevelSwitch.MinimumLevel = value ? LogEventLevel.Debug : LogEventLevel.Information;
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        _entries.AddRange(Broadcaster.Snapshot());
+        Broadcaster.OnLog += OnLog;
+        // Batch renders on a timer rather than per-event, so a burst can't thrash the circuit.
+        _timer = new System.Threading.Timer(_ => InvokeAsync(Flush), null, 300, 300);
+    }
+
+    private void OnLog(LogEntry entry) => _incoming.Enqueue(entry);
+
+    private void Flush()
+    {
+        // Always bound the incoming queue so a Debug-level firehose can't grow it without limit.
+        while (_incoming.Count > Capacity)
+        {
+            _incoming.TryDequeue(out _);
+        }
+
+        if (_paused)
+        {
+            return;
+        }
+
+        bool any = false;
+        while (_incoming.TryDequeue(out LogEntry? e))
+        {
+            _entries.Add(e);
+            any = true;
+        }
+
+        if (!any)
+        {
+            return;
+        }
+
+        if (_entries.Count > Capacity)
+        {
+            _entries.RemoveRange(0, _entries.Count - Capacity);
+        }
+
+        _pendingScroll = _autoScroll;
+        StateHasChanged();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_pendingScroll)
+        {
+            _pendingScroll = false;
+            await JS.InvokeVoidAsync("mayaScrollToBottom", _logContainer);
+        }
+    }
+
+    private List<LogEntry> Filtered()
+    {
+        LogEventLevel min = _levelFilter switch
+        {
+            "error" => LogEventLevel.Error,
+            "warn" => LogEventLevel.Warning,
+            "info" => LogEventLevel.Information,
+            _ => LogEventLevel.Verbose,
+        };
+
+        IEnumerable<LogEntry> q = _entries.Where(e => e.Level >= min);
+        if (!string.IsNullOrWhiteSpace(_search))
+        {
+            q = q.Where(e =>
+                e.Message.Contains(_search, StringComparison.OrdinalIgnoreCase)
+                || e.Source.Contains(_search, StringComparison.OrdinalIgnoreCase));
+        }
+
+        return q.ToList();
+    }
+
+    private void Clear()
+    {
+        _entries.Clear();
+        StateHasChanged();
+    }
+
+    private static string LevelClass(LogEventLevel level) => level switch
+    {
+        LogEventLevel.Error or LogEventLevel.Fatal => "error",
+        LogEventLevel.Warning => "warn",
+        LogEventLevel.Debug or LogEventLevel.Verbose => "debug",
+        _ => "info",
+    };
+
+    private static string LevelShort(LogEventLevel level) => level switch
+    {
+        LogEventLevel.Verbose => "VRB",
+        LogEventLevel.Debug => "DBG",
+        LogEventLevel.Information => "INF",
+        LogEventLevel.Warning => "WRN",
+        LogEventLevel.Error => "ERR",
+        LogEventLevel.Fatal => "FTL",
+        _ => "?",
+    };
+
+    public void Dispose()
+    {
+        Broadcaster.OnLog -= OnLog;
+        _timer?.Dispose();
+        // Don't leave Debug on globally after leaving the page.
+        LevelSwitch.MinimumLevel = LogEventLevel.Information;
+    }
+}
