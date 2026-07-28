@@ -18,8 +18,21 @@ public sealed class MeterRegistry
 
     private readonly List<MeterBatch> _batches = new();
     private readonly object _lock = new();
+    private readonly IBatchStore _store;
     private long _nextIndex = 1;
     private int _nextBatchId = 1;
+
+    /// <summary>
+    /// The store is optional so the parameterless-friendly path (unit tests) needs no persistence
+    /// wiring; production supplies a <see cref="JsonBatchStore"/> via DI. On construction the
+    /// registry rehydrates from the store, so batches, their status, and the allocation cursor
+    /// survive restarts.
+    /// </summary>
+    public MeterRegistry(IBatchStore? store = null)
+    {
+        _store = store ?? NullBatchStore.Instance;
+        LoadFromStore();
+    }
 
     public IReadOnlyList<MeterBatch> Batches
     {
@@ -82,6 +95,7 @@ public sealed class MeterRegistry
             };
             _batches.Add(batch);
             _nextIndex += count;
+            Persist();
             return batch;
         }
     }
@@ -94,7 +108,15 @@ public sealed class MeterRegistry
     {
         lock (_lock)
         {
-            return _batches.RemoveAll(b => b.Id == batchId) > 0;
+            bool removed = _batches.RemoveAll(b => b.Id == batchId) > 0;
+            if (removed)
+            {
+                // Note: _nextIndex is intentionally NOT rolled back — the deleted range is retired,
+                // not reclaimed, so a future batch never reissues those addresses.
+                Persist();
+            }
+
+            return removed;
         }
     }
 
@@ -150,8 +172,58 @@ public sealed class MeterRegistry
             }
 
             batch.Status = status;
+            Persist();
             return true;
         }
+    }
+
+    /// <summary>Rebuilds the in-memory state from the store. Called once, from the constructor.</summary>
+    private void LoadFromStore()
+    {
+        BatchStoreSnapshot snapshot = _store.Load();
+
+        lock (_lock)
+        {
+            _batches.Clear();
+            foreach (PersistedBatch pb in snapshot.Batches)
+            {
+                _batches.Add(new MeterBatch
+                {
+                    Id = pb.Id,
+                    Name = pb.Name,
+                    TemplateName = pb.TemplateName,
+                    StartIndex = pb.StartIndex,
+                    Count = pb.Count,
+                    Status = pb.Status,
+                    CreatedAtUtc = pb.CreatedAtUtc,
+                });
+            }
+
+            _nextIndex = snapshot.NextIndex;
+            _nextBatchId = snapshot.NextBatchId;
+        }
+    }
+
+    /// <summary>Writes the current state to the store. Must be called while holding <see cref="_lock"/>.</summary>
+    private void Persist()
+    {
+        var snapshot = new BatchStoreSnapshot
+        {
+            NextIndex = _nextIndex,
+            NextBatchId = _nextBatchId,
+            Batches = _batches.Select(b => new PersistedBatch
+            {
+                Id = b.Id,
+                Name = b.Name,
+                TemplateName = b.TemplateName,
+                StartIndex = b.StartIndex,
+                Count = b.Count,
+                Status = b.Status,
+                CreatedAtUtc = b.CreatedAtUtc,
+            }).ToList(),
+        };
+
+        _store.Save(snapshot);
     }
 
     public static string FormatSerial(long index) => $"MY{index:D9}";

@@ -10,12 +10,23 @@ using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Persistent, deploy-surviving folders live in the PARENT of the deployment folder (the content
+// root), so a redeploy that replaces the app folder never touches logs/ or data/. Layout:
+//   <sim-root>/
+//     <deployment>/   ← app content root, refreshed on every deploy
+//     logs/           ← persistent (this)
+//     data/           ← persistent (see PersistenceOptions)
+// Resolved against the content root (not the CWD) so it's correct however the app is launched;
+// created here if missing, so first deployment needs no manual folder setup.
+string logDirectory = Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPath, "..", "logs"));
+Directory.CreateDirectory(logDirectory);
+
 builder.Services.AddSerilog((_, loggerConfiguration) => loggerConfiguration
     .MinimumLevel.Information()
     .Enrich.FromLogContext()
     .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss.fff} {Level:u3}] {SourceContext}: {Message:lj}{NewLine}{Exception}")
     .WriteTo.File(
-        "logs/nicsim-.log",
+        Path.Combine(logDirectory, "nicsim-.log"),
         rollingInterval: RollingInterval.Day,
         outputTemplate: "[{Timestamp:yyyy-MM-dd HH:mm:ss.fff} {Level:u3}] {SourceContext}: {Message:lj}{NewLine}{Exception}"));
 
@@ -24,6 +35,7 @@ builder.Services.Configure<SimulatedBridgeOptions>(builder.Configuration.GetSect
 builder.Services.Configure<AuthOptions>(builder.Configuration.GetSection(AuthOptions.SectionName));
 builder.Services.Configure<TemplateOptions>(builder.Configuration.GetSection(TemplateOptions.SectionName));
 builder.Services.Configure<BrainOptions>(builder.Configuration.GetSection(BrainOptions.SectionName));
+builder.Services.Configure<PersistenceOptions>(builder.Configuration.GetSection(PersistenceOptions.SectionName));
 
 // The meter IP prefix is a per-deployment infrastructure value — it must match the IPv6 /64 routed
 // to THIS host. Validate it early so a misconfigured/typo'd/missing prefix fails fast with a clear
@@ -46,6 +58,9 @@ builder.Services.Configure<HostOptions>(o => o.ShutdownTimeout = TimeSpan.FromSe
 
 builder.Services.AddSingleton<ConnectionRegistry>();
 builder.Services.AddSingleton<SimulatorMetrics>();
+// Durable batch store first — MeterRegistry rehydrates from it on construction, so batches,
+// their status, and the allocation cursor survive restarts/reboots/redeployments.
+builder.Services.AddSingleton<IBatchStore, JsonBatchStore>();
 builder.Services.AddSingleton<MeterRegistry>();
 builder.Services.AddSingleton<TemplateRegistry>();
 builder.Services.AddSingleton<MeterSessionManager>();

@@ -404,3 +404,7 @@ FodyWeavers.xsd
 
 # Deploy artifact (built locally, never committed)
 maya-sim.tar.gz
+
+# Persistent sim state, sibling to the deployment folder (../data, ../logs). Never committed.
+/ManyMeterSimulator/data/
+/ManyMeterSimulator/logs/

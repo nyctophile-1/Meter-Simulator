@@ -210,6 +210,89 @@ public class MeterRegistryTests
     }
 
     [Fact]
+    public void Persistence_RehydratesBatchesStatusAndCursor_AcrossRestart()
+    {
+        var store = new InMemoryBatchStore();
+
+        // First "process": create two batches, start the second.
+        var first = new MeterRegistry(store);
+        first.AddBatch("b1", Tpl, 100);
+        MeterBatch b2 = first.AddBatch("b2", Tpl, 5);
+        first.TryStart(b2.Id);
+
+        // Second "process" over the same store simulates a restart/redeploy.
+        var restarted = new MeterRegistry(store);
+
+        Assert.Equal(2, restarted.Batches.Count);
+        Assert.Equal(BatchStatus.Running, restarted.Batches.Single(b => b.Name == "b2").Status);
+
+        // Cursor survived: the next batch continues at index 106, it does NOT restart at 1
+        // (which would reissue already-known addresses).
+        BatchPreview preview = restarted.PreviewNextBatch(Prefix, 1);
+        Assert.Equal(MeterAddressing.ComputeAddress(Prefix, 106), preview.FirstAddress);
+
+        // Batch ids are not reused either.
+        MeterBatch b3 = restarted.AddBatch("b3", Tpl, 1);
+        Assert.Equal(3, b3.Id);
+    }
+
+    [Fact]
+    public void Persistence_DeleteDoesNotReclaimTheRange_AcrossRestart()
+    {
+        var store = new InMemoryBatchStore();
+
+        var first = new MeterRegistry(store);
+        MeterBatch b1 = first.AddBatch("b1", Tpl, 100);
+        first.Delete(b1.Id);
+
+        var restarted = new MeterRegistry(store);
+
+        Assert.Empty(restarted.Batches);
+        // The deleted range stays retired: the next batch still starts past it, not back at 1.
+        BatchPreview preview = restarted.PreviewNextBatch(Prefix, 1);
+        Assert.Equal(MeterAddressing.ComputeAddress(Prefix, 101), preview.FirstAddress);
+    }
+
+    [Fact]
+    public void JsonBatchStore_RoundTripsThroughARealFile()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"mms-batchstore-{Guid.NewGuid():N}", "batches.json");
+        try
+        {
+            var writeRegistry = new MeterRegistry(new JsonBatchStore(path));
+            MeterBatch b = writeRegistry.AddBatch("persisted", Tpl, 42);
+            writeRegistry.TryStart(b.Id);
+
+            Assert.True(File.Exists(path));
+
+            // A brand-new store instance reading the same file must see the same state.
+            var readRegistry = new MeterRegistry(new JsonBatchStore(path));
+            MeterBatch reloaded = Assert.Single(readRegistry.Batches);
+            Assert.Equal("persisted", reloaded.Name);
+            Assert.Equal(42, reloaded.Count);
+            Assert.Equal(BatchStatus.Running, reloaded.Status);
+        }
+        finally
+        {
+            string? dir = Path.GetDirectoryName(path);
+            if (dir is not null && Directory.Exists(dir))
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+    }
+
+    /// <summary>In-memory <see cref="IBatchStore"/> that holds the last saved snapshot, for restart simulation.</summary>
+    private sealed class InMemoryBatchStore : IBatchStore
+    {
+        private BatchStoreSnapshot _snapshot = new();
+
+        public BatchStoreSnapshot Load() => _snapshot;
+
+        public void Save(BatchStoreSnapshot snapshot) => _snapshot = snapshot;
+    }
+
+    [Fact]
     public void GetTemplateNameForAddress_ReturnsBatchTemplate_AndNullForUnprovisioned()
     {
         var registry = new MeterRegistry();
