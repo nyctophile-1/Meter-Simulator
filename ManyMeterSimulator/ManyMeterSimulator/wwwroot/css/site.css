@@ -26,28 +26,270 @@ code {
     height: 100%;
 }
 
-.donut-center {
-    fill: #d4d4d4;
-    font-size: 2rem;
-    font-weight: 600;
+/* ---------- Dashboard: Live activity area chart ---------- */
+/* Grid: [left axis] [plot] [right axis] over [.] [x axis] [.] — axis text lives in HTML because
+   the plot SVG is stretched (preserveAspectRatio=none), which would distort any text inside it. */
+.chart-layout {
+    display: grid;
+    grid-template-columns: 44px 1fr 44px;
+    grid-template-rows: 300px auto;
+    column-gap: 8px;
 }
 
-.donut-center-sub {
-    fill: #8a8f98;
+.axis-y {
+    position: relative;
+    font-size: 0.75rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.axis-y span {
+    position: absolute;
+    transform: translateY(-50%);
+    white-space: nowrap;
+}
+
+.axis-y-conn span {
+    right: 0;
+    color: #4ec9b0;
+}
+
+.axis-y-exch span {
+    left: 0;
+    color: #8b7cf6;
+}
+
+.axis-x {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.75rem;
+    color: #a8adb5;
+    padding-top: 8px;
+}
+
+.plot {
+    position: relative;
+    height: 300px;
+}
+
+.activity-svg {
+    width: 100%;
+    height: 300px;
+    display: block;
+}
+
+.plot-dot {
+    position: absolute;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    box-shadow: 0 0 0 2px #252526;
+    pointer-events: none;
+}
+
+.hover-cols {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+}
+
+.hover-col {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    transform: translateX(-50%);
+    cursor: crosshair;
+}
+
+.plot-tip {
+    position: absolute;
+    top: 8px;
+    transform: translateX(10px);
+    background: #1b1b1b;
+    border: 1px solid #333;
+    border-radius: 4px;
+    padding: 8px 12px;
     font-size: 0.8rem;
+    pointer-events: none;
+    z-index: 2;
+    min-width: 172px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+}
+
+/* Near the right edge, flip the tooltip to the other side of the crosshair. */
+.plot-tip.flip {
+    transform: translateX(calc(-100% - 10px));
+}
+
+.tip-time {
+    color: #a8adb5;
+    margin-bottom: 5px;
+    font-variant-numeric: tabular-nums;
+}
+
+.tip-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    line-height: 1.7;
+}
+
+.tip-label {
+    color: #d4d4d4;
+}
+
+.tip-val {
+    margin-left: auto;
+    font-weight: 600;
+    color: #ffffff;
+    font-variant-numeric: tabular-nums;
+}
+
+.activity-empty {
+    height: 300px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #8a8f98;
+    font-size: 0.85rem;
+}
+
+/* ---------- Dashboard: Batch breakdown ---------- */
+.batch-bar {
+    display: flex;
+    height: 10px;
+    border-radius: 5px;
+    overflow: hidden;
+    background: #2a2a2a;
+}
+
+.batch-seg + .batch-seg {
+    border-left: 1px solid #252526;
+}
+
+.batch-legend-row {
+    display: flex;
+    align-items: center;
+    font-size: 0.875rem;
+    line-height: 2.1;
+}
+
+.batch-legend-label {
+    color: #d4d4d4;
+}
+
+.batch-legend-count {
+    margin-left: auto;
+    font-weight: 600;
+    color: #e8e8e8;
+    font-variant-numeric: tabular-nums;
+}
+
+.batch-legend-meters {
+    width: 76px;
+    text-align: right;
+    color: #a8adb5;
+    font-variant-numeric: tabular-nums;
+}
+
+.batch-list {
+    overflow-y: auto;
+    max-height: 200px;
+    flex: 1 1 auto;
+    padding-right: 6px;
+}
+
+/* Slim scrollbar — the default one crowds the right-hand counts. */
+.batch-list::-webkit-scrollbar {
+    width: 6px;
+}
+
+.batch-list::-webkit-scrollbar-thumb {
+    background: #3a3a3a;
+    border-radius: 3px;
+}
+
+.batch-list::-webkit-scrollbar-thumb:hover {
+    background: #4a4a4a;
+}
+
+.batch-list::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.batch-row {
+    display: flex;
+    align-items: center;
+    padding: 5px 0;
+    border-bottom: 1px solid #2a2a2a;
+}
+
+.batch-row:last-child {
+    border-bottom: none;
+}
+
+.batch-row-main {
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.batch-row-name {
+    font-size: 0.875rem;
+    color: #e8e8e8;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.batch-row-sub {
+    font-size: 0.75rem;
+    color: #a8adb5;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.batch-row-count {
+    font-size: 0.875rem;
+    color: #d4d4d4;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    padding-left: 10px;
+}
+
+.batch-empty {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+}
+
+.activity-legend {
+    gap: 16px;
+}
+
+.activity-legend .legend-item {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.8rem;
+    color: #d4d4d4;
+}
+
+/* Shared by the chart legend, the hover tooltip and the batch rows. */
+.legend-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    margin-right: 6px;
+    display: inline-block;
+    flex: none;
 }
 
 .unit {
     font-size: 0.6em;
     color: #8a8f98;
-}
-
-/* Page heading — ~50% larger than MudBlazor's h4 so it stands clear of the nav. */
-.page-title {
-    font-size: 3.2rem;
-    line-height: 1.15;
-    font-weight: 400;
-    margin: 0.2rem 0 1rem;
 }
 
 /* App-bar hamburger: no hover/ripple highlight (the circular overlay looked jarring). */
@@ -57,22 +299,9 @@ code {
     background-color: transparent !important;
 }
 
-/* ---------- Meter Batches (MudSimpleTable + expandable detail rows) ---------- */
+/* ---------- Meter Batches (MudSimpleTable) ---------- */
 .batch-table code {
     font-size: 0.85em;
-}
-
-.detail-row td {
-    background: #181818;
-}
-
-.meter-list {
-    max-height: 340px;
-    overflow-y: auto;
-    background: #1b1b1b;
-    padding: 10px 16px;
-    border-radius: 4px;
-    line-height: 1.8;
 }
 
 /* ---------- Live Logs ---------- */

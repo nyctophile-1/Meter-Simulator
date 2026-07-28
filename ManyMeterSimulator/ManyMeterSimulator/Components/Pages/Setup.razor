@@ -14,9 +14,7 @@
 @inject IDialogService DialogService
 @inject IJSRuntime JS
 
-<PageTitle>MAYA - Meter Batches</PageTitle>
-
-<MudText Typo="Typo.h4" Class="page-title">Meter Batches</MudText>
+<PageTitle>MAYA - Setup</PageTitle>
 
 <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
     Address prefix: <code>@AddressPrefix</code> &middot; max supported meters:
@@ -133,9 +131,6 @@ else
                 (IPAddress firstAddr, IPAddress lastAddr) = MeterRegistry.GetAddressRange(batch, AddressPrefix);
                 <tr>
                     <td style="white-space:nowrap">
-                        <MudIconButton Size="Size.Small"
-                                       Icon="@(ExpandedBatchId == batch.Id ? Icons.Material.Filled.ExpandMore : Icons.Material.Filled.ChevronRight)"
-                                       OnClick="() => ToggleExpanded(batch.Id)" />
                         <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Download"
                                        Title="Download meter list (CSV)" OnClick="() => DownloadCsv(batch.Id)" />
                     </td>
@@ -164,29 +159,6 @@ else
                         </td>
                     }
                 </tr>
-                @if (ExpandedBatchId == batch.Id)
-                {
-                    <tr class="detail-row">
-                        <td colspan="8">
-                            @{
-                                const int maxShown = 50;
-                                var meters = MeterRegistry.GetMeters(batch, AddressPrefix).Take(maxShown).ToList();
-                            }
-                            <div class="meter-list">
-                                @foreach (var m in meters)
-                                {
-                                    <div><code>@m.Address</code> &rarr; <code>@m.Serial</code></div>
-                                }
-                            </div>
-                            @if (batch.Count > maxShown)
-                            {
-                                <MudText Typo="Typo.caption" Class="d-block mt-2">
-                                    &hellip;and @((batch.Count - maxShown).ToString("N0", System.Globalization.CultureInfo.InvariantCulture)) more.
-                                </MudText>
-                            }
-                        </td>
-                    </tr>
-                }
             }
         </tbody>
     </MudSimpleTable>
@@ -203,7 +175,6 @@ else
     private string SelectedTemplate { get; set; } = "";
     private string? ErrorMessage;
     private string? UploadMessage;
-    private int? ExpandedBatchId;
 
     // Templates can be large (the full-model XML is ~4 MB); allow generous headroom for upload.
     private const long MaxUploadBytes = 32 * 1024 * 1024;
@@ -315,13 +286,7 @@ else
         }
 
         MeterRegistry.Delete(batchId);
-        if (ExpandedBatchId == batchId)
-        {
-            ExpandedBatchId = null;
-        }
     }
-
-    private void ToggleExpanded(int batchId) => ExpandedBatchId = ExpandedBatchId == batchId ? null : batchId;
 
     private async Task DownloadCsv(int batchId) =>
         await JS.InvokeVoidAsync("mayaDownload", $"/batches/{batchId}/meters.csv");
@@ -346,6 +311,5 @@ else
 
         MeterRegistry.Reset();
         Sessions.Clear();
-        ExpandedBatchId = null;
     }
 }

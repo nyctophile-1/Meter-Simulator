@@ -1,6 +1,8 @@
 @page "/"
 @attribute [Authorize]
 @rendermode InteractiveServer
+@using System.Globalization
+@using System.Text
 @using Microsoft.AspNetCore.Authorization
 @using ManyMeterSimulator.Diagnostics
 @using ManyMeterSimulator.Brain
@@ -12,13 +14,6 @@
 @implements IDisposable
 
 <PageTitle>MAYA - Dashboard</PageTitle>
-
-<div class="d-flex align-center justify-space-between flex-wrap mb-2">
-    <MudText Typo="Typo.h4" Class="page-title mb-0">Dashboard</MudText>
-    <MudChip T="string" Icon="@Icons.Material.Filled.FiberManualRecord" Color="Color.Success" Variant="Variant.Text">
-        live &middot; refreshing every 2s
-    </MudChip>
-</div>
 
 @* ---------- KPI stat cards ---------- *@
 <MudGrid Class="mb-2">
@@ -37,36 +32,185 @@
 </MudGrid>
 
 <MudGrid>
-    @* ---------- Live activity line chart ---------- *@
+    @* ---------- Live activity area chart ---------- *@
     <MudItem xs="12" md="8">
         <MudPaper Elevation="1" Class="pa-4" Style="height:100%;">
-            <MudText Typo="Typo.subtitle1" GutterBottom="true">Live activity</MudText>
-            <MudText Typo="Typo.caption" Class="mud-text-secondary">
-                Active connections and exchanges/sec over the last @(_activeHistory.Count) samples.
-            </MudText>
-            <MudChart T="double" ChartType="ChartType.Line" ChartSeries="@ActivitySeries" XAxisLabels="@TimeLabels"
-                      ChartOptions="@_chartOptions" Width="100%" Height="300px" />
-        </MudPaper>
-    </MudItem>
+            <div class="d-flex align-center justify-space-between flex-wrap">
+                <div>
+                    <MudText Typo="Typo.subtitle1">Live activity</MudText>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                        Last @(_activeHistory.Count) samples &middot; every 2s
+                    </MudText>
+                </div>
+                <div class="d-flex align-center gap-4 activity-legend">
+                    <span class="legend-item"><span class="legend-dot" style="background:#4ec9b0;"></span>Active connections</span>
+                    <span class="legend-item"><span class="legend-dot" style="background:#8b7cf6;"></span>Exchanges/sec</span>
+                </div>
+            </div>
 
-    @* ---------- Batch status donut ---------- *@
-    <MudItem xs="12" md="4">
-        <MudPaper Elevation="1" Class="pa-4" Style="height:100%;">
-            <MudText Typo="Typo.subtitle1" GutterBottom="true">Batch status</MudText>
-            @if (_totalBatches == 0)
+            @if (_activeHistory.Count < 2)
             {
-                <MudText Typo="Typo.body2" Class="mud-text-secondary mt-8 text-center">No batches yet.</MudText>
+                <div class="activity-empty mt-3">Collecting samples&hellip;</div>
             }
             else
             {
-                <div class="d-flex justify-center">
-                    <MudChart T="double" ChartType="ChartType.Donut" InputData="@BatchStatusData" InputLabels="@BatchStatusLabels"
-                              ChartOptions="@_chartOptions" Width="240px" Height="240px">
-                        <CustomGraphics>
-                            <text class="donut-center" x="50%" y="46%" dominant-baseline="middle" text-anchor="middle">@_totalBatches</text>
-                            <text class="donut-center-sub" x="50%" y="58%" dominant-baseline="middle" text-anchor="middle">batches</text>
-                        </CustomGraphics>
-                    </MudChart>
+                <div class="chart-layout mt-3">
+                    @* Left axis: active connections *@
+                    <div class="axis-y axis-y-conn">
+                        @foreach (var t in Ticks(_connMax))
+                        {
+                            <span style="top:@(F(t.Y * 100))%;">@t.Label</span>
+                        }
+                    </div>
+
+                    <div class="plot" @onmouseleave="() => _hover = -1">
+                        <svg viewBox="0 0 1000 300" preserveAspectRatio="none" class="activity-svg" role="img"
+                             aria-label="Active connections and exchanges per second over time">
+                            <defs>
+                                <linearGradient id="grad-conn" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="0%" stop-color="#4ec9b0" stop-opacity="0.45" />
+                                    <stop offset="100%" stop-color="#4ec9b0" stop-opacity="0" />
+                                </linearGradient>
+                                <linearGradient id="grad-exch" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="0%" stop-color="#8b7cf6" stop-opacity="0.40" />
+                                    <stop offset="100%" stop-color="#8b7cf6" stop-opacity="0" />
+                                </linearGradient>
+                            </defs>
+
+                            @* Horizontal gridlines aligned with the axis ticks *@
+                            @foreach (var t in Ticks(_connMax))
+                            {
+                                <line x1="0" y1="@F(t.Y * 300)" x2="1000" y2="@F(t.Y * 300)" stroke="#333" stroke-width="1"
+                                      vector-effect="non-scaling-stroke" stroke-dasharray="3 4" />
+                            }
+
+                            <path d="@_exchArea" fill="url(#grad-exch)" stroke="none" />
+                            <path d="@_connArea" fill="url(#grad-conn)" stroke="none" />
+                            <path d="@_exchLine" fill="none" stroke="#8b7cf6" stroke-width="2.5"
+                                  vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round" />
+                            <path d="@_connLine" fill="none" stroke="#4ec9b0" stroke-width="2.5"
+                                  vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round" />
+
+                            @if (_hover >= 0)
+                            {
+                                <line x1="@F(HoverX)" y1="0" x2="@F(HoverX)" y2="300" stroke="#8a8f98"
+                                      stroke-width="1" vector-effect="non-scaling-stroke" />
+                            }
+                        </svg>
+
+                        @* Markers are HTML, not SVG: the plot is stretched (preserveAspectRatio=none),
+                           which would squash circles into ellipses. *@
+                        @if (_hover >= 0)
+                        {
+                            <span class="plot-dot" style="left:@(F(HoverPct))%;top:@(F(_connNorm[_hover] * 100))%;background:#4ec9b0;"></span>
+                            <span class="plot-dot" style="left:@(F(HoverPct))%;top:@(F(_exchNorm[_hover] * 100))%;background:#8b7cf6;"></span>
+
+                            <div class="plot-tip @(HoverPct > 60 ? "flip" : "")" style="left:@(F(HoverPct))%;">
+                                <div class="tip-time">@HoverLabel</div>
+                                <div class="tip-row">
+                                    <span class="legend-dot" style="background:#4ec9b0;"></span>
+                                    <span class="tip-label">Active conns</span>
+                                    <span class="tip-val">@_activeHistory[_hover].ToString("N0")</span>
+                                </div>
+                                <div class="tip-row">
+                                    <span class="legend-dot" style="background:#8b7cf6;"></span>
+                                    <span class="tip-label">Exchanges/sec</span>
+                                    <span class="tip-val">@_exchangesPerSecHistory[_hover].ToString("N1")</span>
+                                </div>
+                            </div>
+                        }
+
+                        @* Invisible hit targets — one per sample, each centred on its data point so the
+                           crosshair lands under the cursor. Hover fires on column change, not per pixel. *@
+                        <div class="hover-cols">
+                            @{
+                                double colW = 100.0 / (_activeHistory.Count - 1);
+                            }
+                            @for (int i = 0; i < _activeHistory.Count; i++)
+                            {
+                                int idx = i;
+                                <div class="hover-col" style="left:@(F(idx * colW))%;width:@(F(colW))%;"
+                                     @onmouseenter="() => _hover = idx"></div>
+                            }
+                        </div>
+                    </div>
+
+                    @* Right axis: exchanges/sec *@
+                    <div class="axis-y axis-y-exch">
+                        @foreach (var t in Ticks(_exchMax))
+                        {
+                            <span style="top:@(F(t.Y * 100))%;">@t.Label</span>
+                        }
+                    </div>
+
+                    <div></div>
+                    <div class="axis-x">
+                        <span>@($"-{(_activeHistory.Count - 1) * 2}s")</span>
+                        <span>@($"-{(_activeHistory.Count - 1)}s")</span>
+                        <span>now</span>
+                    </div>
+                    <div></div>
+                </div>
+            }
+        </MudPaper>
+    </MudItem>
+
+    @* ---------- Batch breakdown ---------- *@
+    <MudItem xs="12" md="4">
+        <MudPaper Elevation="1" Class="pa-4 d-flex flex-column" Style="height:100%;">
+            <div class="d-flex align-center justify-space-between">
+                <MudText Typo="Typo.subtitle1">Batches</MudText>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                    @_totalBatches total &middot; @_provisionedMeters.ToString("N0") meters
+                </MudText>
+            </div>
+
+            @if (_totalBatches == 0)
+            {
+                <div class="batch-empty">
+                    <MudIcon Icon="@Icons.Material.Filled.Dns" Size="Size.Large" Class="mud-text-secondary" />
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary mt-2">No batches yet.</MudText>
+                    <MudButton Href="batches" Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small"
+                               StartIcon="@Icons.Material.Filled.Add" Class="mt-3">Create a batch</MudButton>
+                </div>
+            }
+            else
+            {
+                @* Meter-weighted split: a 1-meter batch shouldn't look like a 300-meter one. *@
+                <div class="batch-bar mt-3">
+                    @foreach (var seg in BatchSegments.Where(s => s.Meters > 0))
+                    {
+                        <div class="batch-seg" style="width:@(F(seg.Meters * 100.0 / Math.Max(1, _provisionedMeters)))%;background:@seg.Color;"
+                             title="@seg.Label: @seg.Meters.ToString("N0") meters"></div>
+                    }
+                </div>
+
+                <div class="batch-legend mt-3">
+                    @foreach (var seg in BatchSegments)
+                    {
+                        <div class="batch-legend-row">
+                            <span class="legend-dot" style="background:@seg.Color;"></span>
+                            <span class="batch-legend-label">@seg.Label</span>
+                            <span class="batch-legend-count">@seg.Batches</span>
+                            <span class="batch-legend-meters">@seg.Meters.ToString("N0") m</span>
+                        </div>
+                    }
+                </div>
+
+                <MudDivider Class="my-3" />
+
+                <div class="batch-list">
+                    @foreach (var b in _batches)
+                    {
+                        <div class="batch-row">
+                            <span class="legend-dot" style="background:@StatusColor(b.Status);"></span>
+                            <div class="batch-row-main">
+                                <div class="batch-row-name">@b.Name</div>
+                                <div class="batch-row-sub">@b.TemplateName</div>
+                            </div>
+                            <span class="batch-row-count">@b.Count.ToString("N0")</span>
+                        </div>
+                    }
                 </div>
             }
         </MudPaper>
@@ -136,10 +280,24 @@
     private long _lastExchanges;
     private DateTime _lastSampleUtc;
 
+    // Pre-rendered SVG path data for the Live activity area chart (recomputed each 2s sample).
+    private string _connLine = "", _connArea = "", _exchLine = "", _exchArea = "";
+
+    // Per-point vertical position as a 0..1 fraction of plot height (0 = top). Used to place the
+    // HTML hover markers, which can't live in the stretched SVG without being distorted.
+    private double[] _connNorm = Array.Empty<double>(), _exchNorm = Array.Empty<double>();
+
+    // Axis maxima — each series gets its own scale, so both stay readable despite differing by
+    // orders of magnitude. The two Y axes label which is which.
+    private double _connMax = 1, _exchMax = 1;
+
+    private int _hover = -1;
+
     private SimulatorMetricsSnapshot _snap;
     private int _liveMeters;
     private long _provisionedMeters;
     private int _runningBatches, _stoppedBatches, _notStartedBatches, _totalBatches;
+    private IReadOnlyList<MeterBatch> _batches = Array.Empty<MeterBatch>();
     private long _rejectionsTotal;
     private int _maxConns;
 
@@ -165,6 +323,7 @@
         _liveMeters = Sessions.LiveMeterCount;
 
         IReadOnlyList<MeterBatch> batches = MeterRegistry.Batches;
+        _batches = batches;
         _totalBatches = batches.Count;
         _runningBatches = batches.Count(b => b.Status == BatchStatus.Running);
         _stoppedBatches = batches.Count(b => b.Status == BatchStatus.Stopped);
@@ -184,7 +343,69 @@
         _exchangesPerSecHistory.Add(Math.Round(perSec, 1));
         if (_activeHistory.Count > MaxPoints) _activeHistory.RemoveAt(0);
         if (_exchangesPerSecHistory.Count > MaxPoints) _exchangesPerSecHistory.RemoveAt(0);
+
+        // Each series is scaled 0..niceMax on its own axis, so both stay readable despite very
+        // different magnitudes (connections vs exchanges/sec) and zero reads as zero.
+        _connMax = NiceMax(_activeHistory.Count == 0 ? 0 : _activeHistory.Max());
+        _exchMax = NiceMax(_exchangesPerSecHistory.Count == 0 ? 0 : _exchangesPerSecHistory.Max());
+        (_connLine, _connArea, _connNorm) = BuildPaths(_activeHistory, _connMax);
+        (_exchLine, _exchArea, _exchNorm) = BuildPaths(_exchangesPerSecHistory, _exchMax);
     }
+
+    // Rounds up to the next 1/2/5 x 10^n so axis ticks land on readable numbers.
+    private static double NiceMax(double max)
+    {
+        if (max <= 0) return 1;
+        double pow = Math.Pow(10, Math.Floor(Math.Log10(max)));
+        double f = max / pow;
+        double nice = f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10;
+        return nice * pow;
+    }
+
+    // Builds a smooth (Catmull-Rom) line path and a matching filled-area path over a 1000x300
+    // viewBox, plus each point's 0..1 vertical fraction for positioning HTML markers.
+    private static (string Line, string Area, double[] Norm) BuildPaths(IReadOnlyList<double> data, double max)
+    {
+        const double W = 1000, H = 300;
+        int n = data.Count;
+        if (n < 2) return ("", "", Array.Empty<double>());
+
+        // Headroom at the top so a peak at max doesn't touch the card edge.
+        const double PadTopFrac = 0.08;
+        double dx = W / (n - 1);
+
+        var norm = new double[n];
+        var pts = new (double X, double Y)[n];
+        for (int i = 0; i < n; i++)
+        {
+            double frac = max <= 0 ? 0 : Math.Clamp(data[i] / max, 0, 1);
+            norm[i] = PadTopFrac + (1 - frac) * (1 - PadTopFrac);
+            pts[i] = (i * dx, norm[i] * H);
+        }
+
+        var sb = new StringBuilder();
+        sb.Append("M ").Append(F(pts[0].X)).Append(' ').Append(F(pts[0].Y));
+        for (int i = 0; i < n - 1; i++)
+        {
+            var p0 = pts[Math.Max(0, i - 1)];
+            var p1 = pts[i];
+            var p2 = pts[i + 1];
+            var p3 = pts[Math.Min(n - 1, i + 2)];
+            double cp1x = p1.X + (p2.X - p0.X) / 6.0;
+            double cp1y = p1.Y + (p2.Y - p0.Y) / 6.0;
+            double cp2x = p2.X - (p3.X - p1.X) / 6.0;
+            double cp2y = p2.Y - (p3.Y - p1.Y) / 6.0;
+            sb.Append(" C ").Append(F(cp1x)).Append(' ').Append(F(cp1y))
+              .Append(", ").Append(F(cp2x)).Append(' ').Append(F(cp2y))
+              .Append(", ").Append(F(p2.X)).Append(' ').Append(F(p2.Y));
+        }
+
+        string line = sb.ToString();
+        string area = $"{line} L {F(pts[n - 1].X)} {F(H)} L {F(pts[0].X)} {F(H)} Z";
+        return (line, area, norm);
+    }
+
+    private static string F(double v) => v.ToString("0.##", CultureInfo.InvariantCulture);
 
     private IEnumerable<(string Label, string Value, string Icon, Color Color)> Kpis => new (string, string, string, Color)[]
     {
@@ -196,16 +417,49 @@
         ("Total accepted", _snap.TotalAccepted.ToString("N0"), Icons.Material.Filled.CheckCircle, Color.Success),
     };
 
-    private List<ChartSeries<double>> ActivitySeries => new()
+    // Three gridlines/ticks — full scale, half, zero — as 0..1 fractions of plot height matching
+    // the headroom BuildPaths applies.
+    private static IEnumerable<(string Label, double Y)> Ticks(double max)
     {
-        new ChartSeries<double> { Name = "Active connections", Data = _activeHistory.ToArray() },
-        new ChartSeries<double> { Name = "Exchanges/sec", Data = _exchangesPerSecHistory.ToArray() },
+        const double PadTopFrac = 0.08;
+        foreach (double f in new[] { 1.0, 0.5, 0.0 })
+        {
+            yield return (Compact(max * f), PadTopFrac + (1 - f) * (1 - PadTopFrac));
+        }
+    }
+
+    private static string Compact(double v) => v switch
+    {
+        >= 1_000_000 => (v / 1_000_000).ToString("0.#", CultureInfo.InvariantCulture) + "M",
+        >= 1_000 => (v / 1_000).ToString("0.#", CultureInfo.InvariantCulture) + "k",
+        _ => v.ToString("0.##", CultureInfo.InvariantCulture),
     };
 
-    private string[] TimeLabels => _activeHistory.Select((_, i) => i % 6 == 0 ? $"-{(_activeHistory.Count - 1 - i) * 2}s" : string.Empty).ToArray();
+    private double HoverPct => _activeHistory.Count < 2 ? 0 : _hover * 100.0 / (_activeHistory.Count - 1);
+    private double HoverX => HoverPct * 10; // 0..1000 viewBox units
 
-    private double[] BatchStatusData => new double[] { _runningBatches, _stoppedBatches, _notStartedBatches };
-    private string[] BatchStatusLabels => new[] { "Running", "Stopped", "Not started" };
+    private string HoverLabel
+    {
+        get
+        {
+            int back = (_activeHistory.Count - 1 - _hover) * 2;
+            return back == 0 ? "now" : $"-{back}s";
+        }
+    }
+
+    private IEnumerable<(string Label, string Color, int Batches, long Meters)> BatchSegments => new[]
+    {
+        ("Running", "#4ec9b0", _runningBatches, _batches.Where(b => b.Status == BatchStatus.Running).Sum(b => b.Count)),
+        ("Stopped", "#e0a458", _stoppedBatches, _batches.Where(b => b.Status == BatchStatus.Stopped).Sum(b => b.Count)),
+        ("Not started", "#6b7178", _notStartedBatches, _batches.Where(b => b.Status == BatchStatus.NotStarted).Sum(b => b.Count)),
+    };
+
+    private static string StatusColor(BatchStatus status) => status switch
+    {
+        BatchStatus.Running => "#4ec9b0",
+        BatchStatus.Stopped => "#e0a458",
+        _ => "#6b7178",
+    };
 
     private List<ChartSeries<double>> RejectionSeries => new()
     {
