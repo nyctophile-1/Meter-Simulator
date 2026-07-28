@@ -408,3 +408,5 @@ maya-sim.tar.gz
 # Persistent sim state, sibling to the deployment folder (../data, ../logs). Never committed.
 /ManyMeterSimulator/data/
 /ManyMeterSimulator/logs/
+deploy/meters-batch1-100.csv
+deploy/register-meters-hes.sql
