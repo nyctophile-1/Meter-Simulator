@@ -1,0 +1,34 @@
+@page "/faqs"
+@attribute [Authorize]
+@using Microsoft.AspNetCore.Authorization
+
+<PageTitle>MAYA - FAQs</PageTitle>
+
+<MudText Typo="Typo.h4" Class="page-title">FAQs</MudText>
+
+<MudText Typo="Typo.body2" Class="mud-text-secondary mb-6">
+    Frequently asked questions about the simulator. (Placeholder content &mdash; to be replaced.)
+</MudText>
+
+<MudStack Spacing="4" Style="max-width:860px;">
+    @foreach ((string question, string answer) in Items)
+    {
+        <MudPaper Elevation="1" Class="pa-4">
+            <MudText Typo="Typo.h6" GutterBottom="true">@question</MudText>
+            <MudText Typo="Typo.body1" Class="mud-text-secondary">@answer</MudText>
+        </MudPaper>
+    }
+</MudStack>
+
+@code {
+    // Placeholder Q&A — swap the text for the real questions/answers later.
+    private static readonly (string Question, string Answer)[] Items =
+    {
+        ("What is the Many-Meter Simulator?",
+         "Placeholder answer. The simulator emulates a large fleet of smart meters so a Head-End System can be tested at scale without physical hardware. Replace this text with the real answer."),
+        ("How many meters can it simulate?",
+         "Placeholder answer. Describe the supported scale and any limits here. Replace this text with the real answer."),
+        ("Do my batches survive a restart?",
+         "Placeholder answer. Explain persistence behaviour across restarts and redeployments here. Replace this text with the real answer."),
+    };
+}

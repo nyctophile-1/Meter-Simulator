@@ -1,0 +1,92 @@
+@page "/docs"
+@attribute [Authorize]
+@using Microsoft.AspNetCore.Authorization
+
+<PageTitle>MAYA - Feature Documentation</PageTitle>
+
+<MudText Typo="Typo.h4" Class="page-title">Feature Documentation</MudText>
+
+<MudStack Spacing="8" Class="mt-2" Style="max-width:900px;">
+
+    <div>
+        <MudText Typo="Typo.h5" Color="Color.Primary" GutterBottom="true">What is MAYA?</MudText>
+        <MudText Typo="Typo.body1">
+            MAYA (the Many-Meter Simulator) is a testing tool that emulates a large fleet of DLMS/COSEM
+            smart meters from a single server. It lets you exercise a Head-End System (HES) against
+            thousands of meters without needing any physical hardware.
+        </MudText>
+    </div>
+
+    <div>
+        <MudText Typo="Typo.h5" Color="Color.Primary" GutterBottom="true">Key capabilities</MudText>
+        <MudStack Spacing="3" Class="mt-2">
+            @foreach ((string title, string desc) in Capabilities)
+            {
+                <div class="d-flex align-start">
+                    <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Primary" Size="Size.Small" Class="mr-3 mt-1" />
+                    <MudText Typo="Typo.body1"><b>@title</b> &mdash; @desc</MudText>
+                </div>
+            }
+        </MudStack>
+    </div>
+
+    <div>
+        <MudText Typo="Typo.h5" Color="Color.Primary" GutterBottom="true">Typical uses</MudText>
+        <MudStack Spacing="3" Class="mt-2">
+            @foreach (string use in Uses)
+            {
+                <div class="d-flex align-start">
+                    <MudIcon Icon="@Icons.Material.Filled.ChevronRight" Color="Color.Primary" Size="Size.Small" Class="mr-3 mt-1" />
+                    <MudText Typo="Typo.body1">@use</MudText>
+                </div>
+            }
+        </MudStack>
+    </div>
+
+    <div>
+        <MudText Typo="Typo.h5" Color="Color.Primary" GutterBottom="true">What's possible next</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-1">
+            Directions the simulator can grow in &mdash; not built yet, listed to show where it can go.
+        </MudText>
+        <MudStack Spacing="3" Class="mt-2">
+            @foreach ((string title, string desc) in Future)
+            {
+                <div class="d-flex align-start">
+                    <MudIcon Icon="@Icons.Material.Filled.Lightbulb" Color="Color.Warning" Size="Size.Small" Class="mr-3 mt-1" />
+                    <MudText Typo="Typo.body1"><b>@title</b> &mdash; @desc</MudText>
+                </div>
+            }
+        </MudStack>
+    </div>
+
+</MudStack>
+
+@code {
+    private static readonly (string Title, string Desc)[] Capabilities =
+    {
+        ("Fleet at scale", "simulate many thousands of meters on one host (validated end-to-end at 10,000)."),
+        ("Individually addressable", "every simulated meter has its own network address and a unique meter serial number, so the HES talks to each one exactly as it would a real meter."),
+        ("Real DLMS behaviour", "meters answer standard DLMS/COSEM requests, so reads and commands behave like the real thing."),
+        ("Template-driven", "each meter is built from a configurable meter template, so you can model different meter types and data profiles."),
+        ("Batch provisioning", "meters are created and managed in batches: reserve a block, start it, stop it — all from this web interface."),
+        ("Role-based access", "Admin, Utility, and Viewer roles control who can provision versus observe."),
+        ("Durable setup", "your batches persist across restarts and redeployments."),
+    };
+
+    private static readonly string[] Uses =
+    {
+        "Load and scale testing of a Head-End System.",
+        "Integration and regression testing of meter workflows.",
+        "Demos and onboarding without lab hardware.",
+    };
+
+    private static readonly (string Title, string Desc)[] Future =
+    {
+        ("Live monitoring dashboard", "real-time connection, throughput, and packet-rate stats for a running load test."),
+        ("Closed-loop validation", "reconcile simulator-side counters against HES-side records to prove what was sent was received."),
+        ("Push / unsolicited reporting", "meters that report on their own schedule, not only when the HES polls them."),
+        ("Fault & edge-case injection", "slow, unresponsive, or malformed meters to test how the HES copes under stress."),
+        ("Richer data profiles", "more configurable per-meter data models and value generation."),
+        ("Per-meter state persistence", "retain each meter's accumulated data across restarts, not just the batch definitions."),
+    };
+}

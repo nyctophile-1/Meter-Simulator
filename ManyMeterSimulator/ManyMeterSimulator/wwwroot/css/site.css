@@ -1,142 +1,81 @@
+/* MudBlazor owns the shell (app bar, drawer, theme). These rules style the raw-HTML page
+   content that hasn't been converted to Mud components yet (the batch page and login), plus a
+   few shared helpers. Bare element rules here are lower specificity than MudBlazor's .mud-*
+   classes, so they never affect Mud's own components. */
+
 body {
-    font-family: Consolas, "Courier New", monospace;
     margin: 0;
     background: #1e1e1e;
     color: #d4d4d4;
 }
 
-.top-bar {
-    background: #111;
-    padding: 12px 20px;
-    border-bottom: 1px solid #333;
-}
-
-.brand {
-    font-size: 1.4em;
-    font-weight: bold;
-    color: #4ec9b0;
-    margin-right: 10px;
-}
-
-.brand-sub {
-    color: #888;
-}
-
-main {
-    padding: 20px;
-    max-width: 900px;
-}
-
-.field {
-    margin: 12px 0;
-}
-
-label {
-    display: inline-block;
-    min-width: 220px;
-}
-
-input[type="number"], input[type="text"] {
-    background: #2d2d2d;
-    color: #d4d4d4;
-    border: 1px solid #444;
-    padding: 4px 8px;
-    width: 200px;
-}
-
-button {
-    background: #0e639c;
-    color: white;
-    border: none;
-    padding: 6px 14px;
-    cursor: pointer;
-    font-family: inherit;
-    margin: 4px 4px 4px 0;
-    font-size: 0.9em;
-}
-
-button.danger {
-    background: #8b2f2f;
-}
-
-button.danger:hover:not(:disabled) {
-    background: #b53a3a;
-}
-
-button:disabled {
-    background: #444;
-    cursor: not-allowed;
-}
-
-button:hover:not(:disabled) {
-    background: #1177bb;
-}
-
 code {
+    font-family: Consolas, "Courier New", monospace;
     background: #2d2d2d;
     padding: 2px 6px;
+    border-radius: 3px;
 }
 
-.success {
-    color: #4ec9b0;
+.muted {
+    color: #8a8f98;
 }
 
-.error {
-    color: #f48771;
+/* ---------- Dashboard ---------- */
+.kpi-card {
+    border-left: 3px solid #4ec9b0;
+    height: 100%;
 }
 
-ul {
-    max-height: 400px;
-    overflow-y: auto;
-    background: #252525;
-    padding: 10px 30px;
+.donut-center {
+    fill: #d4d4d4;
+    font-size: 2rem;
+    font-weight: 600;
 }
 
-table {
-    border-collapse: collapse;
-    width: 100%;
+.donut-center-sub {
+    fill: #8a8f98;
+    font-size: 0.8rem;
 }
 
-th, td {
-    text-align: left;
-    padding: 8px 12px;
-    border-bottom: 1px solid #333;
+.unit {
+    font-size: 0.6em;
+    color: #8a8f98;
 }
 
-.batch-row {
-    cursor: pointer;
+/* Page heading — ~50% larger than MudBlazor's h4 so it stands clear of the nav. */
+.page-title {
+    font-size: 3.2rem;
+    line-height: 1.15;
+    font-weight: 400;
+    margin: 0.2rem 0 1rem;
 }
 
-.batch-row:hover {
-    background: #2a2a2a;
+/* App-bar hamburger: no hover/ripple highlight (the circular overlay looked jarring). */
+.app-hamburger:hover,
+.app-hamburger:focus,
+.app-hamburger:focus-visible {
+    background-color: transparent !important;
+}
+
+/* ---------- Meter Batches (MudSimpleTable + expandable detail rows) ---------- */
+.batch-table code {
+    font-size: 0.85em;
 }
 
 .detail-row td {
     background: #181818;
 }
 
-.status-notstarted {
-    color: #888;
+.meter-list {
+    max-height: 340px;
+    overflow-y: auto;
+    background: #1b1b1b;
+    padding: 10px 16px;
+    border-radius: 4px;
+    line-height: 1.8;
 }
 
-.status-running {
-    color: #4ec9b0;
-}
-
-.status-stopped {
-    color: #f48771;
-}
-
-.session-info {
-    float: right;
-    color: #888;
-    font-size: 0.9em;
-}
-
-.session-info a {
-    color: #4ec9b0;
-}
-
+/* ---------- Login (LoginLayout, non-Mud) ---------- */
 .login-page {
     display: flex;
     align-items: center;
@@ -154,5 +93,4 @@ th, td {
     border: 1px solid #444;
     padding: 8px 12px;
     width: 220px;
-    font-family: inherit;
 }

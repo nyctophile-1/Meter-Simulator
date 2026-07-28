@@ -1,16 +1,74 @@
 @inherits LayoutComponentBase
 
-<div class="page">
-    <header class="top-bar">
-        <span class="brand">MAYA</span>
-        <span class="brand-sub">Many-Meter Simulator</span>
+<MudThemeProvider Theme="_theme" IsDarkMode="true" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<MudLayout>
+    <MudAppBar Elevation="1" Dense="true">
+        <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start"
+                       OnClick="ToggleDrawer" Ripple="false" Class="app-hamburger" />
+        <MudText Typo="Typo.h6" Color="Color.Primary" Class="mr-6" Style="font-weight:700;letter-spacing:1px;">MAYA</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary d-none d-sm-flex">Many-Meter Simulator</MudText>
+        <MudSpacer />
         <AuthorizeView>
             <Authorized>
-                <span class="session-info">logged in as <strong>@context.User.Identity?.Name</strong> &middot; <a href="/logout">log out</a></span>
+                <MudIcon Icon="@Icons.Material.Filled.AccountCircle" Size="Size.Small" Class="mr-1" />
+                <MudText Typo="Typo.body2" Class="mr-3">@context.User.Identity?.Name</MudText>
+                <MudButton Href="/logout" Variant="Variant.Text" Color="Color.Inherit"
+                           StartIcon="@Icons.Material.Filled.Logout" Size="Size.Small">Log out</MudButton>
             </Authorized>
         </AuthorizeView>
-    </header>
-    <main>
-        @Body
-    </main>
-</div>
+    </MudAppBar>
+
+    <MudDrawer @bind-Open="_drawerOpen" Elevation="2" ClipMode="DrawerClipMode.Always" Variant="@DrawerVariant.Responsive">
+        <MudNavMenu Class="mt-2">
+            <MudNavLink Href="" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard">Dashboard</MudNavLink>
+            <MudNavLink Href="batches" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Dns">Meter Batches</MudNavLink>
+            <MudNavLink Href="logs" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Terminal">Live Logs</MudNavLink>
+            <MudNavLink Href="faqs" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.HelpOutline">FAQs</MudNavLink>
+            <MudNavLink Href="docs" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.MenuBook">Feature Documentation</MudNavLink>
+        </MudNavMenu>
+    </MudDrawer>
+
+    <MudMainContent>
+        <MudContainer MaxWidth="MaxWidth.Large" Class="my-6">
+            @Body
+        </MudContainer>
+    </MudMainContent>
+</MudLayout>
+
+@code {
+    private bool _drawerOpen = true;
+
+    private void ToggleDrawer() => _drawerOpen = !_drawerOpen;
+
+    // Dark theme tuned to the MAYA identity: teal primary on near-black surfaces.
+    private readonly MudTheme _theme = new()
+    {
+        PaletteDark = new PaletteDark
+        {
+            Primary = "#4ec9b0",
+            Secondary = "#0e639c",
+            Background = "#1e1e1e",
+            BackgroundGray = "#181818",
+            Surface = "#252526",
+            AppbarBackground = "#111111",
+            AppbarText = "#d4d4d4",
+            DrawerBackground = "#181818",
+            DrawerText = "#d4d4d4",
+            DrawerIcon = "#9aa0a6",
+            TextPrimary = "#d4d4d4",
+            TextSecondary = "#8a8f98",
+            ActionDefault = "#9aa0a6",
+            Divider = "#333333",
+            Error = "#f48771",
+            Success = "#4ec9b0",
+        },
+        LayoutProperties = new LayoutProperties
+        {
+            DrawerWidthLeft = "230px",
+        },
+    };
+}

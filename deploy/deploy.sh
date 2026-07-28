@@ -8,7 +8,10 @@
 set -euo pipefail
 
 TARBALL="${1:-/tmp/maya-sim.tar.gz}"
-APP_DIR="/opt/maya-sim"
+# app/ is the deployment (replaced here); data/ and logs/ are persistent siblings under the
+# sim-root that this script never touches, so batches and logs survive every redeploy.
+SIM_ROOT="/opt/maya-sim"
+APP_DIR="$SIM_ROOT/app"
 SVC_USER="maya"
 
 if [ "$(id -u)" -ne 0 ]; then
@@ -38,8 +41,10 @@ tar -xzf "$TARBALL" -C "$APP_DIR"
 # systemd fails with 203/EXEC.
 echo "==> Setting execute bit and ownership"
 chmod +x "$APP_DIR/ManyMeterSimulator"
-mkdir -p "$APP_DIR/logs" "$APP_DIR/Templates"
-chown -R "$SVC_USER:$SVC_USER" "$APP_DIR"
+# Ensure the persistent siblings exist (the app also self-creates them, but pre-owning them
+# by the service user avoids a first-run permission miss). data/ and logs/ are left untouched.
+mkdir -p "$APP_DIR/Templates" "$SIM_ROOT/data" "$SIM_ROOT/logs"
+chown -R "$SVC_USER:$SVC_USER" "$SIM_ROOT"
 
 echo "==> Starting service"
 systemctl start maya-sim

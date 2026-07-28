@@ -13,7 +13,10 @@ set -euo pipefail
 # IPv6 Prefix Delegation). Delegated prefixes are /80. Must match Tcp:AddressPrefix in
 # appsettings.Production.json, or meters are computed outside the routed range.
 METER_PREFIX="2406:da1a:1c29:500:bc96::/80"
-APP_DIR="/opt/maya-sim"
+# Sim-root holds three siblings: app/ is replaced on every deploy; data/ and logs/ persist
+# across deploys/reboots. The app writes them as ../data and ../logs relative to app/.
+SIM_ROOT="/opt/maya-sim"
+APP_DIR="$SIM_ROOT/app"
 SVC_USER="maya"
 
 if [ "$(id -u)" -ne 0 ]; then
@@ -37,10 +40,10 @@ apt-get update -qq
 apt-get install -y libicu74 || apt-get install -y libicu-dev
 
 # ── 2. Service user and directories ───────────────────────────────────────────
-echo "==> Creating $SVC_USER and $APP_DIR"
+echo "==> Creating $SVC_USER and $SIM_ROOT (app/ + persistent data/ logs/)"
 id -u "$SVC_USER" >/dev/null 2>&1 || useradd --system --create-home --shell /usr/sbin/nologin "$SVC_USER"
-mkdir -p "$APP_DIR/logs" "$APP_DIR/Templates"
-chown -R "$SVC_USER:$SVC_USER" "$APP_DIR"
+mkdir -p "$APP_DIR/Templates" "$SIM_ROOT/data" "$SIM_ROOT/logs"
+chown -R "$SVC_USER:$SVC_USER" "$SIM_ROOT"
 
 # ── 2b. Swap ──────────────────────────────────────────────────────────────────
 # Small instances (t3.micro = 1 GB) have no swap by default, so overshooting RAM

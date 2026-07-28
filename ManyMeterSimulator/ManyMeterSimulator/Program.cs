@@ -6,6 +6,7 @@ using ManyMeterSimulator.MqttBridge;
 using ManyMeterSimulator.Networking;
 using ManyMeterSimulator.Provisioning;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using MudBlazor.Services;
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -88,6 +89,8 @@ builder.Services
     });
 builder.Services.AddAuthorization();
 builder.Services.AddCascadingAuthenticationState();
+
+builder.Services.AddMudServices();
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();

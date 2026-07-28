@@ -1,4 +1,4 @@
-@page "/"
+@page "/batches"
 @attribute [Authorize]
 @rendermode InteractiveServer
 @using System.Security.Claims
@@ -9,80 +9,102 @@
 @inject MeterRegistry MeterRegistry
 @inject TemplateRegistry TemplateRegistry
 @inject IOptions<TcpOptions> TcpOptionsAccessor
+@inject IDialogService DialogService
 
-<PageTitle>MAYA - Setup</PageTitle>
+<PageTitle>MAYA - Meter Batches</PageTitle>
 
-<h1>Setup</h1>
+<MudText Typo="Typo.h4" Class="page-title">Meter Batches</MudText>
 
-<p>Address prefix: <code>@AddressPrefix</code> &middot; max supported meters: <code>@MeterRegistry.MaxIndex.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</code></p>
+<MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
+    Address prefix: <code>@AddressPrefix</code> &middot; max supported meters:
+    <code>@MeterRegistry.MaxIndex.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</code>
+</MudText>
 
 @if (IsAdmin)
 {
-    <div class="field">
-        <label for="batchName">Batch name:</label>
-        <input id="batchName" type="text" @bind="BatchName" @bind:event="onchange" placeholder="e.g. batch-1" />
-    </div>
+    <MudPaper Elevation="1" Class="pa-4 mb-6">
+        <MudText Typo="Typo.h6" GutterBottom="true">Provision a new batch</MudText>
 
-    <div class="field">
-        <label for="meterCount">Number of meters (N):</label>
-        <input id="meterCount" type="number" min="1" @bind="MeterCount" @bind:event="onchange" />
-    </div>
+        <MudGrid>
+            <MudItem xs="12" sm="6" md="3">
+                <MudTextField T="string" @bind-Value="BatchName" Immediate="true"
+                              Label="Batch name" Placeholder="e.g. batch-1"
+                              Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <MudNumericField T="int" @bind-Value="MeterCount" Immediate="true" Min="1"
+                                 Label="Number of meters (N)"
+                                 Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <MudSelect T="string" @bind-Value="SelectedTemplate" Label="DLMS template"
+                           Variant="Variant.Outlined" Margin="Margin.Dense">
+                    @foreach (string t in Templates)
+                    {
+                        <MudSelectItem Value="@t">@t</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3" Class="d-flex align-center">
+                <MudFileUpload T="IBrowserFile" Accept=".xml" FilesChanged="OnTemplateUpload" MaximumFileCount="1">
+                    <ActivatorContent>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Default"
+                                   StartIcon="@Icons.Material.Filled.Upload">Upload template (.xml)</MudButton>
+                    </ActivatorContent>
+                </MudFileUpload>
+            </MudItem>
+        </MudGrid>
 
-    <div class="field">
-        <label for="template">DLMS template:</label>
-        <select id="template" @bind="SelectedTemplate">
-            <option value="">-- select a template --</option>
-            @foreach (string t in Templates)
-            {
-                <option value="@t">@t</option>
-            }
-        </select>
         @if (Templates.Count == 0)
         {
-            <span class="error">No templates found in the templates folder.</span>
+            <MudAlert Severity="Severity.Warning" Dense="true" Variant="Variant.Outlined" Class="mt-3">
+                No templates found in the templates folder.
+            </MudAlert>
         }
-    </div>
 
-    <div class="field">
-        <label>Upload template (.xml):</label>
-        <InputFile OnChange="OnTemplateUpload" accept=".xml" />
         @if (UploadMessage is not null)
         {
-            <span>@UploadMessage</span>
+            <MudText Typo="Typo.caption" Class="d-block mt-2">@UploadMessage</MudText>
         }
-    </div>
 
-    @if (MeterCount > 0)
-    {
-        BatchPreview preview = MeterRegistry.PreviewNextBatch(AddressPrefix, MeterCount);
-        <p>
-            Will reserve: <code>@preview.FirstAddress</code> to <code>@preview.LastAddress</code>
-            &middot; meter numbers <code>@preview.FirstSerial</code> to <code>@preview.LastSerial</code>
-            (@MeterCount meter(s))
-        </p>
-    }
+        @if (MeterCount > 0)
+        {
+            BatchPreview preview = MeterRegistry.PreviewNextBatch(AddressPrefix, MeterCount);
+            <MudAlert Severity="Severity.Info" Dense="true" Variant="Variant.Outlined" Class="mt-3">
+                Will reserve <code>@preview.FirstAddress</code> &ndash; <code>@preview.LastAddress</code>
+                &middot; meter numbers <code>@preview.FirstSerial</code> &ndash; <code>@preview.LastSerial</code>
+                (@MeterCount.ToString("N0", System.Globalization.CultureInfo.InvariantCulture) meter(s))
+            </MudAlert>
+        }
 
-    <button @onclick="AddBatch" disabled="@(MeterCount <= 0 || string.IsNullOrWhiteSpace(BatchName) || string.IsNullOrWhiteSpace(SelectedTemplate))">Add Batch</button>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-4"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="AddBatch"
+                   Disabled="@(MeterCount <= 0 || string.IsNullOrWhiteSpace(BatchName) || string.IsNullOrWhiteSpace(SelectedTemplate))">
+            Add Batch
+        </MudButton>
 
-    @if (ErrorMessage is not null)
-    {
-        <p class="error">@ErrorMessage</p>
-    }
+        @if (ErrorMessage is not null)
+        {
+            <MudAlert Severity="Severity.Error" Dense="true" Class="mt-3">@ErrorMessage</MudAlert>
+        }
+    </MudPaper>
 }
 
-<h2>Batches (@MeterRegistry.Batches.Count)</h2>
+<MudText Typo="Typo.h6" GutterBottom="true">Batches (@MeterRegistry.Batches.Count)</MudText>
+
 @{
     IReadOnlyList<MeterBatch> batches = MeterRegistry.Batches;
 }
 @if (batches.Count == 0)
 {
-    <p>None yet.</p>
+    <MudText Typo="Typo.body2" Class="mud-text-secondary">None yet.</MudText>
 }
 else
 {
-    <table>
+    <MudSimpleTable Hover="true" Dense="true" Bordered="false" Class="batch-table">
         <thead>
             <tr>
+                <th style="width:1%"></th>
                 <th>Name</th>
                 <th>Template</th>
                 <th>Count</th>
@@ -91,7 +113,7 @@ else
                 <th>Status</th>
                 @if (CanOperate)
                 {
-                    <th>Actions</th>
+                    <th style="text-align:right">Actions</th>
                 }
             </tr>
         </thead>
@@ -99,21 +121,33 @@ else
             @foreach (MeterBatch batch in batches)
             {
                 (IPAddress firstAddr, IPAddress lastAddr) = MeterRegistry.GetAddressRange(batch, AddressPrefix);
-                <tr class="batch-row" @onclick="() => ToggleExpanded(batch.Id)">
+                <tr>
+                    <td>
+                        <MudIconButton Size="Size.Small"
+                                       Icon="@(ExpandedBatchId == batch.Id ? Icons.Material.Filled.ExpandMore : Icons.Material.Filled.ChevronRight)"
+                                       OnClick="() => ToggleExpanded(batch.Id)" />
+                    </td>
                     <td>@batch.Name</td>
-                    <td>@batch.TemplateName</td>
+                    <td><code>@batch.TemplateName</code></td>
                     <td>@batch.Count.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</td>
-                    <td>@firstAddr - @lastAddr</td>
-                    <td>@MeterRegistry.FormatSerial(batch.StartIndex) - @MeterRegistry.FormatSerial(batch.EndIndex)</td>
-                    <td class="status-@batch.Status.ToString().ToLowerInvariant()">@batch.Status</td>
+                    <td><code>@firstAddr - @lastAddr</code></td>
+                    <td><code>@MeterRegistry.FormatSerial(batch.StartIndex) - @MeterRegistry.FormatSerial(batch.EndIndex)</code></td>
+                    <td>
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Filled" Color="@StatusColor(batch.Status)">
+                            @batch.Status
+                        </MudChip>
+                    </td>
                     @if (CanOperate)
                     {
-                        <td>
-                            <button @onclick="() => Start(batch.Id)" @onclick:stopPropagation="true" disabled="@(batch.Status == BatchStatus.Running)">Start</button>
-                            <button @onclick="() => Stop(batch.Id)" @onclick:stopPropagation="true" disabled="@(batch.Status == BatchStatus.Stopped)">Stop</button>
+                        <td style="text-align:right; white-space:nowrap">
+                            <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Success"
+                                       OnClick="() => Start(batch.Id)" Disabled="@(batch.Status == BatchStatus.Running)">Start</MudButton>
+                            <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Warning" Class="ml-1"
+                                       OnClick="() => Stop(batch.Id)" Disabled="@(batch.Status == BatchStatus.Stopped)">Stop</MudButton>
                             @if (IsAdmin)
                             {
-                                <button @onclick="() => Delete(batch.Id)" @onclick:stopPropagation="true" class="danger">Delete</button>
+                                <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Error" Class="ml-1"
+                                           OnClick="() => Delete(batch.Id)">Delete</MudButton>
                             }
                         </td>
                     }
@@ -121,27 +155,29 @@ else
                 @if (ExpandedBatchId == batch.Id)
                 {
                     <tr class="detail-row">
-                        <td colspan="7">
+                        <td colspan="8">
                             @{
                                 const int maxShown = 50;
                                 var meters = MeterRegistry.GetMeters(batch, AddressPrefix).Take(maxShown).ToList();
                             }
-                            <ul>
+                            <div class="meter-list">
                                 @foreach (var m in meters)
                                 {
-                                    <li><code>@m.Address</code> &rarr; <code>@m.Serial</code></li>
+                                    <div><code>@m.Address</code> &rarr; <code>@m.Serial</code></div>
                                 }
-                            </ul>
+                            </div>
                             @if (batch.Count > maxShown)
                             {
-                                <p>...and @(batch.Count - maxShown) more.</p>
+                                <MudText Typo="Typo.caption" Class="d-block mt-2">
+                                    &hellip;and @((batch.Count - maxShown).ToString("N0", System.Globalization.CultureInfo.InvariantCulture)) more.
+                                </MudText>
                             }
                         </td>
                     </tr>
                 }
             }
         </tbody>
-    </table>
+    </MudSimpleTable>
 }
 
 @code {
@@ -168,6 +204,13 @@ else
     // checking a single role here correctly covers everyone entitled to that permission level.
     private bool IsAdmin => _user?.IsInRole(AppRoles.Admin) ?? false;
     private bool CanOperate => _user?.IsInRole(AppRoles.Utility) ?? false;
+
+    private static Color StatusColor(BatchStatus status) => status switch
+    {
+        BatchStatus.Running => Color.Success,
+        BatchStatus.Stopped => Color.Error,
+        _ => Color.Default,
+    };
 
     protected override async Task OnInitializedAsync()
     {
@@ -197,9 +240,9 @@ else
         }
     }
 
-    private async Task OnTemplateUpload(InputFileChangeEventArgs e)
+    private async Task OnTemplateUpload(IBrowserFile? file)
     {
-        if (!IsAdmin)
+        if (!IsAdmin || file is null)
         {
             return; // defense in depth
         }
@@ -207,7 +250,6 @@ else
         UploadMessage = null;
         try
         {
-            IBrowserFile file = e.File;
             await using Stream stream = file.OpenReadStream(MaxUploadBytes);
             string saved = await TemplateRegistry.SaveUploadAsync(file.Name, stream);
             SelectedTemplate = saved; // auto-select the just-uploaded template
@@ -235,9 +277,27 @@ else
         }
     }
 
-    private void Delete(int batchId)
+    private async Task Delete(int batchId)
     {
         if (!IsAdmin)
+        {
+            return;
+        }
+
+        MeterBatch? batch = MeterRegistry.Batches.FirstOrDefault(b => b.Id == batchId);
+        if (batch is null)
+        {
+            return;
+        }
+
+        string meters = batch.Count.ToString("N0", System.Globalization.CultureInfo.InvariantCulture);
+        bool? confirmed = await DialogService.ShowMessageBoxAsync(
+            "Delete batch?",
+            $"Permanently delete \"{batch.Name}\" ({meters} meters)? " +
+            "Its reserved IP / meter-number range is retired and will not be reused. This cannot be undone.",
+            yesText: "Delete", cancelText: "Cancel");
+
+        if (confirmed != true)
         {
             return;
         }
