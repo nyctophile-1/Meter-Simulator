@@ -401,3 +401,6 @@ FodyWeavers.xsd
 *.sln.iml
 /ManyMeterSimulator/.claude
 /.claude
+
+# Deploy artifact (built locally, never committed)
+maya-sim.tar.gz

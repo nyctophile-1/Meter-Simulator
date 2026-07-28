@@ -145,13 +145,18 @@ public class MeterRegistryTests
     [Theory]
     [InlineData("fd00:6d65:7472::/64", true)]
     [InlineData("2406:da1a:abcd:1234::/64", true)]
+    [InlineData("2406:da1a:1c29:500:1a2b::/80", true)]  // AWS ENI prefix delegation issues /80
+    [InlineData("2406:da1a:1c29:500:1a00::/72", true)]  // anywhere in the accepted band
+    [InlineData("2406:da1a:1c29:500:1a2b::/72", false)] // byte 9 is a host bit under a /72
     [InlineData("", false)]                          // unset
-    [InlineData("fd00:6d65:7472::", false)]          // missing /64
-    [InlineData("fd00:6d65:7472::/48", false)]       // wrong prefix length
+    [InlineData("fd00:6d65:7472::", false)]          // missing prefix length
+    [InlineData("fd00:6d65:7472::/48", false)]       // wider than /64
+    [InlineData("fd00:6d65:7472::/96", false)]       // narrower than /80 — would truncate the index
     [InlineData("10.0.0.0/64", false)]               // IPv4
     [InlineData("fd00:6d65:7472::1/64", false)]      // non-zero host bits
+    [InlineData("2406:da1a:1c29:500:1a2b::1/80", false)] // non-zero host bits below a /80
     [InlineData("not-an-address/64", false)]         // garbage
-    public void TryValidatePrefix_AcceptsOnlySlash64NetworkAddresses(string prefix, bool expectedValid)
+    public void TryValidatePrefix_AcceptsSlash64ThroughSlash80NetworkAddresses(string prefix, bool expectedValid)
     {
         bool valid = MeterAddressing.TryValidatePrefix(prefix, out string error);
 
@@ -160,6 +165,48 @@ public class MeterRegistryTests
         {
             Assert.NotEmpty(error);
         }
+    }
+
+    /// <summary>
+    /// The index lives in the low 48 bits, so bytes 8..9 — which belong to the PREFIX under a /80 —
+    /// must survive untouched. Getting this wrong silently emits addresses outside the delegated
+    /// range, which looks like correct config but is unreachable (see deploy_task.md R-4).
+    /// </summary>
+    [Theory]
+    [InlineData(1, "2406:da1a:1c29:500:1a2b::1")]
+    [InlineData(100, "2406:da1a:1c29:500:1a2b::64")]
+    [InlineData(65_536, "2406:da1a:1c29:500:1a2b::1:0")]
+    [InlineData(999_999_999, "2406:da1a:1c29:500:1a2b::3b9a:c9ff")]
+    public void ComputeAddress_PreservesPrefixBytes_UnderSlash80(long index, string expected)
+    {
+        IPAddress address = MeterAddressing.ComputeAddress("2406:da1a:1c29:500:1a2b::/80", index);
+
+        Assert.Equal(IPAddress.Parse(expected), address);
+        Assert.Equal(index, MeterAddressing.ExtractIndex(address));
+    }
+
+    /// <summary>Narrowing the index to 48 bits must not shift any address in the supported range.</summary>
+    [Theory]
+    [InlineData(1, "fd00:6d65:7472::1")]
+    [InlineData(65_535, "fd00:6d65:7472::ffff")]
+    [InlineData(65_536, "fd00:6d65:7472::1:0")]
+    [InlineData(MeterRegistry.MaxIndex, "fd00:6d65:7472::3b9a:c9ff")]
+    public void ComputeAddress_Slash64_IsUnchangedByTheSlash80Support(long index, string expected)
+    {
+        IPAddress address = MeterAddressing.ComputeAddress("fd00:6d65:7472::/64", index);
+
+        Assert.Equal(IPAddress.Parse(expected), address);
+        Assert.Equal(index, MeterAddressing.ExtractIndex(address));
+    }
+
+    [Fact]
+    public void ComputeAddress_RejectsIndexBeyondTheEncodableRange()
+    {
+        // Far above MeterRegistry.MaxIndex, so this guard is defence-in-depth, not a live limit.
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => MeterAddressing.ComputeAddress("fd00:6d65:7472::/64", MeterAddressing.MaxEncodableIndex + 1));
+
+        Assert.True(MeterRegistry.MaxIndex < MeterAddressing.MaxEncodableIndex);
     }
 
     [Fact]

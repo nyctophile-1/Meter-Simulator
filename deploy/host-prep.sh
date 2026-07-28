@@ -1,0 +1,175 @@
+#!/usr/bin/env bash
+#
+# One-time host preparation for the meter simulator (Ubuntu 24.04, AWS).
+# Idempotent — safe to re-run.
+#
+# Does NOT deploy the app or start the service; run deploy/deploy.sh for that.
+#
+#   sudo bash host-prep.sh
+#
+set -euo pipefail
+
+# The prefix AWS delegated to this instance's ENI (EC2 > Network Interfaces > Details >
+# IPv6 Prefix Delegation). Delegated prefixes are /80. Must match Tcp:AddressPrefix in
+# appsettings.Production.json, or meters are computed outside the routed range.
+METER_PREFIX="2406:da1a:1c29:500:bc96::/80"
+APP_DIR="/opt/maya-sim"
+SVC_USER="maya"
+
+if [ "$(id -u)" -ne 0 ]; then
+  echo "Run with sudo." >&2
+  exit 1
+fi
+
+# Primary interface, detected rather than assumed (t3 = ens5, but don't hardcode).
+IFACE="$(ip -o -4 route show to default | awk '{print $5}' | head -n1)"
+[ -z "$IFACE" ] && IFACE="$(ip -o -6 route show to default | awk '{print $5}' | head -n1)"
+if [ -z "$IFACE" ]; then
+  echo "Could not detect the primary network interface." >&2
+  exit 1
+fi
+echo "==> Interface: $IFACE     Meter prefix: $METER_PREFIX"
+
+# ── 1. Runtime prerequisite ───────────────────────────────────────────────────
+# A self-contained .NET build still needs ICU on the host.
+echo "==> Installing libicu"
+apt-get update -qq
+apt-get install -y libicu74 || apt-get install -y libicu-dev
+
+# ── 2. Service user and directories ───────────────────────────────────────────
+echo "==> Creating $SVC_USER and $APP_DIR"
+id -u "$SVC_USER" >/dev/null 2>&1 || useradd --system --create-home --shell /usr/sbin/nologin "$SVC_USER"
+mkdir -p "$APP_DIR/logs" "$APP_DIR/Templates"
+chown -R "$SVC_USER:$SVC_USER" "$APP_DIR"
+
+# ── 2b. Swap ──────────────────────────────────────────────────────────────────
+# Small instances (t3.micro = 1 GB) have no swap by default, so overshooting RAM
+# means the OOM killer SIGKILLs the process and every batch is lost. Swap turns
+# that cliff into a slowdown, which is far easier to notice and recover from.
+if ! swapon --show | grep -q '/swapfile'; then
+  echo "==> Creating 2G swapfile"
+  fallocate -l 2G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=2048
+  chmod 600 /swapfile
+  mkswap /swapfile >/dev/null
+  swapon /swapfile
+  grep -q '^/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+  # Prefer RAM; only reach for swap under real pressure.
+  echo 'vm.swappiness = 10' > /etc/sysctl.d/99-maya-swap.conf
+else
+  echo "==> Swap already present, skipping"
+fi
+
+# ── 3. IPv6 forwarding ────────────────────────────────────────────────────────
+# Required for the instance to accept traffic addressed to IPs that are not its own.
+echo "==> Enabling IPv6 forwarding"
+cat > /etc/sysctl.d/99-maya-forwarding.conf <<'EOF'
+net.ipv6.conf.all.forwarding = 1
+EOF
+
+# ── 4. Scale-final kernel tuning ──────────────────────────────────────────────
+# Set once, sized for the largest fleet this box will ever hold. Thereafter only
+# instance size changes — see deploy_task.md.
+echo "==> Applying kernel tuning"
+cat > /etc/sysctl.d/99-maya-scale.conf <<'EOF'
+# One socket per connected meter, plus headroom
+fs.file-max = 4000000
+fs.nr_open  = 4000000
+
+# Accept queue. NOTE: the app hardcodes listen(backlog=512), so this only takes
+# full effect once that is made configurable (deploy_task.md P0-5).
+net.core.somaxconn = 65535
+net.ipv4.tcp_max_syn_backlog = 65535
+
+# Large local prefix with many active flows
+net.ipv6.route.max_size = 2097152
+
+# Many connections, each with modest buffers
+net.core.rmem_max = 16777216
+net.core.wmem_max = 16777216
+net.ipv4.tcp_rmem = 4096 87380 16777216
+net.ipv4.tcp_wmem = 4096 65536 16777216
+net.ipv4.tcp_mem  = 786432 1048576 1572864
+
+# Recycle closed sockets promptly during high-churn tests
+net.ipv4.tcp_fin_timeout = 15
+EOF
+sysctl --system >/dev/null
+
+# ── 5. Local route for the meter /64 ──────────────────────────────────────────
+# Declares every address in the prefix a valid local destination, so ONE wildcard
+# socket answers for every meter — without assigning a million interface addresses.
+# netplan cannot express `local` routes, hence a unit.
+echo "==> Installing meter route unit"
+cat > /etc/systemd/system/maya-meter-route.service <<EOF
+[Unit]
+Description=Local route for the simulated meter /64
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/sbin/ip -6 route replace local ${METER_PREFIX} dev ${IFACE}
+ExecStop=/sbin/ip -6 route del local ${METER_PREFIX} dev ${IFACE}
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# ── 6. Application service ────────────────────────────────────────────────────
+# Type=simple, NOT notify: readiness notification needs builder.Host.UseSystemd()
+# in Program.cs, which does not exist. With notify and no sd_notify, start times out.
+echo "==> Installing maya-sim.service"
+cat > /etc/systemd/system/maya-sim.service <<EOF
+[Unit]
+Description=MAYA Many-Meter Simulator
+After=network-online.target maya-meter-route.service
+Wants=network-online.target
+Requires=maya-meter-route.service
+
+[Service]
+Type=simple
+User=${SVC_USER}
+WorkingDirectory=${APP_DIR}
+ExecStart=${APP_DIR}/ManyMeterSimulator
+Restart=always
+RestartSec=5
+
+# Lets a NON-root user bind port 80, so the UI answers at http://<ip>/
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+
+# One file descriptor per connected meter, plus headroom
+LimitNOFILE=2000000
+
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=ASPNETCORE_URLS=http://*:80
+Environment=DOTNET_gcServer=1
+
+# Leading '-' = optional. Password rotation is deferred; drop overrides here later
+# without touching this unit.
+EnvironmentFile=-/etc/maya-sim/secrets.env
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable --now maya-meter-route.service
+systemctl enable maya-sim.service >/dev/null 2>&1 || true
+
+# ── 7. Verify ─────────────────────────────────────────────────────────────────
+echo
+echo "==> Verification"
+# Strip the /NN and append 1 — works for any prefix length, not just /64.
+FIRST_METER="$(echo "$METER_PREFIX" | sed 's#/[0-9]*$##')1"
+echo "-- ip -6 route get $FIRST_METER"
+ip -6 route get "$FIRST_METER" || true
+echo
+if ip -6 route get "$FIRST_METER" 2>/dev/null | grep -q "local"; then
+  echo "OK: the kernel owns the meter prefix."
+else
+  echo "FAIL: '$FIRST_METER' did not resolve as local. The app will start, but no"
+  echo "      meter will be reachable. Check step 5 and the ENI route in AWS."
+fi
+echo
+echo "Host prep done. Next: copy the artifact over and run deploy/deploy.sh."
