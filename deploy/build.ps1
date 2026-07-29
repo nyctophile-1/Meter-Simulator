@@ -88,6 +88,8 @@ try {
 
     Write-Host "`nBuilt $Tarball  (${sizeMb} MB, $templates templates)" -ForegroundColor Green
     Write-Host "`nNext:" -ForegroundColor Yellow
+    Write-Host '  $KEY = "C:\Users\ayush\OneDrive\Documents\Development\Sinhal Repos\all_creds\maya-sim-test.pem"'
+    Write-Host '  cd "C:\Users\ayush\OneDrive\Documents\Development\Sinhal Repos\Meter-Simulator"'
     Write-Host '  scp -i $KEY publish\maya-sim.tar.gz deploy\host-prep.sh deploy\deploy.sh ubuntu@[2406:da1a:1c29:500::65f5]:/tmp/'
     Write-Host '  ssh -i $KEY ubuntu@[2406:da1a:1c29:500::65f5]'
     Write-Host '  sudo bash /tmp/deploy.sh /tmp/maya-sim.tar.gz'
