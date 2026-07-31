@@ -1,5 +1,5 @@
 using System.Collections.Concurrent;
-using System.Net;
+using ManyMeterSimulator.Networking.Nic;
 using ManyMeterSimulator.Provisioning;
 using MeterSimulator.DLMS;
 using MeterSimulator.Models;
@@ -9,7 +9,8 @@ namespace ManyMeterSimulator.Brain;
 
 /// <summary>
 /// The authoritative per-meter runtime store — the single source of truth for every live
-/// meter's DLMS state, keyed by the meter's stable IPv6 address.
+/// meter's DLMS state, keyed by the meter's stable index (see <see cref="MeterRef"/>), so the
+/// same meter resolves to the same session whichever NIC its traffic arrived on.
 ///
 /// This is NOT a cache: a session is built ONCE from the meter's batch template on first touch
 /// and is then the meter's live, mutable object model. It is never rebuilt from the template on
@@ -29,7 +30,7 @@ public sealed class MeterSessionManager
     private readonly ILogger<MeterSessionManager> _logger;
 
     // Lazy so each meter's session is constructed exactly once even under concurrent first-touch.
-    private readonly ConcurrentDictionary<IPAddress, Lazy<DLMSServerSession>> _sessions = new();
+    private readonly ConcurrentDictionary<long, Lazy<DLMSServerSession>> _sessions = new();
 
     public MeterSessionManager(
         MeterRegistry meterRegistry,
@@ -59,11 +60,11 @@ public sealed class MeterSessionManager
     /// the inbound path should already have rejected such connections (see the listener's
     /// no-template gate).
     /// </summary>
-    public DLMSServerSession GetOrCreate(IPAddress meterId)
+    public DLMSServerSession GetOrCreate(MeterRef meter)
     {
         Lazy<DLMSServerSession> lazy = _sessions.GetOrAdd(
-            meterId,
-            id => new Lazy<DLMSServerSession>(() => Build(id), LazyThreadSafetyMode.ExecutionAndPublication));
+            meter.Index,
+            _ => new Lazy<DLMSServerSession>(() => Build(meter), LazyThreadSafetyMode.ExecutionAndPublication));
 
         try
         {
@@ -72,28 +73,27 @@ public sealed class MeterSessionManager
         catch
         {
             // Don't cache a failed build — a later attempt (e.g. after the template is fixed) should retry.
-            _sessions.TryRemove(meterId, out _);
+            _sessions.TryRemove(meter.Index, out _);
             throw;
         }
     }
 
-    private DLMSServerSession Build(IPAddress meterId)
+    private DLMSServerSession Build(MeterRef meterRef)
     {
-        MeterBatch batch = _meterRegistry.GetBatchForAddress(meterId)
-            ?? throw new InvalidOperationException($"Meter {meterId} belongs to no batch (no template).");
+        MeterBatch batch = _meterRegistry.GetBatchForIndex(meterRef.Index)
+            ?? throw new InvalidOperationException($"Meter {meterRef} belongs to no batch (no template).");
 
         string templatePath = _templates.ResolveOrThrow(batch.TemplateName);
-        long index = MeterAddressing.ExtractIndex(meterId);
 
-        var meter = new DLMSMeter(index, _options.LogicalName, _options.ClientAddress, _options.ServerAddress);
+        var meter = new DLMSMeter(meterRef.Index, _options.LogicalName, _options.ClientAddress, _options.ServerAddress);
 
         // Push is deferred: pushConfig null → no push timer is wired (see merge_task.md #12/#15).
         var session = new DLMSServerSession(meter, templatePath, pushConfig: null);
         session.Initialize(true);
 
         _logger.LogDebug(
-            "Built meter session {MeterId} (index {Index}, serial {Serial}, template {Template})",
-            meterId, index, meter.MeterNo, batch.TemplateName);
+            "Built meter session {Meter} (index {Index}, serial {Serial}, template {Template})",
+            meterRef, meterRef.Index, meter.MeterNo, batch.TemplateName);
 
         return session;
     }

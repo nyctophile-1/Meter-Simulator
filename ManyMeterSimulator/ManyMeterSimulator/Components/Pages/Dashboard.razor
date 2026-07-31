@@ -6,14 +6,48 @@
 @using Microsoft.AspNetCore.Authorization
 @using ManyMeterSimulator.Diagnostics
 @using ManyMeterSimulator.Brain
+@using ManyMeterSimulator.Networking.Nic
+@using ManyMeterSimulator.Networking.Mqtt
 @inject SimulatorMetrics Metrics
-@inject ConnectionRegistry Connections
+@inject SessionRegistry Connections
 @inject MeterSessionManager Sessions
 @inject MeterRegistry MeterRegistry
 @inject IOptions<TcpOptions> TcpOptions
+@inject MqttNicListenerService MqttListener
 @implements IDisposable
 
 <PageTitle>MAYA - Dashboard</PageTitle>
+
+@* ---------- MQTT broker status (the MQTT answer to "is the listener bound?") ---------- *@
+@if (_brokerStatuses.Count > 0)
+{
+    <MudPaper Elevation="1" Class="pa-3 mb-2">
+        <div class="d-flex align-center flex-wrap" style="gap:16px;">
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">MQTT brokers</MudText>
+            @foreach ((NicType nic, MqttConnectionStatus status) in _brokerStatuses)
+            {
+                <div class="d-flex align-center" style="gap:6px;">
+                    <span class="legend-dot" style="background:@(status.IsConnected ? "#4ec9b0" : "#f48771");"></span>
+                    <MudText Typo="Typo.body2">@NicLabel(nic)</MudText>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                        @if (status.IsConnected)
+                        {
+                            <text>connected as @status.CredentialName &middot; @status.SubscribedFilters filter(s)</text>
+                        }
+                        else if (status.LastError is not null)
+                        {
+                            <text>@status.LastError (attempt @status.Attempts)</text>
+                        }
+                        else
+                        {
+                            <text>connecting&hellip;</text>
+                        }
+                    </MudText>
+                </div>
+            }
+        </div>
+    </MudPaper>
+}
 
 @* ---------- KPI stat cards ---------- *@
 <MudGrid Class="mb-2">
@@ -206,7 +240,7 @@
                             <span class="legend-dot" style="background:@StatusColor(b.Status);"></span>
                             <div class="batch-row-main">
                                 <div class="batch-row-name">@b.Name</div>
-                                <div class="batch-row-sub">@b.TemplateName</div>
+                                <div class="batch-row-sub">@NicLabel(b.NicType) &middot; @b.TemplateName</div>
                             </div>
                             <span class="batch-row-count">@b.Count.ToString("N0")</span>
                         </div>
@@ -298,6 +332,7 @@
     private long _provisionedMeters;
     private int _runningBatches, _stoppedBatches, _notStartedBatches, _totalBatches;
     private IReadOnlyList<MeterBatch> _batches = Array.Empty<MeterBatch>();
+    private IReadOnlyList<KeyValuePair<NicType, MqttConnectionStatus>> _brokerStatuses = Array.Empty<KeyValuePair<NicType, MqttConnectionStatus>>();
     private long _rejectionsTotal;
     private int _maxConns;
 
@@ -321,6 +356,7 @@
         int active = Connections.ActiveCount;
         _snap = Metrics.Snapshot(active);
         _liveMeters = Sessions.LiveMeterCount;
+        _brokerStatuses = MqttListener.ConnectionStatuses.OrderBy(kv => kv.Key).ToArray();
 
         IReadOnlyList<MeterBatch> batches = MeterRegistry.Batches;
         _batches = batches;
@@ -331,7 +367,8 @@
         _provisionedMeters = batches.Sum(b => b.Count);
 
         _rejectionsTotal = _snap.TotalRejectedCollision + _snap.TotalRejectedMaxConnections
-            + _snap.TotalRejectedBatchNotRunning + _snap.TotalRejectedNoTemplate + _snap.TotalIdleTimeouts;
+            + _snap.TotalRejectedBatchNotRunning + _snap.TotalRejectedNoTemplate + _snap.TotalIdleTimeouts
+            + _snap.TotalDroppedMailboxFull + _snap.TotalMalformedPackets + _snap.TotalFragmentTimeouts;
 
         DateTime now = DateTime.UtcNow;
         double secs = Math.Max(0.001, (now - _lastSampleUtc).TotalSeconds);
@@ -461,6 +498,16 @@
         _ => "#6b7178",
     };
 
+    private static string NicLabel(NicType nic) => nic switch
+    {
+        NicType.Tcp4G => "4G TCP",
+        NicType.Mqtt4G => "4G MQTT",
+        NicType.Mqtt4GImg => "4G IMG MQTT",
+        NicType.MqttWirepas => "RF Wirepas",
+        NicType.MqttKmesh => "RF Kmesh",
+        _ => nic.ToString(),
+    };
+
     private List<ChartSeries<double>> RejectionSeries => new()
     {
         new ChartSeries<double>
@@ -473,11 +520,18 @@
                 _snap.TotalRejectedBatchNotRunning,
                 _snap.TotalRejectedNoTemplate,
                 _snap.TotalIdleTimeouts,
+                _snap.TotalDroppedMailboxFull,
+                _snap.TotalMalformedPackets,
+                _snap.TotalFragmentTimeouts,
             },
         },
     };
 
-    private string[] RejectionLabels => new[] { "Collision", "Max conn", "Not running", "No template", "Idle t/o" };
+    private string[] RejectionLabels => new[]
+    {
+        "Collision", "Max conn", "Not running", "No template", "Idle t/o",
+        "Mailbox full", "Malformed", "Frag t/o",
+    };
 
     private double CapacityPercent => _maxConns > 0 ? (double)_snap.ActiveConnections / _maxConns * 100 : 0;
     private double MaterializedPercent => _provisionedMeters > 0 ? (double)_liveMeters / _provisionedMeters * 100 : 0;

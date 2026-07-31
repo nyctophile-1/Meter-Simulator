@@ -1,4 +1,5 @@
 using System.Net;
+using ManyMeterSimulator.Networking.Nic;
 using ManyMeterSimulator.Provisioning;
 using Xunit;
 
@@ -299,6 +300,79 @@ public class MeterRegistryTests
         {
             string? dir = Path.GetDirectoryName(path);
             if (dir is not null && Directory.Exists(dir))
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void JsonBatchStore_RoundTripsTheNicType()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"mms-batchstore-{Guid.NewGuid():N}", "batches.json");
+        try
+        {
+            var writeRegistry = new MeterRegistry(new JsonBatchStore(path));
+            writeRegistry.AddBatch("rf", Tpl, 5, NicType.MqttWirepas);
+
+            MeterBatch reloaded = Assert.Single(new MeterRegistry(new JsonBatchStore(path)).Batches);
+            Assert.Equal(NicType.MqttWirepas, reloaded.NicType);
+        }
+        finally
+        {
+            string? dir = Path.GetDirectoryName(path);
+            if (dir is not null && Directory.Exists(dir))
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+    }
+
+    /// <summary>
+    /// A store written before NIC types existed has no "NicType" field. It must rehydrate as
+    /// Tcp4G — the behaviour those batches already had — so upgrading needs no migration and
+    /// no operator action. This is the compatibility guarantee, so it is asserted against
+    /// literal legacy JSON rather than against anything the current code can produce.
+    /// </summary>
+    [Fact]
+    public void JsonBatchStore_ReadsALegacyFileWithNoNicType_AsTcp()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), $"mms-batchstore-{Guid.NewGuid():N}");
+        string path = Path.Combine(dir, "batches.json");
+        try
+        {
+            Directory.CreateDirectory(dir);
+            File.WriteAllText(path, """
+            {
+              "NextIndex": 11,
+              "NextBatchId": 2,
+              "Batches": [
+                {
+                  "Id": 1,
+                  "Name": "legacy",
+                  "TemplateName": "meter.xml",
+                  "StartIndex": 1,
+                  "Count": 10,
+                  "Status": "Running",
+                  "CreatedAtUtc": "2026-01-01T00:00:00+00:00"
+                }
+              ]
+            }
+            """);
+
+            var registry = new MeterRegistry(new JsonBatchStore(path));
+
+            MeterBatch reloaded = Assert.Single(registry.Batches);
+            Assert.Equal(NicType.Tcp4G, reloaded.NicType);
+            Assert.Equal("legacy", reloaded.Name);
+            Assert.Equal(BatchStatus.Running, reloaded.Status);
+
+            // The allocation cursor must survive too — reissuing indices is what the store prevents.
+            Assert.Equal("11", registry.PreviewNextBatch(Prefix, 1).FirstNodeId);
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
             {
                 Directory.Delete(dir, recursive: true);
             }

@@ -6,6 +6,7 @@
 @using Microsoft.AspNetCore.Components.Authorization
 @using ManyMeterSimulator.Auth
 @using ManyMeterSimulator.Brain
+@using ManyMeterSimulator.Networking.Nic
 @using Microsoft.AspNetCore.Components.Forms
 @inject MeterRegistry MeterRegistry
 @inject TemplateRegistry TemplateRegistry
@@ -17,8 +18,9 @@
 <PageTitle>MAYA - Setup</PageTitle>
 
 <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
-    Address prefix: <code>@AddressPrefix</code> &middot; max supported meters:
+    TCP address prefix: <code>@AddressPrefix</code> &middot; max supported meters:
     <code>@MeterRegistry.MaxIndex.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</code>
+    &middot; every meter has a node id whatever its NIC; only 4G TCP meters also get an IP
 </MudText>
 
 @if (IsAdmin)
@@ -32,7 +34,7 @@
                               Label="Batch name" Placeholder="e.g. batch-1"
                               Variant="Variant.Outlined" Margin="Margin.Dense" />
             </MudItem>
-            <MudItem xs="12" sm="6" md="3">
+            <MudItem xs="12" sm="6" md="2">
                 <MudNumericField T="int" @bind-Value="MeterCount" Immediate="true" Min="1"
                                  Label="Number of meters (N)"
                                  Variant="Variant.Outlined" Margin="Margin.Dense" />
@@ -46,7 +48,16 @@
                     }
                 </MudSelect>
             </MudItem>
-            <MudItem xs="12" sm="6" md="3" Class="d-flex align-center">
+            <MudItem xs="12" sm="6" md="2">
+                <MudSelect T="NicType" @bind-Value="SelectedNic" Label="NIC"
+                           Variant="Variant.Outlined" Margin="Margin.Dense">
+                    @foreach (NicType nic in AllNics)
+                    {
+                        <MudSelectItem Value="@nic">@NicLabel(nic)</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="2" Class="d-flex align-center">
                 <MudFileUpload T="IBrowserFile" Accept=".xml" FilesChanged="OnTemplateUpload" MaximumFileCount="1">
                     <ActivatorContent>
                         <MudButton Variant="Variant.Outlined" Color="Color.Default"
@@ -72,8 +83,12 @@
         {
             BatchPreview preview = MeterRegistry.PreviewNextBatch(AddressPrefix, MeterCount);
             <MudAlert Severity="Severity.Info" Dense="true" Variant="Variant.Outlined" Class="mt-3">
-                Will reserve <code>@preview.FirstAddress</code> &ndash; <code>@preview.LastAddress</code>
+                Will reserve node ids <code>@preview.FirstNodeId</code> &ndash; <code>@preview.LastNodeId</code>
                 &middot; meter numbers <code>@preview.FirstSerial</code> &ndash; <code>@preview.LastSerial</code>
+                @if (SelectedNic == NicType.Tcp4G)
+                {
+                    <text>&middot; IPs <code>@preview.FirstAddress</code> &ndash; <code>@preview.LastAddress</code></text>
+                }
                 (@MeterCount.ToString("N0", System.Globalization.CultureInfo.InvariantCulture) meter(s))
             </MudAlert>
         }
@@ -114,8 +129,10 @@ else
             <tr>
                 <th style="width:1%"></th>
                 <th>Name</th>
+                <th>NIC</th>
                 <th>Template</th>
                 <th>Count</th>
+                <th>Node id range</th>
                 <th>IP range</th>
                 <th>Meter# range</th>
                 <th>Status</th>
@@ -128,16 +145,28 @@ else
         <tbody>
             @foreach (MeterBatch batch in batches)
             {
-                (IPAddress firstAddr, IPAddress lastAddr) = MeterRegistry.GetAddressRange(batch, AddressPrefix);
+                (string firstNode, string lastNode) = MeterRegistry.GetNodeIdRange(batch);
                 <tr>
                     <td style="white-space:nowrap">
                         <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Download"
                                        Title="Download meter list (CSV)" OnClick="() => DownloadCsv(batch.Id)" />
                     </td>
                     <td>@batch.Name</td>
+                    <td><MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@NicLabel(batch.NicType)</MudChip></td>
                     <td><code>@batch.TemplateName</code></td>
                     <td>@batch.Count.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</td>
-                    <td><code>@firstAddr - @lastAddr</code></td>
+                    <td><code>@firstNode - @lastNode</code></td>
+                    <td>
+                        @if (batch.NicType == NicType.Tcp4G)
+                        {
+                            (IPAddress firstAddr, IPAddress lastAddr) = MeterRegistry.GetAddressRange(batch, AddressPrefix);
+                            <code>@firstAddr - @lastAddr</code>
+                        }
+                        else
+                        {
+                            <span class="mud-text-secondary">&mdash;</span>
+                        }
+                    </td>
                     <td><code>@MeterRegistry.FormatSerial(batch.StartIndex) - @MeterRegistry.FormatSerial(batch.EndIndex)</code></td>
                     <td>
                         <MudChip T="string" Size="Size.Small" Variant="Variant.Filled" Color="@StatusColor(batch.Status)">
@@ -173,8 +202,21 @@ else
     private string BatchName { get; set; } = "";
     private int MeterCount { get; set; } = 100;
     private string SelectedTemplate { get; set; } = "";
+    private NicType SelectedNic { get; set; } = NicType.Tcp4G;
     private string? ErrorMessage;
     private string? UploadMessage;
+
+    private static readonly NicType[] AllNics = Enum.GetValues<NicType>();
+
+    private static string NicLabel(NicType nic) => nic switch
+    {
+        NicType.Tcp4G => "4G TCP",
+        NicType.Mqtt4G => "4G MQTT",
+        NicType.Mqtt4GImg => "4G IMG MQTT",
+        NicType.MqttWirepas => "RF Wirepas",
+        NicType.MqttKmesh => "RF Kmesh",
+        _ => nic.ToString(),
+    };
 
     // Templates can be large (the full-model XML is ~4 MB); allow generous headroom for upload.
     private const long MaxUploadBytes = 32 * 1024 * 1024;
@@ -214,7 +256,7 @@ else
         ErrorMessage = null;
         try
         {
-            MeterRegistry.AddBatch(BatchName, SelectedTemplate, MeterCount);
+            MeterRegistry.AddBatch(BatchName, SelectedTemplate, MeterCount, SelectedNic);
             BatchName = "";
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)

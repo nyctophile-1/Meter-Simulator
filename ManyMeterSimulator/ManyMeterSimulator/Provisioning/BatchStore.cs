@@ -1,3 +1,5 @@
+using ManyMeterSimulator.Networking.Nic;
+
 namespace ManyMeterSimulator.Provisioning;
 
 /// <summary>
@@ -36,6 +38,12 @@ public sealed record PersistedBatch
     public string Name { get; init; } = string.Empty;
 
     public string TemplateName { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Defaults to <see cref="NicType.Tcp4G"/>, which is also enum value 0 — so a store written
+    /// before this field existed rehydrates as TCP with no migration and no rewrite.
+    /// </summary>
+    public NicType NicType { get; init; } = NicType.Tcp4G;
 
     public long StartIndex { get; init; }
 

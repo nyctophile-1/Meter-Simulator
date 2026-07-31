@@ -4,6 +4,9 @@ using ManyMeterSimulator.Components;
 using ManyMeterSimulator.Diagnostics;
 using ManyMeterSimulator.MqttBridge;
 using ManyMeterSimulator.Networking;
+using ManyMeterSimulator.Networking.Mqtt;
+using ManyMeterSimulator.Networking.Mqtt.Codecs;
+using ManyMeterSimulator.Networking.Nic;
 using ManyMeterSimulator.Provisioning;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using MudBlazor.Services;
@@ -54,6 +57,8 @@ builder.Services.AddSerilog((_, loggerConfiguration) => loggerConfiguration
     .WriteTo.Sink(new LogBroadcastSink(logBroadcaster)));
 
 builder.Services.Configure<TcpOptions>(builder.Configuration.GetSection(TcpOptions.SectionName));
+builder.Services.Configure<SessionMaintenanceOptions>(builder.Configuration.GetSection(SessionMaintenanceOptions.SectionName));
+builder.Services.Configure<NicsOptions>(builder.Configuration.GetSection(NicsOptions.SectionName));
 builder.Services.Configure<SimulatedBridgeOptions>(builder.Configuration.GetSection(SimulatedBridgeOptions.SectionName));
 builder.Services.Configure<AuthOptions>(builder.Configuration.GetSection(AuthOptions.SectionName));
 builder.Services.Configure<TemplateOptions>(builder.Configuration.GetSection(TemplateOptions.SectionName));
@@ -79,8 +84,9 @@ if (!MeterAddressing.TryValidatePrefix(configuredPrefix, out string prefixError)
 int shutdownDrainSeconds = builder.Configuration.GetValue("Tcp:ShutdownDrainSeconds", 10);
 builder.Services.Configure<HostOptions>(o => o.ShutdownTimeout = TimeSpan.FromSeconds(shutdownDrainSeconds + 5));
 
-builder.Services.AddSingleton<ConnectionRegistry>();
+builder.Services.AddSingleton<SessionRegistry>();
 builder.Services.AddSingleton<SimulatorMetrics>();
+builder.Services.AddSingleton<MeterAdmission>();
 // Durable batch store first — MeterRegistry rehydrates from it on construction, so batches,
 // their status, and the allocation cursor survive restarts/reboots/redeployments.
 builder.Services.AddSingleton<IBatchStore, JsonBatchStore>();
@@ -100,6 +106,19 @@ else
 }
 
 builder.Services.AddHostedService<TcpNicListenerService>();
+// NIC-agnostic housekeeping (idle reaping + metrics summary) — serves every NIC, not just TCP.
+builder.Services.AddHostedService<SessionMaintenanceService>();
+
+// ── MQTT NICs ────────────────────────────────────────────────────────────────────────────────
+// One codec per variant. The direct-4G codec serves both c and d (same broker, topics and framing
+// — the difference is meter hardware, not wire protocol). Wirepas/Kmesh carry their node id inside
+// a protobuf payload, so until Phase F/G they can only subscribe and capture, not route.
+builder.Services.AddSingleton<NicCaptureWriter>();
+builder.Services.AddSingleton<INicCodec>(_ => new Mqtt4GCodec(NicType.Mqtt4G));
+builder.Services.AddSingleton<INicCodec, WirepasCodec>();
+builder.Services.AddSingleton<INicCodec, KmeshCodec>();
+builder.Services.AddSingleton<MqttNicListenerService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<MqttNicListenerService>());
 
 builder.Services
     .AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)

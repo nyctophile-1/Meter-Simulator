@@ -1,5 +1,5 @@
-using System.Net;
 using ManyMeterSimulator.MqttBridge;
+using ManyMeterSimulator.Networking.Nic;
 using MeterSimulator.DLMS;
 
 namespace ManyMeterSimulator.Brain;
@@ -20,24 +20,24 @@ public sealed class BrainMeterSimBridge : IMeterSimBridge
         _logger = logger;
     }
 
-    public async Task<byte[]> ExchangeAsync(IPAddress meterId, byte[] requestFrame, CancellationToken cancellationToken)
+    public async Task<byte[]> ExchangeAsync(MeterRef meter, byte[] requestFrame, CancellationToken cancellationToken)
     {
         DLMSServerSession session;
         try
         {
-            session = _sessions.GetOrCreate(meterId);
+            session = _sessions.GetOrCreate(meter);
         }
         catch (Exception ex)
         {
-            // Should be unreachable on the inbound path (the listener rejects meters with no
-            // template) — but never let a build failure take down the session loop.
-            _logger.LogError(ex, "Meter {MeterId}: could not build brain session", meterId);
+            // Should be unreachable on the inbound path (the NIC rejects meters with no template)
+            // — but never let a build failure take down the session loop.
+            _logger.LogError(ex, "Meter {Meter}: could not build brain session", meter);
             return Array.Empty<byte>();
         }
 
         // HandleRequest is synchronous, stateful, CPU-bound DLMS work. Offload it so the IO
         // pipeline thread isn't blocked, and serialize per session — a DLMS server session is not
-        // thread-safe. Single-session-per-meter (ConnectionRegistry) already prevents concurrent
+        // thread-safe. Single-session-per-meter (SessionRegistry) already prevents concurrent
         // inbound use; the lock also guards against future concurrent push on the same session.
         return await Task.Run(() =>
         {

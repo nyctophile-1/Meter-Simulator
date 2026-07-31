@@ -7,19 +7,27 @@ using Microsoft.Extensions.Options;
 using ManyMeterSimulator.Diagnostics;
 using ManyMeterSimulator.Framing;
 using ManyMeterSimulator.MqttBridge;
-using ManyMeterSimulator.Provisioning;
+using ManyMeterSimulator.Networking.Nic;
 
 namespace ManyMeterSimulator.Networking;
 
+/// <summary>
+/// The 4G TCP NIC: one wildcard socket serving the whole meter prefix, since the kernel routes every
+/// meter address to this host and the socket's LOCAL address identifies the meter.
+///
+/// Deliberately narrow — accept, identify, deframe, funnel. Admission policy lives in
+/// <see cref="MeterAdmission"/> and idle reaping/metrics in <see cref="SessionMaintenanceService"/>,
+/// because none of those are TCP concerns; what remains here is only what a byte-stream transport
+/// actually has to do.
+/// </summary>
 public class TcpNicListenerService : BackgroundService
 {
     private readonly ILogger<TcpNicListenerService> _logger;
     private readonly TcpOptions _options;
-    private readonly ConnectionRegistry _registry;
+    private readonly SessionRegistry _registry;
+    private readonly MeterAdmission _admission;
     private readonly IMeterSimBridge _bridge;
     private readonly SimulatorMetrics _metrics;
-    private readonly MeterRegistry _meterRegistry;
-    private readonly TemplateRegistry _templateRegistry;
     private readonly IHostApplicationLifetime _appLifetime;
 
     // Deliberately NOT the same token ExecuteAsync receives: that one is cancelled the instant
@@ -35,20 +43,18 @@ public class TcpNicListenerService : BackgroundService
     public TcpNicListenerService(
         ILogger<TcpNicListenerService> logger,
         IOptions<TcpOptions> options,
-        ConnectionRegistry registry,
+        SessionRegistry registry,
+        MeterAdmission admission,
         IMeterSimBridge bridge,
         SimulatorMetrics metrics,
-        MeterRegistry meterRegistry,
-        TemplateRegistry templateRegistry,
         IHostApplicationLifetime appLifetime)
     {
         _logger = logger;
         _options = options.Value;
         _registry = registry;
+        _admission = admission;
         _bridge = bridge;
         _metrics = metrics;
-        _meterRegistry = meterRegistry;
-        _templateRegistry = templateRegistry;
         _appLifetime = appLifetime;
     }
 
@@ -65,9 +71,6 @@ public class TcpNicListenerService : BackgroundService
             _options.ListenPort, _options.AddressPrefix);
 
         using CancellationTokenRegistration shutdownRegistration = _appLifetime.ApplicationStopping.Register(BeginDrain);
-
-        Task idleSweepTask = RunIdleSweepAsync(stoppingToken);
-        Task metricsReporterTask = RunMetricsReporterAsync(stoppingToken);
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -86,10 +89,6 @@ public class TcpNicListenerService : BackgroundService
 
         _logger.LogInformation("Accept loop stopped. Waiting for {Count} in-flight session(s) to finish...", _registry.ActiveCount);
         await Task.WhenAll(_connectionHandlerTasks.ToArray());
-        await idleSweepTask;
-        await metricsReporterTask;
-
-        LogMetricsSummary("Final");
     }
 
     private void BeginDrain()
@@ -121,67 +120,6 @@ public class TcpNicListenerService : BackgroundService
         _sessionShutdownCts.Cancel();
     }
 
-    private async Task RunIdleSweepAsync(CancellationToken stoppingToken)
-    {
-        var interval = TimeSpan.FromSeconds(_options.IdleSweepIntervalSeconds);
-        var idleTimeout = TimeSpan.FromSeconds(_options.IdleTimeoutSeconds);
-
-        try
-        {
-            while (true)
-            {
-                await Task.Delay(interval, stoppingToken);
-
-                DateTimeOffset now = DateTimeOffset.UtcNow;
-                foreach (ConnectionState state in _registry.Snapshot())
-                {
-                    if (now - state.LastActivityUtc > idleTimeout)
-                    {
-                        _logger.LogInformation(
-                            "Meter {MeterId}: idle for over {IdleTimeoutSeconds}s, force-closing stale connection",
-                            state.MeterId, idleTimeout.TotalSeconds);
-                        _metrics.RecordIdleTimeout();
-                        state.CancelDueToIdleTimeout();
-                    }
-                }
-            }
-        }
-        catch (OperationCanceledException)
-        {
-        }
-    }
-
-    private async Task RunMetricsReporterAsync(CancellationToken stoppingToken)
-    {
-        var interval = TimeSpan.FromSeconds(_options.MetricsIntervalSeconds);
-
-        try
-        {
-            while (true)
-            {
-                await Task.Delay(interval, stoppingToken);
-                LogMetricsSummary("Periodic");
-            }
-        }
-        catch (OperationCanceledException)
-        {
-        }
-    }
-
-    private void LogMetricsSummary(string kind)
-    {
-        SimulatorMetricsSnapshot snapshot = _metrics.Snapshot(_registry.ActiveCount);
-        _logger.LogInformation(
-            "{Kind} metrics: active={Active}, accepted={Accepted}, rejectedCollision={RejectedCollision}, " +
-            "rejectedMaxConn={RejectedMaxConn}, rejectedBatchNotRunning={RejectedBatchNotRunning}, " +
-            "rejectedNoTemplate={RejectedNoTemplate}, idleTimeouts={IdleTimeouts}, exchanges={Exchanges}, " +
-            "avgBridgeLatency={AvgLatencyMs}ms, maxBridgeLatency={MaxLatencyMs}ms",
-            kind, snapshot.ActiveConnections, snapshot.TotalAccepted, snapshot.TotalRejectedCollision,
-            snapshot.TotalRejectedMaxConnections, snapshot.TotalRejectedBatchNotRunning,
-            snapshot.TotalRejectedNoTemplate, snapshot.TotalIdleTimeouts, snapshot.TotalExchanges,
-            snapshot.AvgBridgeLatency.TotalMilliseconds, snapshot.MaxBridgeLatency.TotalMilliseconds);
-    }
-
     private async Task HandleConnectionAsync(Socket connection)
     {
         using (connection)
@@ -190,59 +128,29 @@ public class TcpNicListenerService : BackgroundService
             var remoteEndPoint = (IPEndPoint)connection.RemoteEndPoint!;
             var meterId = localEndPoint.Address;
 
-            // A meter must belong to a batch AND that batch must have a resolvable template — a
-            // meter with no template can't be simulated, so we reject it (this replaces the old
-            // permissive behavior where meters not assigned to any batch were accepted).
-            MeterBatch? batch = _meterRegistry.GetBatchForAddress(meterId);
-            if (batch is null)
-            {
-                _logger.LogInformation(
-                    "Rejected connection for meter {MeterId} from HES {RemoteEndPoint}: not part of any batch (no template)",
-                    meterId, remoteEndPoint);
-                _metrics.RecordRejectedNoTemplate();
-                return;
-            }
-
-            if (batch.Status is BatchStatus.NotStarted or BatchStatus.Stopped)
-            {
-                _logger.LogInformation(
-                    "Rejected connection for meter {MeterId} from HES {RemoteEndPoint}: batch is {BatchStatus}",
-                    meterId, remoteEndPoint, batch.Status);
-                _metrics.RecordRejectedBatchNotRunning();
-                return;
-            }
-
-            if (!_templateRegistry.TryResolve(batch.TemplateName, out _))
-            {
-                _logger.LogWarning(
-                    "Rejected connection for meter {MeterId} from HES {RemoteEndPoint}: batch template '{Template}' not found",
-                    meterId, remoteEndPoint, batch.TemplateName);
-                _metrics.RecordRejectedNoTemplate();
-                return;
-            }
-
-            if (_registry.ActiveCount >= _options.MaxConcurrentConnections)
-            {
-                _logger.LogWarning(
-                    "Rejected connection for meter {MeterId} from HES {RemoteEndPoint}: max concurrent connections ({Max}) reached",
-                    meterId, remoteEndPoint, _options.MaxConcurrentConnections);
-                _metrics.RecordRejectedMaxConnections();
-                return;
-            }
+            // The kernel routes the whole meter prefix here, so the socket's LOCAL address is the
+            // meter's own address and carries its index — the identity everything below uses.
+            MeterRef meter = MeterRef.FromTcpAddress(meterId);
 
             using var sessionCts = CancellationTokenSource.CreateLinkedTokenSource(_sessionShutdownCts.Token);
-            var state = new ConnectionState { MeterId = meterId, RemoteEndPoint = remoteEndPoint, SessionCts = sessionCts };
-
-            if (!_registry.TryRegister(meterId, state))
+            var state = new ConnectionState
             {
-                _logger.LogWarning(
-                    "Rejected connection for meter {MeterId} from HES {RemoteEndPoint}: a session is already active for this meter",
-                    meterId, remoteEndPoint);
-                _metrics.RecordRejectedCollision();
+                Meter = meter,
+                MeterAddress = meterId,
+                RemoteEndPoint = remoteEndPoint,
+                SessionCts = sessionCts,
+            };
+
+            AdmissionResult admission = _admission.TryAdmit(meter, state, _options.MaxConcurrentConnections);
+            if (!admission.IsAdmitted)
+            {
+                // TCP expresses a refusal by closing the socket; the counters are already recorded.
+                _logger.LogInformation(
+                    "Rejected connection for meter {MeterId} from HES {RemoteEndPoint}: {Reason}",
+                    meterId, remoteEndPoint, admission.Reason);
                 return;
             }
 
-            _metrics.RecordAccepted();
             _logger.LogInformation(
                 "Accepted connection for meter {MeterId} (port {Port}) from HES {RemoteEndPoint}",
                 meterId, localEndPoint.Port, remoteEndPoint);
@@ -253,7 +161,7 @@ public class TcpNicListenerService : BackgroundService
             }
             finally
             {
-                _registry.Unregister(meterId, state);
+                _registry.Unregister(meter, state);
                 _logger.LogInformation("Connection closed for meter {MeterId}", meterId);
             }
         }
@@ -283,14 +191,14 @@ public class TcpNicListenerService : BackgroundService
                     state.Touch();
                     _logger.LogDebug(
                         "Meter {MeterId}: received frame (srcWPort={Src}, dstWPort={Dst}, {Length} payload bytes)",
-                        state.MeterId, frame.SourceWPort, frame.DestinationWPort, frame.Payload.Length);
+                        state.MeterAddress, frame.SourceWPort, frame.DestinationWPort, frame.Payload.Length);
 
                     var bridgeStopwatch = Stopwatch.StartNew();
                     // Hand the brain the COMPLETE frame; it returns a complete wrapper reply
                     // (Gurux owns wrapper build), which we write back verbatim — no re-wrapping.
-                    byte[] response = await _bridge.ExchangeAsync(state.MeterId, frame.Raw, sessionToken);
+                    byte[] response = await _bridge.ExchangeAsync(state.Meter, frame.Raw, sessionToken);
                     bridgeStopwatch.Stop();
-                    _metrics.RecordExchange(bridgeStopwatch.Elapsed);
+                    _metrics.RecordExchange(state.Meter.Nic, bridgeStopwatch.Elapsed);
 
                     if (response.Length > 0)
                     {
@@ -301,29 +209,29 @@ public class TcpNicListenerService : BackgroundService
                     exchangeCount++;
                     _logger.LogDebug(
                         "Meter {MeterId}: exchange {Count} complete (bridge latency {LatencyMs}ms)",
-                        state.MeterId, exchangeCount, bridgeStopwatch.Elapsed.TotalMilliseconds);
+                        state.MeterAddress, exchangeCount, bridgeStopwatch.Elapsed.TotalMilliseconds);
                 }
                 catch (OperationCanceledException)
                 {
                     if (state.IdleTimedOut)
                     {
-                        _logger.LogInformation("Meter {MeterId}: closing connection after idle timeout", state.MeterId);
+                        _logger.LogInformation("Meter {MeterId}: closing connection after idle timeout", state.MeterAddress);
                     }
                     else
                     {
-                        _logger.LogInformation("Meter {MeterId}: session cancelled (service shutting down)", state.MeterId);
+                        _logger.LogInformation("Meter {MeterId}: session cancelled (service shutting down)", state.MeterAddress);
                     }
 
                     break;
                 }
                 catch (InvalidDataException ex)
                 {
-                    _logger.LogWarning(ex, "Meter {MeterId}: malformed frame, closing connection", state.MeterId);
+                    _logger.LogWarning(ex, "Meter {MeterId}: malformed frame, closing connection", state.MeterAddress);
                     break;
                 }
                 catch (SocketException ex)
                 {
-                    _logger.LogWarning(ex, "Meter {MeterId}: connection error", state.MeterId);
+                    _logger.LogWarning(ex, "Meter {MeterId}: connection error", state.MeterAddress);
                     break;
                 }
             }

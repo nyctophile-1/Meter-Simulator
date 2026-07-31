@@ -1,14 +1,23 @@
+using ManyMeterSimulator.Networking.Nic;
+
 namespace ManyMeterSimulator.Provisioning;
 
 /// <summary>
-/// A contiguous, sequentially-allocated range of meters (IP addresses + meter serial numbers
-/// are both derived from the same 1-based index within the range - see MeterRegistry).
+/// A contiguous, sequentially-allocated range of meters (node ids, IP addresses and meter serial
+/// numbers are all derived from the same 1-based index within the range - see MeterRegistry).
 /// </summary>
 public sealed class MeterBatch
 {
     public required int Id { get; init; }
 
     public required string Name { get; init; }
+
+    /// <summary>
+    /// The NIC every meter in this batch presents — a real meter's NIC is hardware, so it is fixed
+    /// per batch rather than per session. Defaults to <see cref="NicType.Tcp4G"/> so batches
+    /// provisioned before NIC types existed keep behaving exactly as they did.
+    /// </summary>
+    public NicType NicType { get; init; } = NicType.Tcp4G;
 
     /// <summary>
     /// Name of the DLMS template (XML) every meter in this batch is built from

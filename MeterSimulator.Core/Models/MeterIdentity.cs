@@ -1,5 +1,6 @@
 using System;
 using System.Buffers.Binary;
+using System.Globalization;
 using System.Text;
 
 namespace MeterSimulator.Models
@@ -30,6 +31,15 @@ namespace MeterSimulator.Models
 
         /// <summary>Serial number string, matches ManyMeterSimulator MeterRegistry.FormatSerial.</summary>
         public static string Serial(long index) => $"MY{index:D9}";
+
+        /// <summary>
+        /// The HES-facing node id: the serial with its alphabetic prefix and leading zeros removed
+        /// ("MY000001005" → "1005"), which is exactly the index in decimal. Every meter has one
+        /// regardless of NIC — HES needs a node id to register a meter even on TCP, where the IPv6
+        /// address is the transport identity. Because this and <see cref="Serial"/> derive from the
+        /// same index, they can never disagree.
+        /// </summary>
+        public static string NodeId(long index) => index.ToString(CultureInfo.InvariantCulture);
 
         public static byte[] SystemTitle(long index)
         {

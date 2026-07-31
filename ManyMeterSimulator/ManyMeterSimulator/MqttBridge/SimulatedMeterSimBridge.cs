@@ -1,4 +1,4 @@
-using System.Net;
+using ManyMeterSimulator.Networking.Nic;
 using Microsoft.Extensions.Options;
 
 namespace ManyMeterSimulator.MqttBridge;
@@ -18,7 +18,7 @@ public sealed class SimulatedMeterSimBridge : IMeterSimBridge
         _options = options.Value;
     }
 
-    public async Task<byte[]> ExchangeAsync(IPAddress meterId, byte[] requestFrame, CancellationToken cancellationToken)
+    public async Task<byte[]> ExchangeAsync(MeterRef meter, byte[] requestFrame, CancellationToken cancellationToken)
     {
         await Task.Delay(_options.RoundTripDelayMs, cancellationToken);
         return requestFrame;

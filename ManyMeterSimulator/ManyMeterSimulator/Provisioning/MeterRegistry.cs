@@ -1,4 +1,6 @@
 using System.Net;
+using ManyMeterSimulator.Networking.Nic;
+using MeterSimulator.Models;
 
 namespace ManyMeterSimulator.Provisioning;
 
@@ -56,15 +58,21 @@ public sealed class MeterRegistry
                 MeterAddressing.ComputeAddress(addressPrefixCidr, start),
                 MeterAddressing.ComputeAddress(addressPrefixCidr, end),
                 FormatSerial(start),
-                FormatSerial(end));
+                FormatSerial(end),
+                MeterIdentity.NodeId(start),
+                MeterIdentity.NodeId(end));
         }
     }
 
     /// <summary>
-    /// Reserves the next `count` indices as a new batch bound to <paramref name="templateName"/>.
-    /// Does not start it. Every meter in the batch is built from that template.
+    /// Reserves the next `count` indices as a new batch bound to <paramref name="templateName"/>
+    /// and <paramref name="nicType"/>. Does not start it. Every meter in the batch is built from
+    /// that template and reachable over that NIC.
+    ///
+    /// Indices are allocated globally and sequentially across ALL batches regardless of NIC, so
+    /// node id ranges can never overlap between batches or between NIC types.
     /// </summary>
-    public MeterBatch AddBatch(string name, string templateName, long count)
+    public MeterBatch AddBatch(string name, string templateName, long count, NicType nicType = NicType.Tcp4G)
     {
         if (count <= 0)
         {
@@ -90,6 +98,7 @@ public sealed class MeterRegistry
                 Id = _nextBatchId++,
                 Name = name,
                 TemplateName = templateName,
+                NicType = nicType,
                 StartIndex = _nextIndex,
                 Count = count
             };
@@ -145,16 +154,29 @@ public sealed class MeterRegistry
         }
     }
 
-    /// <summary>First/last address of a batch's own range - O(1), doesn't enumerate the whole batch.</summary>
+    /// <summary>
+    /// First/last address of a batch's own range - O(1), doesn't enumerate the whole batch.
+    /// Only meaningful for <see cref="NicType.Tcp4G"/> batches; the MQTT NICs are reached by node id.
+    /// </summary>
     public (IPAddress First, IPAddress Last) GetAddressRange(MeterBatch batch, string addressPrefixCidr) =>
         (MeterAddressing.ComputeAddress(addressPrefixCidr, batch.StartIndex),
          MeterAddressing.ComputeAddress(addressPrefixCidr, batch.EndIndex));
 
-    /// <summary>The batch that owns this address, or null if the address isn't part of any batch.</summary>
-    public MeterBatch? GetBatchForAddress(IPAddress address)
-    {
-        long index = MeterAddressing.ExtractIndex(address);
+    /// <summary>
+    /// First/last node id of a batch's own range. Present for EVERY NIC — the HES registers a meter
+    /// by node id whatever its transport, so this is the range an operator hands over after
+    /// provisioning. O(1).
+    /// </summary>
+    public (string First, string Last) GetNodeIdRange(MeterBatch batch) =>
+        (MeterIdentity.NodeId(batch.StartIndex), MeterIdentity.NodeId(batch.EndIndex));
 
+    /// <summary>
+    /// The batch that owns this meter index, or null if the index isn't part of any batch. The
+    /// index is the NIC-agnostic identity, so this is the lookup every NIC uses; the address
+    /// overload below is the TCP/UI convenience on top of it.
+    /// </summary>
+    public MeterBatch? GetBatchForIndex(long index)
+    {
         lock (_lock)
         {
             foreach (MeterBatch batch in _batches)
@@ -168,6 +190,10 @@ public sealed class MeterRegistry
 
         return null;
     }
+
+    /// <summary>The batch that owns this address, or null if the address isn't part of any batch.</summary>
+    public MeterBatch? GetBatchForAddress(IPAddress address) =>
+        GetBatchForIndex(MeterAddressing.ExtractIndex(address));
 
     /// <summary>Status of the batch that owns this address, or null if the address isn't part of any batch.</summary>
     public BatchStatus? GetBatchStatusForAddress(IPAddress address, string addressPrefixCidr) =>
@@ -208,6 +234,7 @@ public sealed class MeterRegistry
                     Id = pb.Id,
                     Name = pb.Name,
                     TemplateName = pb.TemplateName,
+                    NicType = pb.NicType,
                     StartIndex = pb.StartIndex,
                     Count = pb.Count,
                     Status = pb.Status,
@@ -232,6 +259,7 @@ public sealed class MeterRegistry
                 Id = b.Id,
                 Name = b.Name,
                 TemplateName = b.TemplateName,
+                NicType = b.NicType,
                 StartIndex = b.StartIndex,
                 Count = b.Count,
                 Status = b.Status,
@@ -245,4 +273,10 @@ public sealed class MeterRegistry
     public static string FormatSerial(long index) => $"MY{index:D9}";
 }
 
-public readonly record struct BatchPreview(IPAddress FirstAddress, IPAddress LastAddress, string FirstSerial, string LastSerial);
+public readonly record struct BatchPreview(
+    IPAddress FirstAddress,
+    IPAddress LastAddress,
+    string FirstSerial,
+    string LastSerial,
+    string FirstNodeId,
+    string LastNodeId);

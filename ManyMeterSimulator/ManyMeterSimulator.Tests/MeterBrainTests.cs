@@ -77,4 +77,22 @@ public class MeterIdentityTests
         Assert.Equal(8, MeterIdentity.LlsKey(5).Length);
         Assert.Equal("MY000000005", MeterIdentity.Serial(5));
     }
+
+    /// <summary>
+    /// The node id HES registers a meter under is defined as the serial minus its alphabetic prefix
+    /// and leading zeros. Asserting that relationship directly (rather than just "it's the index")
+    /// is what keeps the simulator and HES from ever disagreeing about who a meter is.
+    /// </summary>
+    [Theory]
+    [InlineData(1)]
+    [InlineData(5)]
+    [InlineData(1005)]
+    [InlineData(999_999_999)]
+    public void NodeId_IsSerialStrippedOfPrefixAndLeadingZeros(long index)
+    {
+        string expected = MeterIdentity.Serial(index).TrimStart('M', 'Y').TrimStart('0');
+
+        Assert.Equal(expected, MeterIdentity.NodeId(index));
+        Assert.Equal(index.ToString(), MeterIdentity.NodeId(index));
+    }
 }
