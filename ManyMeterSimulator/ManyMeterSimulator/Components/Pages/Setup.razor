@@ -40,7 +40,7 @@
                                  Variant="Variant.Outlined" Margin="Margin.Dense" />
             </MudItem>
             <MudItem xs="12" sm="6" md="3">
-                <MudSelect T="string" @bind-Value="SelectedTemplate" Label="DLMS template"
+                <MudSelect T="string" @bind-Value="SelectedTemplate" Label="Meter model (XML)"
                            Variant="Variant.Outlined" Margin="Margin.Dense">
                     @foreach (string t in Templates)
                     {
@@ -57,11 +57,21 @@
                     }
                 </MudSelect>
             </MudItem>
+            @if (NeedsHesTemplateId(SelectedNic))
+            {
+                <MudItem xs="12" sm="6" md="2">
+                    <MudNumericField T="int?" @bind-Value="HesTemplateId" Immediate="true" Min="1"
+                                     Label="HES template id"
+                                     Placeholder="e.g. 122"
+                                     HelperText="Optional — needed only for the custom channel"
+                                     Variant="Variant.Outlined" Margin="Margin.Dense" />
+                </MudItem>
+            }
             <MudItem xs="12" sm="6" md="2" Class="d-flex align-center">
                 <MudFileUpload T="IBrowserFile" Accept=".xml" FilesChanged="OnTemplateUpload" MaximumFileCount="1">
                     <ActivatorContent>
                         <MudButton Variant="Variant.Outlined" Color="Color.Default"
-                                   StartIcon="@Icons.Material.Filled.Upload">Upload template (.xml)</MudButton>
+                                   StartIcon="@Icons.Material.Filled.Upload">Upload meter model (.xml)</MudButton>
                     </ActivatorContent>
                 </MudFileUpload>
             </MudItem>
@@ -70,7 +80,7 @@
         @if (Templates.Count == 0)
         {
             <MudAlert Severity="Severity.Warning" Dense="true" Variant="Variant.Outlined" Class="mt-3">
-                No templates found in the templates folder.
+                No meter models found in the models folder.
             </MudAlert>
         }
 
@@ -130,7 +140,7 @@ else
                 <th style="width:1%"></th>
                 <th>Name</th>
                 <th>NIC</th>
-                <th>Template</th>
+                <th>Meter model</th>
                 <th>Count</th>
                 <th>Node id range</th>
                 <th>IP range</th>
@@ -152,7 +162,13 @@ else
                                        Title="Download meter list (CSV)" OnClick="() => DownloadCsv(batch.Id)" />
                     </td>
                     <td>@batch.Name</td>
-                    <td><MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@NicLabel(batch.NicType)</MudChip></td>
+                    <td>
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@NicLabel(batch.NicType)</MudChip>
+                        @if (batch.HesTemplateId is int hesId)
+                        {
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">tpl @hesId</MudText>
+                        }
+                    </td>
                     <td><code>@batch.TemplateName</code></td>
                     <td>@batch.Count.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</td>
                     <td><code>@firstNode - @lastNode</code></td>
@@ -203,10 +219,21 @@ else
     private int MeterCount { get; set; } = 100;
     private string SelectedTemplate { get; set; } = "";
     private NicType SelectedNic { get; set; } = NicType.Tcp4G;
+    private int? HesTemplateId { get; set; }
     private string? ErrorMessage;
     private string? UploadMessage;
 
     private static readonly NicType[] AllNics = Enum.GetValues<NicType>();
+
+    /// <summary>
+    /// Wirepas is the one NIC with a custom channel (endpoint 13) alongside plain DLMS, and the
+    /// custom channel builds its own response — which needs HES's data model to lay out.
+    ///
+    /// Offered rather than required: the same meter answers DLMS on endpoint 3 with no data model
+    /// at all, so demanding one would block a perfectly valid DLMS-only setup. Without it, custom
+    /// requests are dropped with a stated reason.
+    /// </summary>
+    private static bool NeedsHesTemplateId(NicType nic) => nic == NicType.MqttWirepas;
 
     private static string NicLabel(NicType nic) => nic switch
     {
@@ -254,9 +281,12 @@ else
         }
 
         ErrorMessage = null;
+
         try
         {
-            MeterRegistry.AddBatch(BatchName, SelectedTemplate, MeterCount, SelectedNic);
+            MeterRegistry.AddBatch(
+                BatchName, SelectedTemplate, MeterCount, SelectedNic,
+                NeedsHesTemplateId(SelectedNic) ? HesTemplateId : null);
             BatchName = "";
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)

@@ -20,6 +20,21 @@ public sealed class MeterBatch
     public NicType NicType { get; init; } = NicType.Tcp4G;
 
     /// <summary>
+    /// HES's meter-template id — a DIFFERENT thing from <see cref="TemplateName"/>.
+    ///
+    /// <see cref="TemplateName"/> is the DLMS XML: what objects and values the meter HAS. This is
+    /// HES's data model: how those values are PACKAGED on the wire, for all four combinations
+    /// (DLMS pull/push, custom pull/push). It selects the row in HES's MeterTemplate table, which
+    /// in turn selects the ordered field lists in MeterTemplateDetail.
+    ///
+    /// Needed only for a NIC's CUSTOM channel — today that is Wirepas endpoint 13, where the NIC
+    /// builds the response itself. The plain DLMS channel needs none of this, so it stays optional:
+    /// the same Wirepas meter answers DLMS on endpoint 3 with no data model at all, and requiring
+    /// one would block a valid DLMS-only setup.
+    /// </summary>
+    public int? HesTemplateId { get; init; }
+
+    /// <summary>
     /// Name of the DLMS template (XML) every meter in this batch is built from
     /// (see TemplateRegistry). Required — a batch with no template can't be simulated.
     /// </summary>

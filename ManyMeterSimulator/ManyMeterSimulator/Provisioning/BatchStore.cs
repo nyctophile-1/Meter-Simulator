@@ -45,6 +45,9 @@ public sealed record PersistedBatch
     /// </summary>
     public NicType NicType { get; init; } = NicType.Tcp4G;
 
+    /// <summary>HES data-model template id. Null for the DLMS-passthrough NICs.</summary>
+    public int? HesTemplateId { get; init; }
+
     public long StartIndex { get; init; }
 
     public long Count { get; init; }

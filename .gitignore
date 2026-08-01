@@ -410,3 +410,7 @@ maya-sim.tar.gz
 /ManyMeterSimulator/logs/
 deploy/meters-batch1-100.csv
 deploy/register-meters-hes.sql
+
+# HES data-model exports (KimbalSpecifics/DataModel). Large raw dumps pulled from the HES DB;
+# a filtered subset for the templates we actually simulate gets committed instead.
+/ManyMeterSimulator/ManyMeterSimulator/KimbalSpecifics/DataModel/

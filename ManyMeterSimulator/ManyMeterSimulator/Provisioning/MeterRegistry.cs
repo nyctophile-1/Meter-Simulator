@@ -72,7 +72,7 @@ public sealed class MeterRegistry
     /// Indices are allocated globally and sequentially across ALL batches regardless of NIC, so
     /// node id ranges can never overlap between batches or between NIC types.
     /// </summary>
-    public MeterBatch AddBatch(string name, string templateName, long count, NicType nicType = NicType.Tcp4G)
+    public MeterBatch AddBatch(string name, string templateName, long count, NicType nicType = NicType.Tcp4G, int? hesTemplateId = null)
     {
         if (count <= 0)
         {
@@ -99,6 +99,7 @@ public sealed class MeterRegistry
                 Name = name,
                 TemplateName = templateName,
                 NicType = nicType,
+                HesTemplateId = hesTemplateId,
                 StartIndex = _nextIndex,
                 Count = count
             };
@@ -235,6 +236,7 @@ public sealed class MeterRegistry
                     Name = pb.Name,
                     TemplateName = pb.TemplateName,
                     NicType = pb.NicType,
+                    HesTemplateId = pb.HesTemplateId,
                     StartIndex = pb.StartIndex,
                     Count = pb.Count,
                     Status = pb.Status,
@@ -260,6 +262,7 @@ public sealed class MeterRegistry
                 Name = b.Name,
                 TemplateName = b.TemplateName,
                 NicType = b.NicType,
+                HesTemplateId = b.HesTemplateId,
                 StartIndex = b.StartIndex,
                 Count = b.Count,
                 Status = b.Status,
