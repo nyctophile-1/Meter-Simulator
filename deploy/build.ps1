@@ -17,7 +17,7 @@ param(
     # Must match the IPv6 prefix delegated to the instance's ENI. The build fails if
     # appsettings.Production.json disagrees — a wrong prefix produces meters that look
     # fine in the UI and are unreachable from the HES.
-    [string]$ExpectedPrefix = '2406:da1a:1c29:500:bc96::/80'
+    [string]$ExpectedPrefix = '2406:da1a:261:6903:882d::/80'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -90,8 +90,11 @@ try {
     Write-Host "`nNext:" -ForegroundColor Yellow
     Write-Host '  $KEY = "C:\Users\ayush\OneDrive\Documents\Development\Sinhal Repos\all_creds\maya-sim-test.pem"'
     Write-Host '  cd "C:\Users\ayush\OneDrive\Documents\Development\Sinhal Repos\Meter-Simulator"'
-    Write-Host '  scp -i $KEY publish\maya-sim.tar.gz deploy\host-prep.sh deploy\deploy.sh ubuntu@[2406:da1a:1c29:500::65f5]:/tmp/'
-    Write-Host '  ssh -i $KEY ubuntu@[2406:da1a:1c29:500::65f5]'
+    # Org account instance i-0587520c9767568a1. SSH over IPv4: this ENI is prefix-only,
+    # so it has no global IPv6 address of its own to connect to.
+    Write-Host '  scp -i $KEY publish\maya-sim.tar.gz deploy\host-prep.sh deploy\deploy.sh ubuntu@15.252.116.146:/tmp/'
+    Write-Host '  ssh -i $KEY ubuntu@15.252.116.146'
+    Write-Host '  sudo bash /tmp/host-prep.sh          # first deployment only'
     Write-Host '  sudo bash /tmp/deploy.sh /tmp/maya-sim.tar.gz'
 }
 finally {
