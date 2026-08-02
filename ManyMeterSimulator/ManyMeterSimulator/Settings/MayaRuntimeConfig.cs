@@ -21,6 +21,9 @@ public sealed class MayaRuntimeConfig
     /// <summary>Simulated wire time applied before the request reaches the brain.</summary>
     public DelayRange? NetworkDelay { get; set; }
 
+    /// <summary>Field-impairment simulation: non-comm and bad-comm populations and rules.</summary>
+    public BadComm.BadCommConfig? BadComm { get; set; }
+
     // Future sections slot in here, e.g. a BridgeDelay to mimic slow meters:
     //     public DelayRange? BridgeDelay { get; set; }
 }

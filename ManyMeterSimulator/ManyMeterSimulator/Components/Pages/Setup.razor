@@ -24,59 +24,12 @@
         <code>@MeterRegistry.MaxIndex.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</code>
     </MudText>
 
-    <div class="d-flex align-center" style="gap:12px;">
-        <MudText Typo="Typo.body2" Class="mud-text-secondary">
-            Network delay:
-            <code>@NetworkDelay.Current.LowerMs&ndash;@NetworkDelay.Current.UpperMs ms</code>
-        </MudText>
-        @if (IsAdmin)
-        {
-            <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small"
-                       StartIcon="@Icons.Material.Filled.Timer" OnClick="OpenDelayDialog">
-                Configure delay
-            </MudButton>
-        }
-    </div>
+    @* Network delay lives on the BadComm page now, alongside the other field-condition knobs. *@
+    <MudText Typo="Typo.body2" Class="mud-text-secondary">
+        Network delay: <code>@NetworkDelay.Current.LowerMs&ndash;@NetworkDelay.Current.UpperMs ms</code>
+        <MudLink Href="badcomm" Class="ml-2">Configure</MudLink>
+    </MudText>
 </div>
-
-@* ---------- Network delay dialog ---------- *@
-<MudDialog @bind-Visible="_delayDialogOpen" Options="_delayDialogOptions">
-    <TitleContent>
-        <MudText Typo="Typo.h6">
-            <MudIcon Icon="@Icons.Material.Filled.Timer" Class="mr-2" />Network delay
-        </MudText>
-    </TitleContent>
-    <DialogContent>
-        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
-            Every meter waits a random time in this range before its request reaches the brain, so the
-            fleet responds at a realistic speed instead of instantly. Applies to <strong>all batches</strong>
-            and takes effect on the next exchange &mdash; no restart. Set both to 0 to disable.
-        </MudText>
-
-        <MudGrid>
-            <MudItem xs="6">
-                <MudNumericField T="int" @bind-Value="_delayLower" Label="Lower limit (ms)" Min="0"
-                                 Variant="Variant.Outlined" Immediate="true" />
-            </MudItem>
-            <MudItem xs="6">
-                <MudNumericField T="int" @bind-Value="_delayUpper" Label="Upper limit (ms)" Min="0"
-                                 Variant="Variant.Outlined" Immediate="true" />
-            </MudItem>
-        </MudGrid>
-
-        @if (DelayError is not null)
-        {
-            <MudAlert Severity="Severity.Error" Dense="true" Variant="Variant.Outlined" Class="mt-3">
-                @DelayError
-            </MudAlert>
-        }
-    </DialogContent>
-    <DialogActions>
-        <MudButton OnClick="@(() => _delayDialogOpen = false)">Cancel</MudButton>
-        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(DelayError is not null)"
-                   OnClick="SaveDelay">Save</MudButton>
-    </DialogActions>
-</MudDialog>
 
 @if (IsAdmin)
 {
@@ -232,65 +185,6 @@ else
     private string SelectedTemplate { get; set; } = "";
     private string? ErrorMessage;
     private string? UploadMessage;
-
-    // ---------- Network delay ----------
-    private bool _delayDialogOpen;
-    private int _delayLower;
-    private int _delayUpper;
-    private readonly DialogOptions _delayDialogOptions = new() { MaxWidth = MaxWidth.Small, FullWidth = true };
-
-    /// <summary>Validation message, or null when the current input is valid. Also gates Save.</summary>
-    private string? DelayError =>
-        _delayLower < 0 || _delayUpper < 0 ? "Delays cannot be negative."
-        : _delayUpper < _delayLower ? "Upper limit cannot be smaller than the lower limit."
-        : null;
-
-    private void OpenDelayDialog()
-    {
-        if (!IsAdmin)
-        {
-            return;
-        }
-
-        // Seed from the live values so the dialog always opens showing what is actually in force.
-        NetworkDelaySettings.Bounds current = NetworkDelay.Current;
-        _delayLower = current.LowerMs;
-        _delayUpper = current.UpperMs;
-        _delayDialogOpen = true;
-    }
-
-    private async Task SaveDelay()
-    {
-        if (!IsAdmin || DelayError is not null)
-        {
-            return;
-        }
-
-        string range = _delayLower == 0 && _delayUpper == 0
-            ? "no delay (meters answer immediately)"
-            : $"a random {_delayLower}–{_delayUpper} ms pause before every request reaches the brain";
-
-        bool? confirmed = await DialogService.ShowMessageBoxAsync(
-            "Apply network delay?",
-            $"All batches will use {range}. This takes effect on the next exchange for every " +
-            "connected meter, including sessions already open.",
-            yesText: "Apply", cancelText: "Cancel");
-
-        if (confirmed != true)
-        {
-            return;
-        }
-
-        if (!NetworkDelay.TryUpdate(_delayLower, _delayUpper))
-        {
-            Snackbar.Add("Could not apply those limits.", Severity.Error);
-            return;
-        }
-
-        _delayDialogOpen = false;
-        Snackbar.Add($"Network delay set to {_delayLower}–{_delayUpper} ms.", Severity.Success);
-    }
-
     // Templates can be large (the full-model XML is ~4 MB); allow generous headroom for upload.
     private const long MaxUploadBytes = 32 * 1024 * 1024;
 

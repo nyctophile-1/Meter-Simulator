@@ -1,10 +1,27 @@
 using System.Net;
+using ManyMeterSimulator.BadComm;
 
 namespace ManyMeterSimulator.Diagnostics;
 
 public sealed class ConnectionState
 {
     private long _lastActivityTicksUtc = DateTimeOffset.UtcNow.UtcTicks;
+
+    /// <summary>
+    /// Impairment resolved once for this meter, so rule evaluation stays off the per-exchange
+    /// path. <see cref="ImpairmentGeneration"/> is the classifier generation it was resolved
+    /// against; when the live classifier moves past it, the session re-resolves. That is what
+    /// makes a BadComm config change apply to ALREADY-OPEN connections rather than only new ones.
+    /// </summary>
+    public MeterImpairment Impairment { get; private set; } = MeterImpairment.Healthy;
+
+    public int ImpairmentGeneration { get; private set; } = -1;
+
+    public void SetImpairment(MeterImpairment impairment, int generation)
+    {
+        Impairment = impairment;
+        ImpairmentGeneration = generation;
+    }
 
     public required IPAddress MeterId { get; init; }
 

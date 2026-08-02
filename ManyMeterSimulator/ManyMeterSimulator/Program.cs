@@ -1,4 +1,5 @@
 using ManyMeterSimulator.Auth;
+using ManyMeterSimulator.BadComm;
 using ManyMeterSimulator.Brain;
 using ManyMeterSimulator.Components;
 using ManyMeterSimulator.Diagnostics;
@@ -90,10 +91,15 @@ builder.Services.AddSingleton<IRuntimeConfigStore, JsonRuntimeConfigStore>();
 // Singleton so the Setup page and the listener share one instance — that shared reference is
 // what makes a delay change take effect on the next exchange without a restart.
 builder.Services.AddSingleton<NetworkDelaySettings>();
+// Field-impairment simulation. Also persisted, and also read from the listener's hot path, so it
+// must be the same instance the BadComm page mutates.
+builder.Services.AddSingleton<BadCommSettings>();
 // Durable batch store first — MeterRegistry rehydrates from it on construction, so batches,
 // their status, and the allocation cursor survive restarts/reboots/redeployments.
 builder.Services.AddSingleton<IBatchStore, JsonBatchStore>();
 builder.Services.AddSingleton<MeterRegistry>();
+// Depends on both MeterRegistry and BadCommSettings, so it is registered after the batch store.
+builder.Services.AddSingleton<FleetCompositionCache>();
 builder.Services.AddSingleton<TemplateRegistry>();
 builder.Services.AddSingleton<MeterSessionManager>();
 

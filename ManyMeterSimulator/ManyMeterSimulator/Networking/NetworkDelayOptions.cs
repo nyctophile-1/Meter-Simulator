@@ -9,9 +9,15 @@ public class NetworkDelayOptions
 {
     public const string SectionName = "NetworkDelay";
 
-    /// <summary>Lower bound in milliseconds. 0 = no delay (the original behaviour).</summary>
-    public int LowerMs { get; set; }
+    /// <summary>
+    /// Lower bound in milliseconds. Defaults to 100 so a fresh deployment already behaves like a
+    /// real field link rather than answering instantly; set both bounds to 0 to disable.
+    /// </summary>
+    public int LowerMs { get; set; } = 100;
 
-    /// <summary>Upper bound in milliseconds, inclusive. Must be >= <see cref="LowerMs"/>.</summary>
-    public int UpperMs { get; set; }
+    /// <summary>
+    /// Upper bound in milliseconds, inclusive. Must be >= <see cref="LowerMs"/> and no more than
+    /// <see cref="DelayLimits.MaxNetworkDelayMs"/>. 100-300 gives a ~200 ms mean round trip.
+    /// </summary>
+    public int UpperMs { get; set; } = 300;
 }

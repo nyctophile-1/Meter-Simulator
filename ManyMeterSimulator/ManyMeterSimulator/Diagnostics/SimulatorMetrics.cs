@@ -16,6 +16,12 @@ public sealed class SimulatorMetrics
     // "how long the brain took" and "how long we pretended the network took" stay distinguishable.
     private long _networkLatencyTicksSum;
     private long _networkLatencyMaxTicks;
+    // Bad-comm latency is tracked apart from the network-latency average: a 25x outlier would
+    // otherwise drag that figure away from what a healthy meter actually experiences.
+    private long _badCommDelayTicksSum;
+    private long _badCommDelayCount;
+    private long _totalNonCommDrops;
+    private long _totalBadCommDrops;
 
     public void RecordAccepted() => Interlocked.Increment(ref _totalAccepted);
 
@@ -47,6 +53,19 @@ public sealed class SimulatorMetrics
         InterlockedMax(ref _networkLatencyMaxTicks, networkLatency.Ticks);
     }
 
+    /// <summary>A request swallowed because the meter is non-comm.</summary>
+    public void RecordNonCommDrop() => Interlocked.Increment(ref _totalNonCommDrops);
+
+    /// <summary>An exchange lost to bad-comm packet loss.</summary>
+    public void RecordBadCommDrop() => Interlocked.Increment(ref _totalBadCommDrops);
+
+    /// <summary>The (multiplied) delay applied to one bad-comm exchange.</summary>
+    public void RecordBadCommDelay(TimeSpan delay)
+    {
+        Interlocked.Add(ref _badCommDelayTicksSum, delay.Ticks);
+        Interlocked.Increment(ref _badCommDelayCount);
+    }
+
     public SimulatorMetricsSnapshot Snapshot(int activeConnections)
     {
         long totalExchanges = Interlocked.Read(ref _totalExchanges);
@@ -55,6 +74,13 @@ public sealed class SimulatorMetrics
 
         long netTicksSum = Interlocked.Read(ref _networkLatencyTicksSum);
         TimeSpan avgNetworkLatency = totalExchanges == 0 ? TimeSpan.Zero : TimeSpan.FromTicks(netTicksSum / totalExchanges);
+
+        // Averaged over bad-comm exchanges only, not all exchanges - otherwise the figure would
+        // shrink as the healthy population grows and would stop describing a bad meter at all.
+        long badCommCount = Interlocked.Read(ref _badCommDelayCount);
+        TimeSpan avgBadCommDelay = badCommCount == 0
+            ? TimeSpan.Zero
+            : TimeSpan.FromTicks(Interlocked.Read(ref _badCommDelayTicksSum) / badCommCount);
 
         return new SimulatorMetricsSnapshot(
             activeConnections,
@@ -68,7 +94,10 @@ public sealed class SimulatorMetrics
             avgLatency,
             TimeSpan.FromTicks(Interlocked.Read(ref _bridgeLatencyMaxTicks)),
             avgNetworkLatency,
-            TimeSpan.FromTicks(Interlocked.Read(ref _networkLatencyMaxTicks)));
+            TimeSpan.FromTicks(Interlocked.Read(ref _networkLatencyMaxTicks)),
+            Interlocked.Read(ref _totalNonCommDrops),
+            Interlocked.Read(ref _totalBadCommDrops),
+            avgBadCommDelay);
     }
 
     private static void InterlockedMax(ref long location, long value)
@@ -98,4 +127,7 @@ public readonly record struct SimulatorMetricsSnapshot(
     TimeSpan AvgBridgeLatency,
     TimeSpan MaxBridgeLatency,
     TimeSpan AvgNetworkLatency,
-    TimeSpan MaxNetworkLatency);
+    TimeSpan MaxNetworkLatency,
+    long TotalNonCommDrops,
+    long TotalBadCommDrops,
+    TimeSpan AvgBadCommDelay);

@@ -4,6 +4,7 @@ using System.IO.Pipelines;
 using System.Net;
 using System.Net.Sockets;
 using Microsoft.Extensions.Options;
+using ManyMeterSimulator.BadComm;
 using ManyMeterSimulator.Diagnostics;
 using ManyMeterSimulator.Framing;
 using ManyMeterSimulator.MqttBridge;
@@ -21,6 +22,7 @@ public class TcpNicListenerService : BackgroundService
     private readonly MeterRegistry _meterRegistry;
     private readonly TemplateRegistry _templateRegistry;
     private readonly NetworkDelaySettings _networkDelay;
+    private readonly BadCommSettings _badComm;
     private readonly IHostApplicationLifetime _appLifetime;
 
     // Deliberately NOT the same token ExecuteAsync receives: that one is cancelled the instant
@@ -42,6 +44,7 @@ public class TcpNicListenerService : BackgroundService
         MeterRegistry meterRegistry,
         TemplateRegistry templateRegistry,
         NetworkDelaySettings networkDelay,
+        BadCommSettings badComm,
         IHostApplicationLifetime appLifetime)
     {
         _logger = logger;
@@ -52,6 +55,7 @@ public class TcpNicListenerService : BackgroundService
         _meterRegistry = meterRegistry;
         _templateRegistry = templateRegistry;
         _networkDelay = networkDelay;
+        _badComm = badComm;
         _appLifetime = appLifetime;
     }
 
@@ -179,12 +183,15 @@ public class TcpNicListenerService : BackgroundService
             "rejectedMaxConn={RejectedMaxConn}, rejectedBatchNotRunning={RejectedBatchNotRunning}, " +
             "rejectedNoTemplate={RejectedNoTemplate}, idleTimeouts={IdleTimeouts}, exchanges={Exchanges}, " +
             "avgBridgeLatency={AvgLatencyMs}ms, maxBridgeLatency={MaxLatencyMs}ms, " +
-            "avgNetworkLatency={AvgNetworkMs}ms, maxNetworkLatency={MaxNetworkMs}ms",
+            "avgNetworkLatency={AvgNetworkMs}ms, maxNetworkLatency={MaxNetworkMs}ms, " +
+            "nonCommDrops={NonCommDrops}, badCommDrops={BadCommDrops}, avgBadCommDelay={AvgBadCommMs}ms",
             kind, snapshot.ActiveConnections, snapshot.TotalAccepted, snapshot.TotalRejectedCollision,
             snapshot.TotalRejectedMaxConnections, snapshot.TotalRejectedBatchNotRunning,
             snapshot.TotalRejectedNoTemplate, snapshot.TotalIdleTimeouts, snapshot.TotalExchanges,
             snapshot.AvgBridgeLatency.TotalMilliseconds, snapshot.MaxBridgeLatency.TotalMilliseconds,
-            snapshot.AvgNetworkLatency.TotalMilliseconds, snapshot.MaxNetworkLatency.TotalMilliseconds);
+            snapshot.AvgNetworkLatency.TotalMilliseconds, snapshot.MaxNetworkLatency.TotalMilliseconds,
+            snapshot.TotalNonCommDrops, snapshot.TotalBadCommDrops,
+            snapshot.AvgBadCommDelay.TotalMilliseconds);
     }
 
     private async Task HandleConnectionAsync(Socket connection)
@@ -290,16 +297,55 @@ public class TcpNicListenerService : BackgroundService
                         "Meter {MeterId}: received frame (srcWPort={Src}, dstWPort={Dst}, {Length} payload bytes)",
                         state.MeterId, frame.SourceWPort, frame.DestinationWPort, frame.Payload.Length);
 
+                    // Re-resolve if the operator changed the BadComm config since this connection
+                    // was classified, so a change is retroactive for open sessions too.
+                    MeterClassifier classifier = _badComm.Classifier;
+                    if (state.ImpairmentGeneration != classifier.Generation)
+                    {
+                        state.SetImpairment(
+                            classifier.Classify(MeterAddressing.ExtractIndex(state.MeterId)),
+                            classifier.Generation);
+                    }
+
+                    MeterImpairment impairment = state.Impairment;
+
+                    // Non-comm: swallow the request. No reply, no close - the HES waits out its
+                    // own timeout and retries, which is what makes the command consume the full
+                    // SLA budget. Closing here instead would fast-fail and understate the cost.
+                    if (impairment.Class == CommClass.NonComm)
+                    {
+                        _metrics.RecordNonCommDrop();
+                        _logger.LogDebug("Meter {MeterId}: non-comm, request swallowed", state.MeterId);
+                        continue;
+                    }
+
                     // Simulated wire time so the fleet doesn't answer implausibly fast. Applied
                     // here — NIC has the request, brain has not seen it yet — and deliberately
                     // OUTSIDE the stopwatch below, so bridge latency stays a true measure of the
                     // brain. The delay is reported separately as network latency.
-                    int delayMs = _networkDelay.NextDelayMs();
+                    int delayMs = NetworkDelaySettings.ApplyImpairment(
+                        _networkDelay.NextDelayMs(), impairment.Multiplier);
+
                     if (delayMs > 0)
                     {
                         await Task.Delay(delayMs, sessionToken);
                     }
                     _metrics.RecordNetworkDelay(TimeSpan.FromMilliseconds(delayMs));
+
+                    // Bad-comm packet loss, drawn per exchange. A command needs ~10 exchanges, so
+                    // a 5% drop here fails roughly 40% of commands - the HES must retry.
+                    if (impairment.Class == CommClass.BadComm)
+                    {
+                        _metrics.RecordBadCommDelay(TimeSpan.FromMilliseconds(delayMs));
+
+                        if (impairment.FailureRatePercent > 0 &&
+                            Random.Shared.NextDouble() * 100 < impairment.FailureRatePercent)
+                        {
+                            _metrics.RecordBadCommDrop();
+                            _logger.LogDebug("Meter {MeterId}: bad-comm dropped this exchange", state.MeterId);
+                            continue;
+                        }
+                    }
 
                     var bridgeStopwatch = Stopwatch.StartNew();
                     // Hand the brain the COMPLETE frame; it returns a complete wrapper reply

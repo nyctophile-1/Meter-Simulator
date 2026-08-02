@@ -10,9 +10,12 @@ namespace ManyMeterSimulator.Networking;
 /// Global for every batch by design — per-batch delays were not wanted, and one shared value
 /// keeps the hot path free of any per-meter lookup.
 ///
-/// Changed live from the Setup page: the listener reads the current bounds on every exchange,
-/// so an update takes effect on the next request with no restart. Values are held in memory
-/// only, so a restart falls back to the configured <see cref="NetworkDelayOptions"/> defaults.
+/// Changed live from the BadComm page: the listener reads the current bounds on every exchange,
+/// so an update takes effect on the next request with no restart. The chosen value is persisted
+/// to the runtime config store, so it also survives a restart or redeploy.
+///
+/// Both bounds are capped at <see cref="DelayLimits.MaxNetworkDelayMs"/> - see that type for why
+/// the ceiling matters to the idle sweep.
 /// </summary>
 public sealed class NetworkDelaySettings
 {
@@ -34,20 +37,23 @@ public sealed class NetworkDelaySettings
         // manual. With no persisted value, fall back to configuration (0/0 unless a deployment
         // seeds it).
         DelayRange? persisted = store.Current.NetworkDelay;
-        int lower = Math.Max(0, persisted?.LowerMs ?? options.Value.LowerMs);
-        int upper = Math.Max(lower, persisted?.UpperMs ?? options.Value.UpperMs);
-        _bounds = new Bounds(lower, upper);
+        int lower = DelayLimits.ClampNetworkDelay(persisted?.LowerMs ?? options.Value.LowerMs);
+        int upper = DelayLimits.ClampNetworkDelay(persisted?.UpperMs ?? options.Value.UpperMs);
+        _bounds = new Bounds(lower, Math.Max(lower, upper));
     }
 
     public Bounds Current => _bounds;
 
     /// <summary>
-    /// Applies new bounds. Returns false (and changes nothing) if either value is negative or
-    /// the upper bound is below the lower one.
+    /// Applies new bounds. Returns false (and changes nothing) if either value is negative, above
+    /// <see cref="DelayLimits.MaxNetworkDelayMs"/>, or the upper bound is below the lower one.
+    /// Rejected rather than silently clamped: an operator who typed 20000 should be told, not
+    /// quietly given 10000.
     /// </summary>
     public bool TryUpdate(int lowerMs, int upperMs)
     {
-        if (lowerMs < 0 || upperMs < 0 || upperMs < lowerMs)
+        if (lowerMs < 0 || upperMs < 0 || upperMs < lowerMs ||
+            lowerMs > DelayLimits.MaxNetworkDelayMs || upperMs > DelayLimits.MaxNetworkDelayMs)
         {
             return false;
         }
@@ -75,5 +81,35 @@ public sealed class NetworkDelaySettings
         // Upper bound is inclusive, hence +1. Random.Shared is thread-safe, so thousands of
         // concurrent sessions can draw without contending on a shared Random instance.
         return b.LowerMs >= b.UpperMs ? b.LowerMs : Random.Shared.Next(b.LowerMs, b.UpperMs + 1);
+    }
+
+    /// <summary>
+    /// Scales a base network delay by a bad-comm multiplier and enforces the ceiling.
+    ///
+    /// Three things are happening, all deliberate:
+    ///
+    /// 1. <c>Math.Max(1, ...)</c> - with the network delay at 0 the multiplier would have nothing
+    ///    to act on, so a bad-comm meter would be indistinguishable from a healthy one.
+    /// 2. Past the saturation threshold the result is REDRAWN in an 8-12 s band rather than
+    ///    clipped to a constant. Clipping collapses the tail of the latency histogram onto a
+    ///    single spike, which looks nothing like real timeouts; the band keeps the same mean and
+    ///    preserves variance.
+    /// 3. A final unconditional clamp. Redundant today, kept so the ceiling is a property of the
+    ///    code rather than of the current formula - the idle sweep's safety depends on it.
+    /// </summary>
+    public static int ApplyImpairment(int baseDelayMs, int multiplier)
+    {
+        if (multiplier <= 1)
+        {
+            return Math.Min(baseDelayMs, DelayLimits.AbsoluteMaxMs);
+        }
+
+        long raw = Math.Max(1, baseDelayMs) * (long)multiplier;
+
+        int delay = raw <= DelayLimits.SaturationThresholdMs
+            ? (int)raw
+            : Random.Shared.Next(DelayLimits.SaturationLowerMs, DelayLimits.SaturationUpperMs + 1);
+
+        return Math.Min(delay, DelayLimits.AbsoluteMaxMs);
     }
 }

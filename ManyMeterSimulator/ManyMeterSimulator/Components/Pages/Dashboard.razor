@@ -6,6 +6,8 @@
 @using Microsoft.AspNetCore.Authorization
 @using ManyMeterSimulator.Diagnostics
 @using ManyMeterSimulator.Brain
+@using ManyMeterSimulator.BadComm
+@inject FleetCompositionCache Composition
 @inject SimulatorMetrics Metrics
 @inject ConnectionRegistry Connections
 @inject MeterSessionManager Sessions
@@ -279,6 +281,76 @@
             <MudProgressLinear Color="Color.Info" Value="@MaterializedPercent" Size="Size.Large" Rounded="true" />
         </MudPaper>
     </MudItem>
+
+    @* ---------- Comms health ---------- *@
+    <MudItem xs="12">
+        <MudPaper Elevation="1" Class="pa-4">
+            <div class="d-flex align-center justify-space-between flex-wrap mb-3" style="gap:12px;">
+                <MudText Typo="Typo.subtitle1">Comms health</MudText>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                    @if (_comms.Total == 0)
+                    {
+                        <span>no batches provisioned</span>
+                    }
+                    else
+                    {
+                        <span>@_comms.Total.ToString("N0") provisioned &middot; <MudLink Href="badcomm">configure</MudLink></span>
+                    }
+                </MudText>
+            </div>
+
+            <MudGrid>
+                <MudItem xs="12" md="6">
+                    @if (_comms.Total == 0)
+                    {
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary">Nothing to show yet.</MudText>
+                    }
+                    else
+                    {
+                        <div class="batch-bar">
+                            <div class="batch-seg" style="width:@F(_comms.PercentOf(_comms.Healthy))%;background:#4ec9b0;"></div>
+                            <div class="batch-seg" style="width:@F(_comms.PercentOf(_comms.BadComm))%;background:#e0a458;"></div>
+                            <div class="batch-seg" style="width:@F(_comms.PercentOf(_comms.NonComm))%;background:#f48771;"></div>
+                        </div>
+                        <div class="batch-legend mt-3">
+                            @foreach (var seg in CommsSegments)
+                            {
+                                <div class="batch-legend-row">
+                                    <span class="legend-dot" style="background:@seg.Color;"></span>
+                                    <span class="batch-legend-label">@seg.Label</span>
+                                    <span class="batch-legend-count">@seg.Count.ToString("N0")</span>
+                                    <span class="batch-legend-meters">@F(_comms.PercentOf(seg.Count))%</span>
+                                </div>
+                            }
+                        </div>
+                    }
+                </MudItem>
+
+                <MudItem xs="12" md="6">
+                    <MudGrid>
+                        <MudItem xs="4">
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">Non-comm drops</MudText>
+                            <MudText Typo="Typo.h5" Style="font-weight:600;">@_snap.TotalNonCommDrops.ToString("N0")</MudText>
+                        </MudItem>
+                        <MudItem xs="4">
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">Bad-comm drops</MudText>
+                            <MudText Typo="Typo.h5" Style="font-weight:600;">@_snap.TotalBadCommDrops.ToString("N0")</MudText>
+                        </MudItem>
+                        <MudItem xs="4">
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">Avg bad-comm delay</MudText>
+                            <MudText Typo="Typo.h5" Style="font-weight:600;">
+                                @_snap.AvgBadCommDelay.TotalMilliseconds.ToString("N0") <span class="unit">ms</span>
+                            </MudText>
+                        </MudItem>
+                    </MudGrid>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mt-3">
+                        Drops are exchanges the NIC swallowed. A command needs several exchanges, so
+                        one drop fails the whole command and the HES must retry.
+                    </MudText>
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+    </MudItem>
 </MudGrid>
 
 @code {
@@ -308,6 +380,9 @@
     private long _provisionedMeters;
     private int _runningBatches, _stoppedBatches, _notStartedBatches, _totalBatches;
     private IReadOnlyList<MeterBatch> _batches = Array.Empty<MeterBatch>();
+    // Cached by FleetCompositionCache: recomputing this walks every provisioned index, so it must
+    // not be recalculated on the 2s sample. The cache returns instantly unless config changed.
+    private FleetComposition _comms;
     private long _rejectionsTotal;
     private int _maxConns;
 
@@ -339,6 +414,8 @@
         _stoppedBatches = batches.Count(b => b.Status == BatchStatus.Stopped);
         _notStartedBatches = batches.Count(b => b.Status == BatchStatus.NotStarted);
         _provisionedMeters = batches.Sum(b => b.Count);
+
+        _comms = Composition.Current();
 
         _rejectionsTotal = _snap.TotalRejectedCollision + _snap.TotalRejectedMaxConnections
             + _snap.TotalRejectedBatchNotRunning + _snap.TotalRejectedNoTemplate + _snap.TotalIdleTimeouts;
@@ -462,6 +539,13 @@
         ("Running", "#4ec9b0", _runningBatches, _batches.Where(b => b.Status == BatchStatus.Running).Sum(b => b.Count)),
         ("Stopped", "#e0a458", _stoppedBatches, _batches.Where(b => b.Status == BatchStatus.Stopped).Sum(b => b.Count)),
         ("Not started", "#6b7178", _notStartedBatches, _batches.Where(b => b.Status == BatchStatus.NotStarted).Sum(b => b.Count)),
+    };
+
+    private IEnumerable<(string Label, string Color, long Count)> CommsSegments => new[]
+    {
+        ("Healthy", "#4ec9b0", _comms.Healthy),
+        ("Bad-comm", "#e0a458", _comms.BadComm),
+        ("Non-comm", "#f48771", _comms.NonComm),
     };
 
     private static string StatusColor(BatchStatus status) => status switch
