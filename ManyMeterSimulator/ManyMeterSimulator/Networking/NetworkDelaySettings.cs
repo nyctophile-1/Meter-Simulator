@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Options;
+using ManyMeterSimulator.Settings;
 
 namespace ManyMeterSimulator.Networking;
 
@@ -22,11 +23,19 @@ public sealed class NetworkDelaySettings
     public sealed record Bounds(int LowerMs, int UpperMs);
 
     private volatile Bounds _bounds;
+    private readonly IRuntimeConfigStore _store;
 
-    public NetworkDelaySettings(IOptions<NetworkDelayOptions> options)
+    public NetworkDelaySettings(IOptions<NetworkDelayOptions> options, IRuntimeConfigStore store)
     {
-        int lower = Math.Max(0, options.Value.LowerMs);
-        int upper = Math.Max(lower, options.Value.UpperMs);
+        _store = store;
+
+        // A value the operator set in the UI outranks the deployed default: it is the more recent,
+        // more deliberate decision, and re-applying it after every restart would otherwise be
+        // manual. With no persisted value, fall back to configuration (0/0 unless a deployment
+        // seeds it).
+        DelayRange? persisted = store.Current.NetworkDelay;
+        int lower = Math.Max(0, persisted?.LowerMs ?? options.Value.LowerMs);
+        int upper = Math.Max(lower, persisted?.UpperMs ?? options.Value.UpperMs);
         _bounds = new Bounds(lower, upper);
     }
 
@@ -44,6 +53,10 @@ public sealed class NetworkDelaySettings
         }
 
         _bounds = new Bounds(lowerMs, upperMs);
+
+        // Write through so the change survives a restart or redeploy. Only this section is
+        // touched, so any other setting in the document is left intact.
+        _store.Update(doc => doc.NetworkDelay = new DelayRange { LowerMs = lowerMs, UpperMs = upperMs });
         return true;
     }
 

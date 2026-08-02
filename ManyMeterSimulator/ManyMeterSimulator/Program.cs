@@ -5,6 +5,7 @@ using ManyMeterSimulator.Diagnostics;
 using ManyMeterSimulator.MqttBridge;
 using ManyMeterSimulator.Networking;
 using ManyMeterSimulator.Provisioning;
+using ManyMeterSimulator.Settings;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using MudBlazor.Services;
 using Serilog;
@@ -82,6 +83,10 @@ builder.Services.Configure<HostOptions>(o => o.ShutdownTimeout = TimeSpan.FromSe
 
 builder.Services.AddSingleton<ConnectionRegistry>();
 builder.Services.AddSingleton<SimulatorMetrics>();
+// Operator-set runtime knobs (network delay today, more later), persisted alongside — but
+// deliberately not inside — the batch store. Registered before NetworkDelaySettings, which
+// rehydrates from it on construction.
+builder.Services.AddSingleton<IRuntimeConfigStore, JsonRuntimeConfigStore>();
 // Singleton so the Setup page and the listener share one instance — that shared reference is
 // what makes a delay change take effect on the next exchange without a restart.
 builder.Services.AddSingleton<NetworkDelaySettings>();
