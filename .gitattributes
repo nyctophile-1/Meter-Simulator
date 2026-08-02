@@ -1,2 +1,9 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Shell scripts MUST keep LF even on Windows checkouts. With core.autocrlf=true these
+# would otherwise arrive on the Linux host with CRLF, and bash fails on the very first
+# line with a scrambled "set: pipefail\r: invalid option name" - the \r is part of the
+# argument AND returns the cursor mid-line, which mangles the error text too.
+*.sh text eol=lf
+
