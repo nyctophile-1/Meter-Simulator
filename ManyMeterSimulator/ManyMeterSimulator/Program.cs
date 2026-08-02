@@ -59,7 +59,7 @@ builder.Services.Configure<AuthOptions>(builder.Configuration.GetSection(AuthOpt
 builder.Services.Configure<TemplateOptions>(builder.Configuration.GetSection(TemplateOptions.SectionName));
 builder.Services.Configure<BrainOptions>(builder.Configuration.GetSection(BrainOptions.SectionName));
 builder.Services.Configure<PersistenceOptions>(builder.Configuration.GetSection(PersistenceOptions.SectionName));
-builder.Services.Configure<ExchangeDelayOptions>(builder.Configuration.GetSection(ExchangeDelayOptions.SectionName));
+builder.Services.Configure<NetworkDelayOptions>(builder.Configuration.GetSection(NetworkDelayOptions.SectionName));
 
 // The meter IP prefix is a per-deployment infrastructure value — it must match the IPv6 /64 routed
 // to THIS host. Validate it early so a misconfigured/typo'd/missing prefix fails fast with a clear
@@ -84,7 +84,7 @@ builder.Services.AddSingleton<ConnectionRegistry>();
 builder.Services.AddSingleton<SimulatorMetrics>();
 // Singleton so the Setup page and the listener share one instance — that shared reference is
 // what makes a delay change take effect on the next exchange without a restart.
-builder.Services.AddSingleton<ExchangeDelaySettings>();
+builder.Services.AddSingleton<NetworkDelaySettings>();
 // Durable batch store first — MeterRegistry rehydrates from it on construction, so batches,
 // their status, and the allocation cursor survive restarts/reboots/redeployments.
 builder.Services.AddSingleton<IBatchStore, JsonBatchStore>();

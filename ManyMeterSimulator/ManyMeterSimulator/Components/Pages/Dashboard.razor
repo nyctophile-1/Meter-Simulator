@@ -247,6 +247,8 @@
             </div>
             <MudProgressLinear Color="@CapacityColor" Value="@CapacityPercent" Size="Size.Large" Rounded="true" />
 
+            @* Bridge = time in the brain. Network = the simulated wire delay applied before it.
+               Kept apart so a slow brain is never mistaken for the delay you configured. *@
             <MudGrid Class="mt-6">
                 <MudItem xs="6">
                     <MudText Typo="Typo.caption" Class="mud-text-secondary">Avg bridge latency</MudText>
@@ -255,6 +257,14 @@
                 <MudItem xs="6">
                     <MudText Typo="Typo.caption" Class="mud-text-secondary">Max bridge latency</MudText>
                     <MudText Typo="Typo.h5" Style="font-weight:600;">@_snap.MaxBridgeLatency.TotalMilliseconds.ToString("N1") <span class="unit">ms</span></MudText>
+                </MudItem>
+                <MudItem xs="6">
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Avg network latency</MudText>
+                    <MudText Typo="Typo.h5" Style="font-weight:600;">@_snap.AvgNetworkLatency.TotalMilliseconds.ToString("N1") <span class="unit">ms</span></MudText>
+                </MudItem>
+                <MudItem xs="6">
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Max network latency</MudText>
+                    <MudText Typo="Typo.h5" Style="font-weight:600;">@_snap.MaxNetworkLatency.TotalMilliseconds.ToString("N1") <span class="unit">ms</span></MudText>
                 </MudItem>
             </MudGrid>
 

@@ -11,9 +11,9 @@ namespace ManyMeterSimulator.Networking;
 ///
 /// Changed live from the Setup page: the listener reads the current bounds on every exchange,
 /// so an update takes effect on the next request with no restart. Values are held in memory
-/// only, so a restart falls back to the configured <see cref="ExchangeDelayOptions"/> defaults.
+/// only, so a restart falls back to the configured <see cref="NetworkDelayOptions"/> defaults.
 /// </summary>
-public sealed class ExchangeDelaySettings
+public sealed class NetworkDelaySettings
 {
     /// <summary>
     /// Both bounds in one immutable object behind a single volatile reference: readers can never
@@ -23,7 +23,7 @@ public sealed class ExchangeDelaySettings
 
     private volatile Bounds _bounds;
 
-    public ExchangeDelaySettings(IOptions<ExchangeDelayOptions> options)
+    public NetworkDelaySettings(IOptions<NetworkDelayOptions> options)
     {
         int lower = Math.Max(0, options.Value.LowerMs);
         int upper = Math.Max(lower, options.Value.UpperMs);

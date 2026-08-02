@@ -13,7 +13,7 @@
 @inject IOptions<TcpOptions> TcpOptionsAccessor
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
-@inject ExchangeDelaySettings ExchangeDelay
+@inject NetworkDelaySettings NetworkDelay
 @inject IJSRuntime JS
 
 <PageTitle>MAYA - Setup</PageTitle>
@@ -26,8 +26,8 @@
 
     <div class="d-flex align-center" style="gap:12px;">
         <MudText Typo="Typo.body2" Class="mud-text-secondary">
-            Exchange delay:
-            <code>@ExchangeDelay.Current.LowerMs&ndash;@ExchangeDelay.Current.UpperMs ms</code>
+            Network delay:
+            <code>@NetworkDelay.Current.LowerMs&ndash;@NetworkDelay.Current.UpperMs ms</code>
         </MudText>
         @if (IsAdmin)
         {
@@ -39,11 +39,11 @@
     </div>
 </div>
 
-@* ---------- Exchange delay dialog ---------- *@
+@* ---------- Network delay dialog ---------- *@
 <MudDialog @bind-Visible="_delayDialogOpen" Options="_delayDialogOptions">
     <TitleContent>
         <MudText Typo="Typo.h6">
-            <MudIcon Icon="@Icons.Material.Filled.Timer" Class="mr-2" />Exchange delay
+            <MudIcon Icon="@Icons.Material.Filled.Timer" Class="mr-2" />Network delay
         </MudText>
     </TitleContent>
     <DialogContent>
@@ -233,7 +233,7 @@ else
     private string? ErrorMessage;
     private string? UploadMessage;
 
-    // ---------- Exchange delay ----------
+    // ---------- Network delay ----------
     private bool _delayDialogOpen;
     private int _delayLower;
     private int _delayUpper;
@@ -253,7 +253,7 @@ else
         }
 
         // Seed from the live values so the dialog always opens showing what is actually in force.
-        ExchangeDelaySettings.Bounds current = ExchangeDelay.Current;
+        NetworkDelaySettings.Bounds current = NetworkDelay.Current;
         _delayLower = current.LowerMs;
         _delayUpper = current.UpperMs;
         _delayDialogOpen = true;
@@ -271,7 +271,7 @@ else
             : $"a random {_delayLower}–{_delayUpper} ms pause before every request reaches the brain";
 
         bool? confirmed = await DialogService.ShowMessageBoxAsync(
-            "Apply exchange delay?",
+            "Apply network delay?",
             $"All batches will use {range}. This takes effect on the next exchange for every " +
             "connected meter, including sessions already open.",
             yesText: "Apply", cancelText: "Cancel");
@@ -281,14 +281,14 @@ else
             return;
         }
 
-        if (!ExchangeDelay.TryUpdate(_delayLower, _delayUpper))
+        if (!NetworkDelay.TryUpdate(_delayLower, _delayUpper))
         {
             Snackbar.Add("Could not apply those limits.", Severity.Error);
             return;
         }
 
         _delayDialogOpen = false;
-        Snackbar.Add($"Exchange delay set to {_delayLower}–{_delayUpper} ms.", Severity.Success);
+        Snackbar.Add($"Network delay set to {_delayLower}–{_delayUpper} ms.", Severity.Success);
     }
 
     // Templates can be large (the full-model XML is ~4 MB); allow generous headroom for upload.
