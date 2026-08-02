@@ -20,6 +20,7 @@ public class TcpNicListenerService : BackgroundService
     private readonly SimulatorMetrics _metrics;
     private readonly MeterRegistry _meterRegistry;
     private readonly TemplateRegistry _templateRegistry;
+    private readonly ExchangeDelaySettings _exchangeDelay;
     private readonly IHostApplicationLifetime _appLifetime;
 
     // Deliberately NOT the same token ExecuteAsync receives: that one is cancelled the instant
@@ -40,6 +41,7 @@ public class TcpNicListenerService : BackgroundService
         SimulatorMetrics metrics,
         MeterRegistry meterRegistry,
         TemplateRegistry templateRegistry,
+        ExchangeDelaySettings exchangeDelay,
         IHostApplicationLifetime appLifetime)
     {
         _logger = logger;
@@ -49,6 +51,7 @@ public class TcpNicListenerService : BackgroundService
         _metrics = metrics;
         _meterRegistry = meterRegistry;
         _templateRegistry = templateRegistry;
+        _exchangeDelay = exchangeDelay;
         _appLifetime = appLifetime;
     }
 
@@ -284,6 +287,16 @@ public class TcpNicListenerService : BackgroundService
                     _logger.LogDebug(
                         "Meter {MeterId}: received frame (srcWPort={Src}, dstWPort={Dst}, {Length} payload bytes)",
                         state.MeterId, frame.SourceWPort, frame.DestinationWPort, frame.Payload.Length);
+
+                    // Artificial think-time so the fleet doesn't answer implausibly fast. Applied
+                    // here — NIC has the request, brain has not seen it yet — and deliberately
+                    // OUTSIDE the stopwatch below, so bridge-latency metrics stay a true measure
+                    // of the brain rather than of this sleep.
+                    int delayMs = _exchangeDelay.NextDelayMs();
+                    if (delayMs > 0)
+                    {
+                        await Task.Delay(delayMs, sessionToken);
+                    }
 
                     var bridgeStopwatch = Stopwatch.StartNew();
                     // Hand the brain the COMPLETE frame; it returns a complete wrapper reply
