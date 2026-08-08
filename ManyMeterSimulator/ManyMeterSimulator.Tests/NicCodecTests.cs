@@ -40,6 +40,11 @@ public class Mqtt4GCodecTests
     /// <summary>
     /// The round trip that matters: a node id taken off a request topic must produce a response
     /// topic HES parses back to the same id.
+    ///
+    /// <para>
+    /// Only the node id is in the topic. HES reads exactly <c>Split('/')[1]</c> here; its frame-id
+    /// read at [2] is commented out, so the topic stays two segments.
+    /// </para>
     /// </summary>
     [Fact]
     public void ResponseTopic_IsParsedBackToTheSameNodeIdByHesRules()
@@ -50,6 +55,37 @@ public class Mqtt4GCodecTests
 
         Assert.Equal("PollResponse/4242", responseTopic);
         Assert.Equal(route.NodeId, responseTopic.Split('/')[1]);   // exactly what HES does
+    }
+
+    /// <summary>
+    /// The frame id is HES's correlation half of <c>(meterNo, frameId)</c> and is opaque to us, so
+    /// it must come back exactly as it arrived, at bytes 4..5 — which is where
+    /// <c>IsCompletePacketDirectDLMS</c> reads it on the single-fragment path.
+    ///
+    /// <para>
+    /// Asserted on the raw BYTES, not the parsed value: we echo the two bytes we were given, so the
+    /// round trip holds whatever endianness HES uses at either end. A lookup miss here is a silent
+    /// <c>return</c> in HES with no log line at all, so there is no downstream signal to catch it.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void Encode_EchoesTheRequestFrameIdBytesVerbatimIntoTheHeader()
+    {
+        byte[] requestFrameIdBytes = [0xC5, 0x01];   // frameId 453 as HES put it on the wire
+
+        var request = new NicEnvelope(
+            "PollRequest/537",
+            [0x2D, 0x00, 0x01, 0x01, requestFrameIdBytes[0], requestFrameIdBytes[1], 0x00, 0x01],
+            DateTimeOffset.UtcNow);
+
+        Assert.True(Codec.TryRoute(request, out NicRoute route));
+        NicDecodeResult decoded = Codec.Decode(request, route);
+        Assert.Equal(453, decoded.FrameId);
+
+        NicPublish publish = Codec.Encode(request, route, decoded.FrameId, new byte[] { 0x61, 0x29 })[0];
+
+        Assert.Equal("PollResponse/537", publish.Topic);
+        Assert.Equal(requestFrameIdBytes, publish.Payload[4..6]);
     }
 
     [Fact]

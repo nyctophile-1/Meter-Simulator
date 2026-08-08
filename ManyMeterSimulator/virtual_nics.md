@@ -830,9 +830,30 @@ Protobuf envelope (protobuf-net, `GenericMessage`):
   plus `header.gw_id`, `header.sink_id`, `header.event_id`, `travel_time_ms`, `rx_time_ms_epoch`,
   `qos`, `payload_size`, `hop_count`.
 
-**The two directions are NOT symmetric.** This is the most important finding in this document:
+> **CORRECTED 2026-08-08 by live capture — the two directions ARE symmetric.**
+>
+> This section previously claimed the request was a **trailer**, read out of
+> `MQTTSendCommandClient.GetPacketFragments`. A captured request for simulated node 507 disproves it:
+>
+> ```
+> gw-request/send_data/direct_tcp/direct_tcp   (send_packet_req, dst_ep 3, dst_addr 507)
+> payload: 2C 01 01 AD 01 | 00 01 00 10 00 01 00 1F | 60 1D … FF FF
+>          ^len=44 ^1of1  ^frameId=429    ^DLMS wrapper (8-byte WPDU + 31-byte AARQ)
+> ```
+>
+> Read as a header, every field is self-consistent: the length byte equals the true payload length
+> (44) and the fragment counts are 1/1. Read as a trailer, the same bytes claim **255 fragments** —
+> so the codec discarded a perfectly good request as unsupported fragmentation, at Debug level and
+> with no metric. The symptom was a Wirepas NIC that received traffic and silently answered nothing.
+>
+> Real meter uplinks in the HES log (`5F 01 09 AC 49` = 95 bytes, fragment 1 of 9, frameId 0x49AC)
+> use the same header, which is also what we already emitted — the response direction was always
+> right. **Both directions use the 5-byte header below.** The trailer layout is kept here only as a
+> record of what the source appeared to say; do not implement it.
+>
+> This is the case §9 step 2 warned about: *trust captures over code wherever they conflict.*
 
-*HES → meter — framing is a **TRAILER*** (`MQTTSendCommandClient.GetPacketFragments`):
+*The layout HES's source appeared to describe for HES → meter — a **TRAILER**, NOT what the wire shows:*
 
 | Offset | Size | Field |
 |--------|------|-------|
@@ -842,7 +863,7 @@ Protobuf envelope (protobuf-net, `GenericMessage`):
 | n+3 | 1 | total fragments |
 | n+4 | 1 | payload length (`chunkLength + 5`) |
 
-*meter → HES — framing is a **HEADER*** (`DLMSHandlingFunctions.IsCompletePacket`, `PullHeaderLength = 5`):
+*The real framing, **both directions*** (`DLMSHandlingFunctions.IsCompletePacket`, `PullHeaderLength = 5`):
 
 | Offset | Size | Field |
 |--------|------|-------|

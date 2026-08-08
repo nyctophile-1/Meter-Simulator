@@ -536,7 +536,10 @@ namespace MeterSimulator.DLMS
                 {
                     ContextId = ApplicationContextName.LogicalName
                 },
-                ClientSAP = 10 
+                // 0x10 = 16, the standard DLMS Public client. HES dials it as `0x10` in
+                // ClientFactory.CreateClient(true, 0x10, 1, Authentication.None, ...) — writing it
+                // as decimal 10 here made the SAP disagree with every real client.
+                ClientSAP = 16
             };
             publicAssoc.XDLMSContextInfo.Conformance =
                 Conformance.GeneralProtection |
@@ -573,10 +576,18 @@ namespace MeterSimulator.DLMS
                 },
                 ApplicationContextName = new GXApplicationContextName
                 {
-                    ContextId = ApplicationContextName.LogicalName
+                    // HES opens this association with context 2.16.756.5.8.1.3 — LN referencing
+                    // WITH ciphering — because its secure client sets Security.AuthenticationEncryption.
+                    // Declaring plain LogicalName here means Gurux matches no association for the
+                    // ciphered AARQ and answers nothing at all, which is invisible on both sides.
+                    ContextId = ApplicationContextName.LogicalNameWithCiphering
                 },
                 Secret = _meter.HLSKey,
-                ClientSAP = 30
+                // 0x30 = 48, the US (utility setting) client HES uses for the ciphered HLS
+                // association: CreateSecureClient(true, 0x30, 1, Authentication.High, HLSUSSecret, ...).
+                // As decimal 30 this association could never be matched, so the secure AARQ went
+                // unanswered and the HES pull stalled after its Step 4.
+                ClientSAP = 48
             };
 
             association.XDLMSContextInfo.Conformance =

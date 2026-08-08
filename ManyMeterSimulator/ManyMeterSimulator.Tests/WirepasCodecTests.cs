@@ -9,8 +9,15 @@ namespace ManyMeterSimulator.Tests;
 
 /// <summary>
 /// Wirepas is the variant most likely to be got wrong, for two reasons this file pins directly:
-/// the framing is asymmetric (trailer in, header out), and the request topic carries non-DLMS
-/// traffic that must be ignored rather than decoded.
+/// the exact framing layout, and the fact that the request topic carries non-DLMS traffic that must
+/// be ignored rather than decoded.
+///
+/// <para>
+/// The framing is a 5-byte HEADER in both directions. An earlier reading of the HES source had the
+/// request as a TRAILER; the live capture in
+/// <see cref="Decode_ReadsARealCapturedRequest"/> disproves it, and that test is the anchor — it is
+/// bytes off the wire rather than bytes derived from our own reading of anything.
+/// </para>
 /// </summary>
 public class WirepasCodecTests
 {
@@ -18,10 +25,10 @@ public class WirepasCodecTests
 
     private const string RequestTopic = "gw-request/send_data/DEMO100175/sink2";
 
-    /// <summary>Builds a downlink exactly as HES does: protobuf envelope wrapping a TRAILER-framed payload.</summary>
+    /// <summary>Builds a downlink exactly as HES does: protobuf envelope wrapping a HEADER-framed payload.</summary>
     private static NicEnvelope HesRequest(uint nodeId, byte[] dlms, ushort frameId, uint destinationEndpoint = 3)
     {
-        byte[] framed = HesTrailerFrame(dlms, frameId);
+        byte[] framed = HesHeaderFrame(dlms, frameId);
 
         var message = new GenericMessage
         {
@@ -45,17 +52,17 @@ public class WirepasCodecTests
     }
 
     /// <summary>
-    /// Literal port of <c>MQTTSendCommandClient.GetPacketFragments</c> for a single chunk:
-    /// frameId LE, payload, fragmentId, totalFragments, length — a TRAILER.
+    /// The framing HES actually puts on a request, as observed on the wire: a 5-byte HEADER, the
+    /// same layout it expects back on the uplink.
     /// </summary>
-    private static byte[] HesTrailerFrame(byte[] payload, ushort frameId)
+    private static byte[] HesHeaderFrame(byte[] payload, ushort frameId)
     {
-        var buffer = new byte[2 + payload.Length + 3];
-        BitConverter.GetBytes(frameId).CopyTo(buffer, 0);
-        payload.CopyTo(buffer, 2);
-        buffer[^3] = 1;                                   // fragmentId
-        buffer[^2] = 1;                                   // totalFragments
-        buffer[^1] = (byte)(payload.Length + 5);          // payloadLength
+        var buffer = new byte[5 + payload.Length];
+        buffer[0] = (byte)(payload.Length + 5);           // length, including the header
+        buffer[1] = 1;                                    // totalFragments
+        buffer[2] = 1;                                    // thisFragment
+        BitConverter.GetBytes(frameId).CopyTo(buffer, 3); // frameId LE
+        payload.CopyTo(buffer, 5);
         return buffer;
     }
 
@@ -138,10 +145,47 @@ public class WirepasCodecTests
         Assert.False(Codec.TryRoute(envelope, out _));
     }
 
-    // ── The asymmetry ─────────────────────────────────────────────────────────────────────────
+    // ── The framing ───────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// THE anchor test: a real <c>send_packet_req</c> captured from the live broker on 2026-08-08,
+    /// addressed to simulated node 507 on endpoint 3. These are bytes off the wire, so they outrank
+    /// any reading of the HES source — and they are what disproved the "request is a trailer"
+    /// conclusion in virtual_nics.md §14.2.
+    ///
+    /// <para>
+    /// The inner payload is <c>2C 01 01 AD 01</c> then the DLMS wrapper. Read as a header every
+    /// field agrees with the packet: length 0x2C = 44 = the real payload length, fragment 1 of 1,
+    /// frameId 429. Read as a trailer the same bytes claim 255 fragments, which is how a perfectly
+    /// good request came to be discarded as "unsupported fragmentation" and answered with silence.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void Decode_ReadsARealCapturedRequest()
+    {
+        const string capturedHex =
+            "0A4932470A0E0802120A6469726563745F74637010FB03180320032801322C2C0101AD01" +
+            "000100100001001F601DA109060760857405080101BE10040E01000000065F1F0400621E5DFFFF";
+
+        var envelope = new NicEnvelope(RequestTopic, Convert.FromHexString(capturedHex), DateTimeOffset.UtcNow);
+
+        Assert.True(Codec.TryRoute(envelope, out NicRoute route));
+        Assert.Equal("507", route.NodeId);
+
+        NicDecodeResult result = Codec.Decode(envelope, route);
+
+        Assert.True(result.IsComplete);
+        Assert.Equal(429, result.FrameId);
+
+        // Exactly the DLMS wrapper frame the brain expects: 8-byte WPDU header declaring 31 bytes,
+        // then a 31-byte AARQ. Nothing of the NIC framing may survive into it.
+        Assert.Equal(
+            Convert.FromHexString("000100100001001F601DA109060760857405080101BE10040E01000000065F1F0400621E5DFFFF"),
+            result.DlmsFrame);
+    }
 
     [Fact]
-    public void Decode_ReadsHesTrailerFraming()
+    public void Decode_ReadsHesHeaderFraming()
     {
         byte[] dlms = [0x00, 0x01, 0x00, 0x10, 0x00, 0x01, 0x00, 0x02, 0xAA, 0xBB];
 
@@ -154,7 +198,7 @@ public class WirepasCodecTests
     }
 
     [Fact]
-    public void Encode_WritesHeaderFraming_NotATrailer()
+    public void Encode_WritesHeaderFraming()
     {
         byte[] dlms = [0xAA, 0xBB, 0xCC];
 
@@ -168,18 +212,38 @@ public class WirepasCodecTests
             0x34, 0x12,   // frameId LE
             0xAA, 0xBB, 0xCC,
         ], framed);
-
-        // And explicitly NOT the trailer layout — the framing fields are at the FRONT.
-        Assert.NotEqual(0x34, framed[^3]);
     }
 
     /// <summary>
-    /// The test that stops someone "simplifying" the two directions into one shared layout: the
-    /// request trailer and the response header are read by different HES code and must stay
-    /// independently correct.
+    /// A real meter's uplink, quoted from the HES log: <c>5F 01 09 AC 49</c> — 95 bytes, and the
+    /// swap quirk in action (1/9 written as totalFragments = 1, thisFragment = 9). Pins that our
+    /// reader agrees with actual hardware, not just with our own writer.
     /// </summary>
     [Fact]
-    public void RequestTrailerAndResponseHeader_AreIndependentlyCorrect()
+    public void HesParse_AgreesWithARealMetersUplinkHeader()
+    {
+        byte[] realUplinkHeader = [0x5F, 0x01, 0x09, 0xAC, 0x49];
+
+        int totalFragments = realUplinkHeader[1];
+        int thisFragment = realUplinkHeader[2];
+        if (thisFragment > totalFragments)
+        {
+            (totalFragments, thisFragment) = (thisFragment, totalFragments);
+        }
+
+        Assert.Equal(95, realUplinkHeader[0]);
+        Assert.Equal(9, totalFragments);
+        Assert.Equal(1, thisFragment);
+        Assert.Equal(0x49AC, BitConverter.ToUInt16(realUplinkHeader, 3));
+    }
+
+    /// <summary>
+    /// Round-trips one direction into the other. Both use the same layout now, so this is a
+    /// consistency check rather than the asymmetry guard it used to be — the layout itself is
+    /// pinned by <see cref="Decode_ReadsARealCapturedRequest"/> against real bytes.
+    /// </summary>
+    [Fact]
+    public void RequestAndResponseFraming_RoundTrip()
     {
         byte[] dlms = [0x00, 0x01, 0x00, 0x10, 0x00, 0x01, 0x00, 0x02, 0x61, 0x29];
         const ushort frameId = 0x0777;
@@ -195,11 +259,17 @@ public class WirepasCodecTests
         Assert.Equal(frameId, parsedFrameId);
     }
 
+    /// <summary>
+    /// A first fragment is buffered, not refused. This used to report <c>Unsupported</c> while
+    /// inbound reassembly was deferred, which silently dropped HES's ciphered HLS association —
+    /// the only request it ever fragments. See <see cref="WirepasFragmentReassemblyTests"/> for the
+    /// full round trip on real captured fragments.
+    /// </summary>
     [Fact]
-    public void Decode_ReportsFragmentedRequestsAsUnsupported()
+    public void Decode_BuffersAFragmentedRequestInsteadOfRefusingIt()
     {
-        byte[] framed = HesTrailerFrame([1, 2, 3], 9);
-        framed[^2] = 4;   // totalFragments
+        byte[] framed = HesHeaderFrame([1, 2, 3], 9);
+        framed[1] = 4;   // totalFragments
 
         var message = new GenericMessage
         {
@@ -223,8 +293,9 @@ public class WirepasCodecTests
         Codec.TryRoute(envelope, out NicRoute route);
         NicDecodeResult result = Codec.Decode(envelope, route);
 
-        Assert.Equal(NicDecodeStatus.Unsupported, result.Status);
-        Assert.Equal(9, result.FrameId);
+        // Nothing to answer yet — the reply is produced when the last fragment arrives.
+        Assert.Equal(NicDecodeStatus.Incomplete, result.Status);
+        Assert.Null(result.DlmsFrame);
     }
 
     // ── The uplink envelope ───────────────────────────────────────────────────────────────────

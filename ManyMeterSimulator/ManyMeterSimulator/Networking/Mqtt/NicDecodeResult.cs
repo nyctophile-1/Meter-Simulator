@@ -6,8 +6,8 @@ public enum NicDecodeStatus
     Complete,
 
     /// <summary>
-    /// Part of a multi-fragment message. Reassembly is deliberately not implemented yet — see
-    /// <see cref="Unsupported"/>.
+    /// A fragment was accepted and buffered, but the set is not complete yet. There is nothing to
+    /// answer — the reply is produced when the last fragment arrives.
     /// </summary>
     Incomplete,
 
@@ -35,6 +35,10 @@ public readonly record struct NicDecodeResult(NicDecodeStatus Status, byte[]? Dl
 
     public static NicDecodeResult Complete(byte[] dlmsFrame, ushort frameId) =>
         new(NicDecodeStatus.Complete, dlmsFrame, frameId);
+
+    /// <summary>A fragment was stored; more are needed before the frame can go to the brain.</summary>
+    public static NicDecodeResult Incomplete() =>
+        new(NicDecodeStatus.Incomplete, null, 0);
 
     public static NicDecodeResult Unsupported(string detail, ushort frameId = 0) =>
         new(NicDecodeStatus.Unsupported, null, frameId, detail);

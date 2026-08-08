@@ -3,6 +3,8 @@ using System.Diagnostics;
 using ManyMeterSimulator.Diagnostics;
 using ManyMeterSimulator.MqttBridge;
 using ManyMeterSimulator.Networking.Nic;
+using ManyMeterSimulator.Provisioning;
+using MeterSimulator.Models;
 using Microsoft.Extensions.Options;
 
 namespace ManyMeterSimulator.Networking.Mqtt;
@@ -31,6 +33,7 @@ public sealed class MqttNicListenerService : BackgroundService
     private readonly SessionRegistry _sessions;
     private readonly SimulatorMetrics _metrics;
     private readonly IMeterSimBridge _bridge;
+    private readonly MeterRegistry _registry;
     private readonly IReadOnlyDictionary<NicType, INicCodec> _codecs;
     private readonly ConcurrentDictionary<NicType, MqttNicClient> _clients = new();
 
@@ -45,6 +48,7 @@ public sealed class MqttNicListenerService : BackgroundService
         SessionRegistry sessions,
         SimulatorMetrics metrics,
         IMeterSimBridge bridge,
+        MeterRegistry registry,
         IEnumerable<INicCodec> codecs)
     {
         _logger = logger;
@@ -55,6 +59,7 @@ public sealed class MqttNicListenerService : BackgroundService
         _sessions = sessions;
         _metrics = metrics;
         _bridge = bridge;
+        _registry = registry;
         _codecs = codecs.ToDictionary(c => c.Nic);
     }
 
@@ -65,6 +70,12 @@ public sealed class MqttNicListenerService : BackgroundService
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         NicType[] enabled = _options.EnabledTransports().ToArray();
+
+        // Before anything connects: print what each NIC listens to, answers on, and has provisioned.
+        // "Nothing is happening" is the one symptom every wiring mistake here shares, so the plan is
+        // logged whether or not a transport is enabled — a disabled NIC is itself an explanation.
+        LogTopicPlan(enabled);
+
         if (enabled.Length == 0)
         {
             _logger.LogInformation("No MQTT NICs are enabled; the MQTT listener is idle.");
@@ -134,6 +145,69 @@ public sealed class MqttNicListenerService : BackgroundService
         foreach (MqttNicClient client in _clients.Values)
         {
             await client.DisposeAsync();
+        }
+    }
+
+    /// <summary>
+    /// Logs one block per MQTT NIC type: where its requests arrive, how a meter is identified out of
+    /// them, where the answer goes, the HES-side subscription that has to match it, the framing, and
+    /// which batches are actually provisioned for it.
+    ///
+    /// <para>
+    /// Four NIC types, three transports — IMG shares the direct-4G client, so it is annotated rather
+    /// than given a client of its own. RF2 (Wirepas endpoint 13) is deliberately absent: it is a
+    /// second channel on the Wirepas NIC, not a NIC, and it has no transparent-DLMS plan to print.
+    /// </para>
+    /// </summary>
+    private void LogTopicPlan(IReadOnlyCollection<NicType> enabledTransports)
+    {
+        NicType[] mqttNics =
+        {
+            NicType.Mqtt4G, NicType.Mqtt4GImg, NicType.MqttWirepas, NicType.MqttKmesh,
+        };
+
+        foreach (NicType nic in mqttNics)
+        {
+            NicType transport = NicTypes.TransportFor(nic);
+
+            if (!_codecs.TryGetValue(transport, out INicCodec? codec))
+            {
+                _logger.LogWarning("NIC plan {Nic}: no codec is registered for it; it can never answer.", nic);
+                continue;
+            }
+
+            // Batches are matched on the NIC type the meter was provisioned as, not on the transport
+            // — otherwise IMG and 4G would each report the other's meters as their own.
+            List<MeterBatch> batches = _registry.Batches.Where(b => b.NicType == nic).ToList();
+            string provisioned = batches.Count == 0
+                ? "NONE — no batch is provisioned for this NIC, so every request would be dropped"
+                : string.Join("; ", batches.Select(b =>
+                {
+                    (string first, string last) = _registry.GetNodeIdRange(b);
+                    return $"'{b.Name}' node {first}-{last} [{b.Status}]";
+                }));
+
+            NicTopicPlan plan = codec.TopicPlan;
+
+            _logger.LogInformation(
+                """
+                NIC plan {Nic} — {State}{Shared}
+                  listen   {Subscribe}
+                  meter id {NodeIdSource}
+                  publish  {Publish}
+                  HES sub  {HesExpects}
+                  framing  {Framing}
+                  batches  {Batches}
+                """,
+                nic,
+                enabledTransports.Contains(transport) ? "ENABLED" : "DISABLED (set Nics:" + transport + ":Enabled=true)",
+                nic == NicType.Mqtt4GImg ? "  [shares the Mqtt4G transport — one client, one subscription]" : string.Empty,
+                plan.Subscribe,
+                plan.NodeIdSource,
+                plan.Publish,
+                plan.HesExpects,
+                plan.Framing,
+                provisioned);
         }
     }
 

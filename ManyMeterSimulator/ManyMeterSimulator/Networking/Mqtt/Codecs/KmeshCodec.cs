@@ -22,6 +22,13 @@ public sealed class KmeshCodec : INicCodec
 
     public IReadOnlyList<string> RequestTopicFilters { get; } = new[] { NicTopics.KmeshRequestFilter };
 
+    public NicTopicPlan TopicPlan { get; } = new(
+        Subscribe: NicTopics.KmeshRequestFilter,
+        NodeIdSource: "protobuf NodeRequest.NodeId",
+        Publish: "gateway/pull/response/meter/{gatewayId}/{nodeId}, gateway echoed from the request",
+        HesExpects: "gateway/pull/response/meter/+/#; the + is the gateway id and the tail is not read",
+        Framing: "none — Response.Payload IS the DLMS wrapper frame verbatim; FragInfo 1/1");
+
     public bool TryRoute(NicEnvelope envelope, out NicRoute route)
     {
         route = default;

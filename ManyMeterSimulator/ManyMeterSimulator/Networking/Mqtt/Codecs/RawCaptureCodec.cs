@@ -23,6 +23,12 @@ public sealed class RawCaptureCodec : INicCodec
 
     public IReadOnlyList<string> RequestTopicFilters => _inner.RequestTopicFilters;
 
+    /// <summary>The wrapped codec's plan, with the publish side struck out — this codec never answers.</summary>
+    public NicTopicPlan TopicPlan => _inner.TopicPlan with
+    {
+        Publish = "(nothing — capture-only codec)",
+    };
+
     /// <summary>
     /// Delegates to the wrapped codec, but a routing failure is not fatal here — an unroutable
     /// message is still worth capturing, and for the variants whose codec is not written yet it is
@@ -55,6 +61,13 @@ public sealed class CaptureOnlyCodec : INicCodec
     public NicType Nic { get; }
 
     public IReadOnlyList<string> RequestTopicFilters { get; }
+
+    public NicTopicPlan TopicPlan => new(
+        Subscribe: string.Join(", ", RequestTopicFilters),
+        NodeIdSource: "(none — never routes)",
+        Publish: "(nothing — capture-only codec)",
+        HesExpects: "(n/a)",
+        Framing: "(not decoded)");
 
     public bool TryRoute(NicEnvelope envelope, out NicRoute route)
     {

@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Collections.Concurrent;
 using ManyMeterSimulator.KimbalSpecifics.Wirepas;
 using ManyMeterSimulator.Networking.Nic;
 using ProtoBuf;
@@ -9,10 +10,29 @@ namespace ManyMeterSimulator.Networking.Mqtt.Codecs;
 /// RF MQTT Wirepas (virtual_nics.md §14.2). Two things make this the most error-prone variant:
 ///
 /// <para>
-/// <b>1. The framing is asymmetric.</b> HES writes its framing fields as a TRAILER at the END of
-/// the request, and expects them as a HEADER at the FRONT of the response — the same five fields in
-/// reverse order at the opposite end of the packet. Assuming symmetry (as every other variant here
-/// is) produces a codec that decodes HES perfectly and is never understood by it.
+/// <b>1. The framing is a 5-byte HEADER in BOTH directions</b> —
+/// <c>[0] length | [1] totalFragments | [2] thisFragment | [3..4] frameId LE | [5..] payload</c>.
+/// </para>
+///
+/// <para>
+/// This corrects virtual_nics.md §14.2, which read <c>MQTTSendCommandClient.GetPacketFragments</c>
+/// as writing a TRAILER on the request and concluded the two directions were asymmetric. A live
+/// capture (2026-08-08) says otherwise. A real request for node 507 carried:
+/// <code>
+///   2C 01 01 AD 01 | 00 01 00 10 00 01 00 1F | 60 1D ... FF FF
+///   ^len=44 ^1of1  ^frameId=429   ^DLMS wrapper (8-byte WPDU header + 31-byte AARQ)
+/// </code>
+/// Read as a header every field is self-consistent — the length byte equals the real payload length
+/// and the fragment counts are 1/1. Read as a trailer the same bytes give totalFragments = 255, so
+/// the packet was being discarded as an unsupported fragmented request. Since that path logs at
+/// Debug and records no metric, the symptom was a Wirepas NIC that silently answered nothing.
+/// </para>
+///
+/// <para>
+/// Real meter uplinks in the HES log use this same header (<c>5F 01 09 AC 49</c> = 95 bytes,
+/// fragment 1 of 9, frameId 0x49AC), which is also exactly what
+/// <see cref="BuildFramedResponse"/> writes — so the response direction was already right, and the
+/// two directions simply match.
 /// </para>
 ///
 /// <para>
@@ -31,12 +51,25 @@ public sealed class WirepasCodec : INicCodec
     /// <summary>The DLMS endpoint. Anything else on this topic is OTAP or diagnostics, not ours.</summary>
     public const uint DlmsEndpoint = 3;
 
-    /// <summary>Framing bytes, response direction (header). Request direction uses the same five as a trailer.</summary>
+    /// <summary>Framing bytes — a 5-byte header, the same layout in both directions.</summary>
     public const int FramingLength = 5;
+
+    /// <summary>
+    /// Partial fragment sets are abandoned after this long. Wirepas is the only inbound direction
+    /// that fragments, and a set that never completes would otherwise pin memory per node.
+    /// </summary>
+    private readonly FragmentReassembler _fragments = new(TimeSpan.FromSeconds(30));
 
     public NicType Nic => NicType.MqttWirepas;
 
     public IReadOnlyList<string> RequestTopicFilters { get; } = new[] { NicTopics.WirepasRequestFilter };
+
+    public NicTopicPlan TopicPlan { get; } = new(
+        Subscribe: NicTopics.WirepasRequestFilter,
+        NodeIdSource: "protobuf send_packet_req.destination_address (requires destination_endpoint == 3; OTAP 255/240 is ignored)",
+        Publish: "gw-event/received_data/{gwId}/{sinkId}/{nodeId}/3/3, gateway and sink echoed from the request",
+        HesExpects: "gw-event/received_data/+/+/+/3/3, and drops anything whose source_endpoint != 3",
+        Framing: "5-byte HEADER both directions (len | totalFrag | thisFrag | frameId2) — verified against a live capture");
 
     public bool TryRoute(NicEnvelope envelope, out NicRoute route)
     {
@@ -78,30 +111,143 @@ public sealed class WirepasCodec : INicCodec
         ReadOnlySpan<byte> framed = request.payload;
         if (framed.Length < FramingLength)
         {
-            return NicDecodeResult.Malformed($"{framed.Length} bytes is shorter than the {FramingLength}-byte trailer");
+            return NicDecodeResult.Malformed($"{framed.Length} bytes is shorter than the {FramingLength}-byte header");
         }
 
-        // TRAILER, per MQTTSendCommandClient.GetPacketFragments:
-        //   [0..1] frameId LE | [2..n] chunk | [n+1] thisFragment | [n+2] totalFragments | [n+3] length
-        ushort frameId = BinaryPrimitives.ReadUInt16LittleEndian(framed);
-        int thisFragment = framed[^3];
-        int totalFragments = framed[^2];
+        // HEADER — the same layout we write on the way out. See the class remarks for why this is
+        // NOT the trailer the HES source appeared to describe.
+        //   [0] length | [1] totalFragments | [2] thisFragment | [3..4] frameId LE | [5..] payload
+        int totalFragments = framed[1];
+        int thisFragment = framed[2];
+        ushort frameId = BinaryPrimitives.ReadUInt16LittleEndian(framed[3..5]);
 
         // HES applies the same swap guard on the way in; mirror it rather than reject a packet it
-        // would have accepted.
+        // would have accepted. Real meter uplinks genuinely arrive as e.g. 01/09 meaning 1-of-9.
         if (thisFragment > totalFragments)
         {
             (totalFragments, thisFragment) = (thisFragment, totalFragments);
         }
 
-        if (totalFragments > 1)
+        ReadOnlySpan<byte> chunk = framed[FramingLength..];
+
+        // Single fragment short-circuits with no state at all, exactly as HES's own reassembler
+        // does. This is the overwhelmingly common case — only the ciphered HLS association is big
+        // enough to be split.
+        if (totalFragments <= 1)
         {
-            return NicDecodeResult.Unsupported(
-                $"fragmented Wirepas request ({thisFragment}/{totalFragments}) — reassembly not implemented", frameId);
+            return NicDecodeResult.Complete(chunk.ToArray(), frameId);
         }
 
-        // Between the 2-byte frameId prefix and the 3-byte trailer.
-        return NicDecodeResult.Complete(framed[2..^3].ToArray(), frameId);
+        return _fragments.Add(route.NodeId, frameId, thisFragment, totalFragments, chunk);
+    }
+
+    /// <summary>
+    /// Inbound reassembly for the one direction where fragmentation is real.
+    ///
+    /// <para>
+    /// HES chunks Wirepas requests at 90 bytes, and Wirepas is the only variant where it fragments
+    /// at all. A public-client AARQ (44 bytes) fits in one message, so the whole pull works until
+    /// HES opens the ciphered HLS association — 103 bytes — which arrives as 2 fragments. While
+    /// those were reported as <c>Unsupported</c> the meter went silent at exactly that point, with
+    /// no error on either side.
+    /// </para>
+    ///
+    /// <para>
+    /// Semantics follow HES's own reassembler (virtual_nics.md §14.4): keyed by node and frame id,
+    /// completion is count-based rather than length-based, fragments are concatenated in ascending
+    /// index order, and a repeated index is discarded rather than overwriting.
+    /// </para>
+    /// </summary>
+    private sealed class FragmentReassembler
+    {
+        private readonly TimeSpan _timeout;
+        private readonly ConcurrentDictionary<(string NodeId, ushort FrameId), PendingSet> _pending = new();
+
+        public FragmentReassembler(TimeSpan timeout) => _timeout = timeout;
+
+        public NicDecodeResult Add(
+            string nodeId, ushort frameId, int index, int total, ReadOnlySpan<byte> chunk)
+        {
+            if (index < 1 || index > total)
+            {
+                return NicDecodeResult.Malformed($"fragment index {index} outside 1..{total}");
+            }
+
+            (string, ushort) key = (nodeId, frameId);
+            byte[]? assembled;
+
+            while (true)
+            {
+                PendingSet set = _pending.GetOrAdd(key, _ => new PendingSet(total));
+
+                lock (set)
+                {
+                    // A restarted set for the same (node, frame): HES gave up and began again, or
+                    // the previous attempt aged out. Holding the stale halves would splice two
+                    // different messages into one plausible-looking frame, so drop and retry with a
+                    // fresh set rather than reusing this one.
+                    if (set.Total == total && DateTimeOffset.UtcNow - set.StartedUtc <= _timeout)
+                    {
+                        assembled = set.Put(index, chunk);
+                        break;
+                    }
+                }
+
+                _pending.TryRemove(new KeyValuePair<(string, ushort), PendingSet>(key, set));
+            }
+
+            if (assembled is null)
+            {
+                return NicDecodeResult.Incomplete();
+            }
+
+            _pending.TryRemove(key, out _);
+            return NicDecodeResult.Complete(assembled, frameId);
+        }
+
+        private sealed class PendingSet
+        {
+            private readonly byte[]?[] _chunks;
+
+            public PendingSet(int total)
+            {
+                Total = total;
+                _chunks = new byte[]?[total];
+                StartedUtc = DateTimeOffset.UtcNow;
+            }
+
+            public int Total { get; }
+
+            public DateTimeOffset StartedUtc { get; }
+
+            /// <summary>Stores one fragment; returns the whole frame once every index has arrived.</summary>
+            public byte[]? Put(int index, ReadOnlySpan<byte> chunk)
+            {
+                // Duplicates are dropped, not overwritten — the same rule HES applies.
+                _chunks[index - 1] ??= chunk.ToArray();
+
+                var size = 0;
+                foreach (byte[]? part in _chunks)
+                {
+                    if (part is null)
+                    {
+                        return null;
+                    }
+
+                    size += part.Length;
+                }
+
+                var frame = new byte[size];
+                var offset = 0;
+                foreach (byte[]? part in _chunks)
+                {
+                    part!.CopyTo(frame, offset);
+                    offset += part.Length;
+                }
+
+                return frame;
+            }
+        }
     }
 
     public IReadOnlyList<NicPublish> Encode(

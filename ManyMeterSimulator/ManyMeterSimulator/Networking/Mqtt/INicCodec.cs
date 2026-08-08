@@ -22,6 +22,12 @@ public interface INicCodec
     IReadOnlyList<string> RequestTopicFilters { get; }
 
     /// <summary>
+    /// This codec's wiring in words — logged at startup so the listen/publish contract with HES can
+    /// be read off the console instead of inferred from silence. See <see cref="NicTopicPlan"/>.
+    /// </summary>
+    NicTopicPlan TopicPlan { get; }
+
+    /// <summary>
     /// Answers "which node is this message for?" so it can be handed to that node's worker.
     ///
     /// Runs on the MQTT receive callback, so it must be fast and thread-safe — it holds no state.

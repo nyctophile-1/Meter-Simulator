@@ -47,7 +47,23 @@ public sealed class Mqtt4GCodec : INicCodec
 
     public IReadOnlyList<string> RequestTopicFilters { get; } = new[] { RequestTopicPrefix + "#" };
 
-    /// <summary>The topic a reply for this node is published on.</summary>
+    public NicTopicPlan TopicPlan { get; } = new(
+        Subscribe: RequestTopicPrefix + "#",
+        NodeIdSource: "topic segment [1] of PollRequest/{nodeId}",
+        Publish: ResponseTopicPrefix + "{nodeId}; frameId echoed in header bytes 4..5, not in the topic",
+        HesExpects: "PollResponse/#, node id read as topic.Split('/')[1], frameId from the header",
+        Framing: "6-byte LE header (len2 | totalFrag | thisFrag | frameId2) + DLMS wrapper, both directions");
+
+    /// <summary>
+    /// The topic a reply for this node is published on.
+    ///
+    /// <para>
+    /// The node id is the only thing carried here. The frame id does NOT go in the topic on this
+    /// NIC — each variant has one place HES expects it, and for direct 4G that place is bytes 4..5
+    /// of the header. (HES's source does carry a commented-out <c>Split('/')[2]</c> frame-id read
+    /// from an older three-segment topic; adding a segment back was tried and is not what HES wants.)
+    /// </para>
+    /// </summary>
     public static string ResponseTopic(string nodeId) => ResponseTopicPrefix + nodeId;
 
     public bool TryRoute(NicEnvelope envelope, out NicRoute route)
@@ -107,6 +123,8 @@ public sealed class Mqtt4GCodec : INicCodec
             return Array.Empty<NicPublish>();
         }
 
+        // frameId is the one that arrived, echoed verbatim into the header — it is HES's half of the
+        // (meterNo, frameId) correlation key and is opaque to us.
         return new[] { new NicPublish(ResponseTopic(route.NodeId), BuildFrame(frameId, dlmsResponse.Span)) };
     }
 
