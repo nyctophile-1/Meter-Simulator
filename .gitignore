@@ -410,3 +410,4 @@ maya-sim.tar.gz
 /ManyMeterSimulator/logs/
 deploy/meters-batch1-100.csv
 deploy/register-meters-hes.sql
+*.csv
