@@ -8,6 +8,7 @@ using ManyMeterSimulator.Networking;
 using ManyMeterSimulator.Networking.Mqtt;
 using ManyMeterSimulator.Networking.Mqtt.Codecs;
 using ManyMeterSimulator.Networking.Nic;
+using ManyMeterSimulator.Networking.Push;
 using ManyMeterSimulator.Networking.Registry;
 using ManyMeterSimulator.Provisioning;
 using ManyMeterSimulator.Settings;
@@ -138,6 +139,7 @@ builder.Services.AddSingleton<ConfigBundleService>();
 builder.Services.AddSingleton<FleetCompositionCache>();
 builder.Services.AddSingleton<TemplateRegistry>();
 builder.Services.AddSingleton<MeterSessionManager>();
+builder.Services.AddSingleton<TcpPushSender>();
 builder.Services.AddSingleton<PushCoordinator>();
 
 // Bridge selection: the real in-process brain (default) or the echo stand-in (framing only).

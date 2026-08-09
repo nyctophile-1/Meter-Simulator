@@ -1,4 +1,5 @@
 using ManyMeterSimulator.Networking.Nic;
+using ManyMeterSimulator.Networking.Push;
 using ManyMeterSimulator.Networking.Registry;
 using ManyMeterSimulator.Provisioning;
 using MeterSimulator.DLMS;
@@ -17,6 +18,7 @@ public sealed class PushCoordinator
     private readonly MeterRegistry _registry;
     private readonly MeterSessionManager _sessions;
     private readonly NetworkRegistry _network;
+    private readonly TcpPushSender _tcpPush;
     private readonly PushOptions _options;
     private readonly ILogger<PushCoordinator> _logger;
 
@@ -24,12 +26,14 @@ public sealed class PushCoordinator
         MeterRegistry registry,
         MeterSessionManager sessions,
         NetworkRegistry network,
+        TcpPushSender tcpPush,
         IOptions<PushOptions> options,
         ILogger<PushCoordinator> logger)
     {
         _registry = registry;
         _sessions = sessions;
         _network = network;
+        _tcpPush = tcpPush;
         _options = options.Value;
         _logger = logger;
     }
@@ -88,30 +92,37 @@ public sealed class PushCoordinator
             await gate.WaitAsync(cancellationToken);
             try
             {
-                // PushNow does blocking socket IO and mutates the session's push objects; offload it
-                // and serialize per session (same lock the inbound bridge takes).
-                PushSendResult result = await Task.Run(() =>
+                // Two stages, cleanly split: the session ENCODES the push (transport-agnostic), and
+                // the NIC sender puts it on the wire. Both are blocking, so offload them; encoding is
+                // serialized per session (same lock the inbound bridge takes) because it mutates the
+                // session's push objects, while the socket send needs no session lock.
+                byte[][] payloads = await Task.Run(() =>
                 {
                     lock (pair.Session)
                     {
-                        return pair.Session.PushNow(destination, _options.DefaultPort, _options.UseCiphering);
+                        return pair.Session.BuildPushPayloads(_options.UseCiphering).ToArray();
                     }
                 }, cancellationToken);
+
+                if (payloads.Length == 0)
+                {
+                    return;   // meter has no sendable PushSetup — not counted either way
+                }
+
+                PushDeliveryResult result = await Task.Run(
+                    () => _tcpPush.Send(
+                        pair.Meter.Serial, pair.Session.SourceAddress, destination, _options.DefaultPort, payloads, cancellationToken),
+                    cancellationToken);
 
                 if (result.Failed == 0 && result.Sent > 0)
                 {
                     Interlocked.Increment(ref metersSent);
                 }
-                else if (result.Sent > 0)
+                else if (result.Sent > 0 || result.Failed > 0)
                 {
-                    // Some PushSetups sent, some failed — count the meter as partially failed.
+                    // Fully or partially failed — count the meter as failed.
                     Interlocked.Increment(ref metersFailed);
                 }
-                else if (result.Failed > 0)
-                {
-                    Interlocked.Increment(ref metersFailed);
-                }
-                // result.Sent == 0 && result.Failed == 0 → meter has no PushSetup; not counted either way.
             }
             catch (Exception ex)
             {

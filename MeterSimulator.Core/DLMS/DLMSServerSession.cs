@@ -40,7 +40,6 @@ namespace MeterSimulator.DLMS
         private readonly PushConfig? _pushConfig;
         private readonly GXDLMSSecureNotify _notify;
         private readonly object _pushLock = new();
-        private Timer? _pushTimer;
 
         // The meter's OWN address, bound as the LOCAL endpoint of the outbound push socket so the
         // receiver correlates the push to this meter by source IP (see remarks on SendFrames). Null
@@ -207,104 +206,25 @@ namespace MeterSimulator.DLMS
         }
 
         /// <summary>
-        /// Starts the periodic push timer if enabled in config.  Called by
-        /// MeterManager after the meter is fully loaded from XML.
+        /// Builds the outbound push payloads for this meter — one complete DataNotification per
+        /// sendable PushSetup — and returns them. Nothing is transmitted here: this session is
+        /// transport-agnostic, so it knows how to ENCODE a push but not WHERE or HOW to send it.
+        /// The NIC layer decides that — TCP opens a socket to the meter's push target, the MQTT NICs
+        /// wrap each payload for their broker topic (see the codecs).
+        ///
+        /// <para>
+        /// One payload per PushSetup: that list IS the buffer, fixed by the template at load time.
+        /// A PushSetup with an empty <c>push_object_list</c> (some templates ship the Alert setup
+        /// that way) would encode a DataNotification carrying no data, so it is skipped rather than
+        /// emitting a meaningless frame. Live meter values are synced in first
+        /// (<see cref="SyncPushValues"/>), because Gurux reads each object's value directly here, not
+        /// through the server's PreRead.
+        /// </para>
         /// </summary>
-        public void StartPush()
-        {
-            if (_pushConfig == null || !_pushConfig.Enabled)
-                return;
-
-            int seconds = Math.Max(1, _pushConfig.IntervalSeconds);
-            var period = TimeSpan.FromSeconds(seconds);
-            _pushTimer = new Timer(_ => SafeSendPush(), null, period, period);
-
-            CoreLog.Debug(
-                $"[Push] {_meter.MeterNo}: enabled — every {seconds}s, " +
-                $"ciphering={(_pushConfig.UseCiphering ? "on" : "off")}");
-        }
-
-        /// <summary>Stops the push timer.  Called on shutdown.</summary>
-        public void StopPush()
-        {
-            _pushTimer?.Dispose();
-            _pushTimer = null;
-        }
-
-        private void SafeSendPush()
-        {
-            try
-            {
-                SendPush();
-            }
-            catch (Exception ex)
-            {
-                CoreLog.Warn($"[Push] {_meter.MeterNo}: unexpected error: {ex.Message}");
-            }
-        }
-
-        /// <summary>
-        /// Builds and sends a DataNotification for every PushSetup that has a
-        /// non-empty Destination.  Values are synced from the meter first so the
-        /// payload is current; Gurux encodes the frames, we open the socket.
-        /// </summary>
-        private void SendPush()
-        {
-            var pushObjects = _objects.OfType<GXDLMSPushSetup>()
-                .Where(p => !string.IsNullOrWhiteSpace(p.Destination))
-                .ToList();
-
-            if (pushObjects.Count == 0)
-            {
-                CoreLog.Debug($"[Push] {_meter.MeterNo}: no PushSetup with a Destination, skipping");
-                return;
-            }
-
-            foreach (var push in pushObjects)                
-            {
-                if (!TryParseDestination(push.Destination, _pushConfig!.Port,
-                        out string host, out int port))
-                {
-                    CoreLog.Warn($"[Push] {_meter.MeterNo}: bad Destination '{push.Destination}'");
-                    continue;
-                }
-
-                // Make the push carry live meter values (GeneratePushSetupMessages
-                // reads each object's GetValue directly, NOT via the server PreRead).
-                SyncPushValues(push);
-
-                ConfigureNotifyCiphering(_pushConfig!.UseCiphering);
-
-                byte[][] frames;
-                lock (_pushLock)
-                {
-                    frames = _notify.GeneratePushSetupMessages(DateTime.UtcNow, push);
-                }
-
-                SendFrames(push, host, port, frames);
-            }
-        }
-
-        /// <summary>
-        /// Fires a single on-demand push to <paramref name="destination"/> for every PushSetup in the
-        /// meter's object model — the "Send Push" button path. Unlike the timer-driven
-        /// <see cref="SendPush"/>, the destination is supplied by the caller (the dashboard's push-IP
-        /// box) rather than read from the XML/PushConfig, and it applies to EVERY PushSetup regardless
-        /// of the address baked into the template. The buffer/structure is whatever the template's
-        /// push_object_list defines and is NOT caller-editable — only the live values are refreshed
-        /// (<see cref="SyncPushValues"/>) before sending.
-        /// </summary>
-        /// <param name="destination">"ip", "ip:port", or "[ipv6]:port". Bare IP uses <paramref name="defaultPort"/>.</param>
-        /// <param name="defaultPort">Port to use when the destination carries none.</param>
         /// <param name="useCiphering">true → general-glo-ciphering with the meter's keys; false → plaintext.</param>
-        /// <returns>How many PushSetups were sent and how many failed.</returns>
-        public PushSendResult PushNow(string destination, int defaultPort, bool useCiphering)
+        /// <returns>One byte[] per PushSetup — each a complete DLMS wrapper DataNotification frame.</returns>
+        public IReadOnlyList<byte[]> BuildPushPayloads(bool useCiphering)
         {
-
-            // Only PushSetups that actually define a push_object_list are sendable: that list IS the
-            // buffer, fixed by the template at load time. A PushSetup with an empty ObjectList (some
-            // templates ship the Alert setup that way) would encode a DataNotification carrying no
-            // data, so skip it rather than emit a meaningless frame.
             var pushObjects = _objects.OfType<GXDLMSPushSetup>()
                 .Where(p => p.PushObjectList.Count > 0)
                 .ToList();
@@ -315,16 +235,10 @@ namespace MeterSimulator.DLMS
                     $"[Push] {_meter.MeterNo}: no PushSetup with a non-empty push_object_list — " +
                     "nothing to send. Use a template whose PushSetup defines an ObjectList " +
                     "(e.g. Values_SZ0000014HP.xml).");
-                return new PushSendResult(0, 0);
+                return Array.Empty<byte[]>();
             }
 
-            if (!TryParseDestination(destination, defaultPort, out string host, out int port))
-            {
-                CoreLog.Warn($"[Push] {_meter.MeterNo}: bad push destination '{destination}'");
-                return new PushSendResult(0, pushObjects.Count);
-            }
-
-            int sent = 0, failed = 0;
+            var payloads = new List<byte[]>(pushObjects.Count);
             foreach (var push in pushObjects)
             {
                 SyncPushValues(push);
@@ -336,13 +250,32 @@ namespace MeterSimulator.DLMS
                     frames = _notify.GeneratePushSetupMessages(DateTime.UtcNow, push);
                 }
 
-                if (SendFrames(push, host, port, frames))
-                    sent++;
-                else
-                    failed++;
+                // GeneratePushSetupMessages returns the wrapper frames for this PushSetup — one for
+                // an unfragmented push. Concatenate into a single payload: over TCP the frames are
+                // written back-to-back anyway (each is length-prefixed and self-delimiting), and the
+                // MQTT NICs carry one PushSetup as one message.
+                payloads.Add(Concat(frames));
             }
 
-            return new PushSendResult(sent, failed);
+            return payloads;
+        }
+
+        private static byte[] Concat(byte[][] frames)
+        {
+            if (frames.Length == 1)
+                return frames[0];
+
+            int total = 0;
+            foreach (var f in frames) total += f.Length;
+            var buffer = new byte[total];
+            int offset = 0;
+            foreach (var f in frames)
+            {
+                Buffer.BlockCopy(f, 0, buffer, offset, f.Length);
+                offset += f.Length;
+            }
+
+            return buffer;
         }
 
         /// <summary>
@@ -388,134 +321,16 @@ namespace MeterSimulator.DLMS
         }
 
         /// <summary>
-        /// Opens a TCP connection to host:port and writes the frames.  Honors the
-        /// PushSetup NumberOfRetries / RepetitionDelay so a missing receiver doesn't
-        /// kill the timer.
+        /// The meter's own address, for a NIC that wants to originate a push from it (TCP binds this
+        /// as the socket's source so HES correlates by source IP). Null for meters with no per-meter
+        /// address (the MQTT NICs, where the node id carries the identity instead).
         /// </summary>
-        /// <remarks>
-        /// The outbound socket binds its LOCAL endpoint to the meter's own IPv6
-        /// (<see cref="_sourceAddress"/>) so the receiver correlates the push to the right meter by
-        /// source IP — push from meter ABC leaves from ABC's IP, the same IP HES pulls from. The host
-        /// owns the whole /64 via the local route, so binding to the meter's address succeeds. The
-        /// bind is skipped when no source address is known (MQTT NICs) or when it doesn't match the
-        /// destination's address family (e.g. a local IPv4 test target), so a plain loopback push
-        /// still works.
-        /// </remarks>
-        private bool SendFrames(GXDLMSPushSetup push, string host, int port, byte[][] frames)
-        {
-            int attempts = Math.Max(1, (int)push.NumberOfRetries);
+        public IPAddress? SourceAddress => _sourceAddress;
 
-            for (int attempt = 1; attempt <= attempts; attempt++)
-            {
-                try
-                {
-                    using var client = CreatePushClient(host);
-                    if (!client.ConnectAsync(host, port).Wait(TimeSpan.FromSeconds(5)))
-                        throw new TimeoutException("connect timeout");
-
-                    using var stream = client.GetStream();
-                    foreach (var frame in frames)
-                        stream.Write(frame, 0, frame.Length);
-                    stream.Flush();
-
-                    CoreLog.Debug(
-                        $"[Push] {_meter.MeterNo}: sent {frames.Length} frame(s) to {host}:{port}" +
-                        (_sourceAddress != null ? $" from {_sourceAddress}" : ""));
-                    return true;
-                }
-                catch (Exception ex)
-                {
-                    CoreLog.Debug(
-                        $"[Push] {_meter.MeterNo}: attempt {attempt}/{attempts} to " +
-                        $"{host}:{port} failed: {ex.Message}");
-
-                    if (attempt < attempts && push.RepetitionDelay > 0)
-                        Thread.Sleep(push.RepetitionDelay * 1000);
-                }
-            }
-
-            return false;
-        }
-
-        /// <summary>
-        /// Creates the outbound push socket, binding its local endpoint to the meter's own address
-        /// when one is known AND its family matches the destination — otherwise a default-source
-        /// client, so a family mismatch (IPv6 meter → IPv4 test target) degrades to a working push
-        /// rather than a bind failure.
-        /// </summary>
-        private TcpClient CreatePushClient(string host)
-        {
-            if (_sourceAddress != null
-                && IPAddress.TryParse(host, out IPAddress? dest)
-                && dest.AddressFamily == _sourceAddress.AddressFamily)
-            {
-                try
-                {
-                    // Binding the local endpoint to the meter's own address requires that address to
-                    // be locally owned (the host-level local route for the meter prefix). Where that
-                    // isn't set up — a dev box, or before the route is added — bind throws
-                    // EADDRNOTAVAIL. Fall back to a default-source socket so the push still goes out,
-                    // but warn loudly: the receiver then can't correlate the meter by source IP.
-                    return new TcpClient(new IPEndPoint(_sourceAddress, 0));
-                }
-                catch (SocketException ex)
-                {
-                    CoreLog.Warn(
-                        $"[Push] {_meter.MeterNo}: could not bind source {_sourceAddress} " +
-                        $"({ex.SocketErrorCode}) — pushing from the host's default address instead. " +
-                        "The meter prefix must be locally routed (e.g. `ip -6 route add local <prefix> dev lo`) " +
-                        "for per-meter source IPs to work.");
-                }
-            }
-
-            return new TcpClient();
-        }
-
-        /// <summary>
-        /// Splits a PushSetup Destination into host + port.
-        ///   "127.0.0.1:7000"        → 127.0.0.1 / 7000
-        ///   "127.0.0.1"             → 127.0.0.1 / defaultPort
-        ///   "[2406:da1a:..]:7000"   → 2406:da1a:.. / 7000   (bracketed IPv6)
-        ///   "2406:da1a:.."          → 2406:da1a:.. / defaultPort (bare IPv6)
-        /// </summary>
-        private static bool TryParseDestination(string dest, int defaultPort,
-            out string host, out int port)
-        {
-            host = string.Empty;
-            port = defaultPort;
-
-            if (string.IsNullOrWhiteSpace(dest))
-                return false;
-
-            dest = dest.Trim();
-
-            // Bracketed IPv6: [addr] or [addr]:port
-            if (dest.StartsWith("["))
-            {
-                int close = dest.IndexOf(']');
-                if (close < 0) return false;
-                host = dest.Substring(1, close - 1);
-                var rest = dest.Substring(close + 1);
-                if (rest.StartsWith(":") && int.TryParse(rest.Substring(1), out int p6))
-                    port = p6;
-                return host.Length > 0;
-            }
-
-            // Exactly one colon → host:port (IPv4 / hostname).
-            // Zero colons → bare IPv4/hostname.  More than one → bare IPv6.
-            int colons = dest.Count(c => c == ':');
-            if (colons == 1)
-            {
-                var parts = dest.Split(':');
-                host = parts[0];
-                if (int.TryParse(parts[1], out int p))
-                    port = p;
-                return host.Length > 0;
-            }
-
-            host = dest;
-            return true;
-        }
+        // The push TRANSPORT (open a socket / bind the source / publish to a broker) deliberately no
+        // longer lives here. This session encodes a push and stops there; the NIC layer decides
+        // where and how to send it — see ManyMeterSimulator's push sender for TCP and the codecs for
+        // the MQTT NICs.
 
         #endregion
 

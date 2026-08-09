@@ -39,8 +39,10 @@ public class PushDestinationTests
             Options.Create(new ManyMeterSimulator.Networking.TcpOptions { AddressPrefix = "fd00:6d65:7472::/64" }),
             NullLogger<MeterSessionManager>.Instance);
 
+        var tcpPush = new ManyMeterSimulator.Networking.Push.TcpPushSender(
+            NullLogger<ManyMeterSimulator.Networking.Push.TcpPushSender>.Instance);
         var push = new PushCoordinator(
-            batches, sessions, network, Options.Create(new PushOptions()), NullLogger<PushCoordinator>.Instance);
+            batches, sessions, network, tcpPush, Options.Create(new PushOptions()), NullLogger<PushCoordinator>.Instance);
 
         return (push, batches, network);
     }
