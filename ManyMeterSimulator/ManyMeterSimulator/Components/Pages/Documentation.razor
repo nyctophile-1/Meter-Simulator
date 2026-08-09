@@ -227,10 +227,7 @@
         <button class="docs-nav-link @(ActiveSection == "quickstart" ? "active" : "")" @onclick='() => SetSection("quickstart")'>
             Quick Start Guide
         </button>
-        <button class="docs-nav-link @(ActiveSection == "routing" ? "active" : "")" @onclick='() => SetSection("routing")'>
-            Network & IPv6 Routing
-        </button>
-        
+
         <div style="height: 1px; background: rgba(255, 255, 255, 0.08); margin: 1rem 0; flex-shrink: 0;"></div>
         
         <MudText Typo="Typo.subtitle2" Class="mud-text-secondary px-3 mb-2 font-weight-bold" Style="text-transform:uppercase; letter-spacing: 0.06em; font-size: 0.725rem;">Core Configuration</MudText>
@@ -380,36 +377,6 @@
                 <p class="doc-text">
                     Find the newly provisioned batch under the <b>Configured Batches</b> table. Click the <b style="color: #10b981;">Start</b> button. Go to the <b>Dashboard</b> or <b>Live Logs</b> to observe communication packet streams and connection activity.
                 </p>
-            </div>
-        }
-        else if (ActiveSection == "routing")
-        {
-            <div class="doc-section">
-                <h1 class="doc-title-h1">Network & IPv6 Routing</h1>
-                <p class="doc-text">
-                    When using direct TCP simulation, every virtual meter is allocated its own distinct virtual IPv6 network address from the prefix <code style="color: var(--mud-palette-primary);">fd00:6d65:7472::/64</code>. This architecture allows the HES to directly query individual virtual addresses.
-                </p>
-
-                <h2 class="doc-title-h2">Adding Host Routing Prefix</h2>
-                <p class="doc-text">
-                    Until the host-level local route for this prefix is set up, network traffic targeting virtual addresses will not reach the simulator's TCP socket. Run the following administrative shell command to route packets correctly:
-                </p>
-
-                <h3 class="doc-title-h3">Windows (PowerShell Admin)</h3>
-                <div class="code-block-container">
-                    netsh interface ipv6 add route fd00:6d65:7472::/64 "Loopback Pseudo-Interface 1" publish=yes
-                </div>
-
-                <h3 class="doc-title-h3">Linux / macOS</h3>
-                <div class="code-block-container">
-                    sudo ip route add fd00:6d65:7472::/64 dev lo
-                </div>
-
-                <div class="mt-4">
-                    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
-                        <b>TCP Port Binding:</b> The TCP listener binds globally to port <b>4059</b>. Incoming connections intended for any IP under the 64-bit prefix are captured, parsed, and routed internally to the matching virtual meter instances based on their unique node identifiers.
-                    </MudAlert>
-                </div>
             </div>
         }
         else if (ActiveSection == "xml-specs")
