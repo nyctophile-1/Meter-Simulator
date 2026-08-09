@@ -32,4 +32,7 @@ public sealed class PushOptions
     /// of thousands of outbound sockets at once. Each push is a short blocking connect+write.
     /// </summary>
     public int MaxConcurrency { get; set; } = 64;
+
+    /// <summary>QoS for MQTT push publishes. HES clamps its own subscribe QoS to 2, so 2 is safe.</summary>
+    public int PublishQos { get; set; } = 2;
 }

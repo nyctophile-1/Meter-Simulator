@@ -262,15 +262,14 @@
                                 </div>
                             </div>
                             <span class="batch-row-count">@b.Count.ToString("N0")</span>
-                            @if (b.NicType == NicType.Tcp4G)
-                            {
-                                <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
-                                           StartIcon="@Icons.Material.Filled.Send" Class="ml-2"
-                                           Disabled="@_pushingBatchIds.Contains(b.Id)"
-                                           OnClick="@(() => SendPushAsync(b.Id))">
-                                    @(_pushingBatchIds.Contains(b.Id) ? "Sending…" : "Send Push")
-                                </MudButton>
-                            }
+                            @* Push works on every NIC now: TCP opens a socket to the bound IP, MQTT
+                               publishes to the bound broker. The coordinator dispatches on the NIC. *@
+                            <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
+                                       StartIcon="@Icons.Material.Filled.Send" Class="ml-2"
+                                       Disabled="@_pushingBatchIds.Contains(b.Id)"
+                                       OnClick="@(() => SendPushAsync(b.Id))">
+                                @(_pushingBatchIds.Contains(b.Id) ? "Sending…" : "Send Push")
+                            </MudButton>
                         </div>
                     }
                 </div>

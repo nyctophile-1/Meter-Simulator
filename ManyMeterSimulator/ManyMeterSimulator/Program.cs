@@ -168,6 +168,8 @@ builder.Services.AddSingleton<NicCaptureWriter>();
 builder.Services.AddSingleton<NicCodecFactory>();
 builder.Services.AddSingleton<MqttNicListenerService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<MqttNicListenerService>());
+// Same instance, seen as the narrow push-publish interface by PushCoordinator.
+builder.Services.AddSingleton<IMqttPushPublisher>(sp => sp.GetRequiredService<MqttNicListenerService>());
 
 // Registered after the listener: for a broker that is IN USE the monitor reports that client's live
 // status rather than probing, since a probe can succeed while the real client is stuck in backoff.
