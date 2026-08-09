@@ -3,18 +3,26 @@
 
 <PageTitle>MAYA - Login</PageTitle>
 
+@* Plain form posting to the /login endpoint — deliberately not a Blazor interactive form, so
+   sign-in still works before the circuit is up. *@
 <div class="login-box">
-    <h1>MAYA</h1>
+    <div class="login-brand">
+        <span class="login-mark" aria-hidden="true">&gt;_</span>
+        <h1>MAYA</h1>
+    </div>
     <p class="brand-sub">Many-Meter Simulator</p>
 
-    @if (Error)
-    {
-        <p class="error">Incorrect password.</p>
-    }
-
-    <form method="post" action="/login">
-        <input type="password" name="password" placeholder="Password" autofocus />
+    <form method="post" action="/login" class="login-form">
+        <label class="sr-only" for="password">Password</label>
+        <input id="password" type="password" name="password" placeholder="Password"
+               autocomplete="current-password" autofocus />
         <button type="submit">Log in</button>
+
+        @* Reserved below the button rather than inserted above it, so an incorrect attempt does
+           not shift the form under the cursor. *@
+        <p class="error @(Error ? "is-visible" : "")" role="alert" aria-live="polite">
+            Incorrect password.
+        </p>
     </form>
 </div>
 

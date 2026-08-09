@@ -12,7 +12,17 @@ set -euo pipefail
 # The prefix AWS delegated to this instance's ENI (EC2 > Network Interfaces > Details >
 # IPv6 Prefix Delegation). Delegated prefixes are /80. Must match Tcp:AddressPrefix in
 # appsettings.Production.json, or meters are computed outside the routed range.
-METER_PREFIX="2406:da1a:261:6903:882d::/80"
+# The IPv6 prefix delegated to this instance's ENI. It differs per deployment target, so it is
+# an argument rather than a constant — a hardcoded prefix silently configures the wrong local
+# route and every meter becomes unreachable while the UI still looks healthy.
+# build.ps1 prints the correct invocation for the target you built.
+METER_PREFIX="${1:-}"
+if [ -z "$METER_PREFIX" ]; then
+    echo "usage: host-prep.sh <meter-ipv6-prefix>" >&2
+    echo "  eqa:      sudo bash host-prep.sh 2406:da1a:261:6903:882d::/80" >&2
+    echo "  personal: sudo bash host-prep.sh 2406:da1a:1c29:500:bc96::/80" >&2
+    exit 1
+fi
 # Sim-root holds three siblings: app/ is replaced on every deploy; data/ and logs/ persist
 # across deploys/reboots. The app writes them as ../data and ../logs relative to app/.
 SIM_ROOT="/opt/maya-sim"

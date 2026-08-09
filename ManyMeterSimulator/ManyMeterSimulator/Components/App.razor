@@ -6,13 +6,17 @@
     <title>MAYA</title>
     <base href="/" />
     <link rel="stylesheet" href="_content/MudBlazor/MudBlazor.min.css" />
-    <link rel="stylesheet" href="css/site.css" />
+    @* @Assets[] resolves to the fingerprinted URL produced by MapStaticAssets, so an edit here
+       is never served from a stale browser cache. *@
+    <link rel="stylesheet" href="@Assets["css/site.css"]" />
     <HeadOutlet @rendermode="InteractiveServer" />
 </head>
 <body>
     <Routes @rendermode="InteractiveServer" />
     <script src="_framework/blazor.web.js"></script>
     <script src="_content/MudBlazor/MudBlazor.min.js"></script>
+    @* No-ops unless the login page put #matrix-rain on the page. *@
+    <script src="@Assets["js/matrix-rain.js"]"></script>
     <script>
         window.mayaScrollToBottom = (el) => { if (el) { el.scrollTop = el.scrollHeight; } };
         window.mayaDownload = (url) => {

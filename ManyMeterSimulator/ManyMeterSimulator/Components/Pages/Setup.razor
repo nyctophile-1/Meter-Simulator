@@ -19,19 +19,13 @@
 
 <PageTitle>MAYA - Setup</PageTitle>
 
-<div class="d-flex align-center justify-space-between flex-wrap mb-4" style="gap:12px;">
-    <MudText Typo="Typo.body2" Class="mud-text-secondary">
-        TCP address prefix: <code>@AddressPrefix</code> &middot; max supported meters:
-        <code>@MeterRegistry.MaxIndex.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</code>
-        &middot; every meter has a node id whatever its NIC; only 4G TCP meters also get an IP
-    </MudText>
-
-    @* Network delay lives on the BadComm page now, alongside the other field-condition knobs. *@
-    <MudText Typo="Typo.body2" Class="mud-text-secondary">
-        Network delay: <code>@NetworkDelay.Current.LowerMs&ndash;@NetworkDelay.Current.UpperMs ms</code>
-        <MudLink Href="badcomm" Class="ml-2">Configure</MudLink>
-    </MudText>
-</div>
+@* Network delay is deliberately absent here — it lives on the BadComm page with the other
+   field-condition knobs, so there is only one place to read or change it. *@
+<MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
+    TCP address prefix: <code>@AddressPrefix</code> &middot; max supported meters:
+    <code>@MeterRegistry.MaxIndex.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</code>
+    &middot; every meter has a node id whatever its NIC; only 4G TCP meters also get an IP
+</MudText>
 
 @if (IsAdmin)
 {
@@ -39,7 +33,7 @@
         <MudText Typo="Typo.h6" GutterBottom="true">Provision a new batch</MudText>
 
         <MudGrid>
-            <MudItem xs="12" sm="6" md="3">
+            <MudItem xs="12" sm="6" md="2">
                 <MudTextField T="string" @bind-Value="BatchName" Immediate="true"
                               Label="Batch name" Placeholder="e.g. batch-1"
                               Variant="Variant.Outlined" Margin="Margin.Dense" />
@@ -49,14 +43,32 @@
                                  Label="Number of meters (N)"
                                  Variant="Variant.Outlined" Margin="Margin.Dense" />
             </MudItem>
-            <MudItem xs="12" sm="6" md="3">
-                <MudSelect T="string" @bind-Value="SelectedTemplate" Label="Meter model (XML)"
-                           Variant="Variant.Outlined" Margin="Margin.Dense">
-                    @foreach (string t in Templates)
-                    {
-                        <MudSelectItem Value="@t">@t</MudSelectItem>
-                    }
-                </MudSelect>
+            @* Widest column of the row: it holds full XML filenames, which truncated at md=3.
+               Upload sits against the picker because that is the list it adds to — as a
+               full-width button at the end of the row it read as an action on the whole form.
+               HtmlTag="label" is required: MudFileUpload renders ActivatorContent inside a
+               <label> for its hidden input, and a nested <button> swallows the click. *@
+            <MudItem xs="12" sm="6" md="4">
+                <div class="d-flex align-start" style="gap:6px;">
+                    <MudSelect T="string" @bind-Value="SelectedTemplate" Label="Meter model (XML)"
+                               Variant="Variant.Outlined" Margin="Margin.Dense" Class="flex-grow-1">
+                        @foreach (string t in Templates)
+                        {
+                            <MudSelectItem Value="@t">@t</MudSelectItem>
+                        }
+                    </MudSelect>
+                    <MudFileUpload T="IBrowserFile" Accept=".xml" FilesChanged="OnTemplateUpload"
+                                   MaximumFileCount="1" Class="ma-0 flex-none">
+                        <ActivatorContent>
+                            <MudTooltip Text="Upload a meter model (.xml)">
+                                <MudIconButton HtmlTag="label"
+                                               Icon="@Icons.Material.Filled.UploadFile"
+                                               Variant="Variant.Outlined" Color="Color.Default"
+                                               Size="Size.Medium" aria-label="Upload a meter model" />
+                            </MudTooltip>
+                        </ActivatorContent>
+                    </MudFileUpload>
+                </div>
             </MudItem>
             <MudItem xs="12" sm="6" md="2">
                 <MudSelect T="NicType" @bind-Value="SelectedNic" Label="NIC"
@@ -67,23 +79,17 @@
                     }
                 </MudSelect>
             </MudItem>
-            @if (NeedsHesTemplateId(SelectedNic))
-            {
-                <MudItem xs="12" sm="6" md="2">
-                    <MudNumericField T="int?" @bind-Value="HesTemplateId" Immediate="true" Min="1"
-                                     Label="HES template id"
-                                     Placeholder="e.g. 122"
-                                     HelperText="Optional — needed only for the custom channel"
-                                     Variant="Variant.Outlined" Margin="Margin.Dense" />
-                </MudItem>
-            }
-            <MudItem xs="12" sm="6" md="2" Class="d-flex align-center">
-                <MudFileUpload T="IBrowserFile" Accept=".xml" FilesChanged="OnTemplateUpload" MaximumFileCount="1">
-                    <ActivatorContent>
-                        <MudButton Variant="Variant.Outlined" Color="Color.Default"
-                                   StartIcon="@Icons.Material.Filled.Upload">Upload meter model (.xml)</MudButton>
-                    </ActivatorContent>
-                </MudFileUpload>
+            @* Always rendered, disabled unless the NIC has a custom channel. Showing it
+               conditionally reflowed the whole row the moment the NIC changed. *@
+            <MudItem xs="12" sm="6" md="2">
+                <MudNumericField T="int?" @bind-Value="HesTemplateId" Immediate="true" Min="1"
+                                 Label="HES template id"
+                                 Placeholder="e.g. 122"
+                                 Disabled="@(!NeedsHesTemplateId(SelectedNic))"
+                                 HelperText="@(NeedsHesTemplateId(SelectedNic)
+                                     ? "Optional — needed only for the custom channel"
+                                     : "Wirepas only")"
+                                 Variant="Variant.Outlined" Margin="Margin.Dense" />
             </MudItem>
         </MudGrid>
 
@@ -144,17 +150,19 @@
 }
 else
 {
+    @* Only identity and state are on the row. The model, node-id / IP / meter-number ranges are
+       reference detail — needed when registering meters with the HES, not when scanning the list
+       — so they move into an expandable panel and stop forcing every range onto three lines. *@
     <MudSimpleTable Hover="true" Dense="true" Bordered="false" Class="batch-table">
         <thead>
             <tr>
-                <th style="width:1%"></th>
-                <th>Name</th>
+                <th></th>
+                <th></th>
+                @* Absorbs all the slack, so the remaining columns stay grouped instead of
+                   drifting apart into voids on a wide screen. *@
+                <th class="col-flex">Name</th>
                 <th>NIC</th>
-                <th>Meter model</th>
-                <th>Count</th>
-                <th>Node id range</th>
-                <th>IP range</th>
-                <th>Meter# range</th>
+                <th style="text-align:right">Count</th>
                 <th>Status</th>
                 @if (CanOperate)
                 {
@@ -165,13 +173,22 @@ else
         <tbody>
             @foreach (MeterBatch batch in batches)
             {
+                bool expanded = ExpandedBatches.Contains(batch.Id);
                 (string firstNode, string lastNode) = MeterRegistry.GetNodeIdRange(batch);
-                <tr>
-                    <td style="white-space:nowrap">
+                @* The whole row is the hit target — a 24px chevron was a needlessly small one.
+                   Cells holding their own controls stop propagation so Start/Stop/Delete and the
+                   CSV download do not also toggle the panel. *@
+                <tr class="batch-row @StatusRowClass(batch.Status) @(expanded ? "is-expanded" : "")"
+                    @onclick="() => ToggleDetails(batch.Id)">
+                    <td>
+                        <MudIcon Size="Size.Small" Class="batch-chevron"
+                                 Icon="@(expanded ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)" />
+                    </td>
+                    <td @onclick:stopPropagation="true">
                         <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Download"
                                        Title="Download meter list (CSV)" OnClick="() => DownloadCsv(batch.Id)" />
                     </td>
-                    <td>@batch.Name</td>
+                    <td class="col-flex">@batch.Name</td>
                     <td>
                         <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@NicLabel(batch.NicType)</MudChip>
                         @if (batch.HesTemplateId is int hesId)
@@ -179,21 +196,7 @@ else
                             <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">tpl @hesId</MudText>
                         }
                     </td>
-                    <td><code>@batch.TemplateName</code></td>
-                    <td>@batch.Count.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</td>
-                    <td><code>@firstNode - @lastNode</code></td>
-                    <td>
-                        @if (batch.NicType == NicType.Tcp4G)
-                        {
-                            (IPAddress firstAddr, IPAddress lastAddr) = MeterRegistry.GetAddressRange(batch, AddressPrefix);
-                            <code>@firstAddr - @lastAddr</code>
-                        }
-                        else
-                        {
-                            <span class="mud-text-secondary">&mdash;</span>
-                        }
-                    </td>
-                    <td><code>@MeterRegistry.FormatSerial(batch.StartIndex) - @MeterRegistry.FormatSerial(batch.EndIndex)</code></td>
+                    <td style="text-align:right">@batch.Count.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</td>
                     <td>
                         <MudChip T="string" Size="Size.Small" Variant="Variant.Filled" Color="@StatusColor(batch.Status)">
                             @batch.Status
@@ -201,7 +204,7 @@ else
                     </td>
                     @if (CanOperate)
                     {
-                        <td style="text-align:right; white-space:nowrap">
+                        <td style="text-align:right" @onclick:stopPropagation="true">
                             <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Success"
                                        OnClick="() => Start(batch.Id)" Disabled="@(batch.Status == BatchStatus.Running)">Start</MudButton>
                             <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Warning" Class="ml-1"
@@ -214,6 +217,42 @@ else
                         </td>
                     }
                 </tr>
+                @if (expanded)
+                {
+                    <tr class="batch-detail-row @StatusRowClass(batch.Status)">
+                        <td colspan="@(CanOperate ? 7 : 6)" class="pa-0">
+                            <div class="pa-4">
+                                <MudGrid Spacing="3">
+                                    <MudItem xs="12" sm="6" md="3">
+                                        <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">Meter model</MudText>
+                                        <code>@batch.TemplateName</code>
+                                    </MudItem>
+                                    <MudItem xs="12" sm="6" md="3">
+                                        <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">Node id range</MudText>
+                                        <code>@firstNode &ndash; @lastNode</code>
+                                    </MudItem>
+                                    <MudItem xs="12" sm="6" md="3">
+                                        <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">Meter# range</MudText>
+                                        <code>@MeterRegistry.FormatSerial(batch.StartIndex) &ndash; @MeterRegistry.FormatSerial(batch.EndIndex)</code>
+                                    </MudItem>
+                                    <MudItem xs="12" sm="6" md="3">
+                                        <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">IP range</MudText>
+                                        @if (batch.NicType == NicType.Tcp4G)
+                                        {
+                                            (IPAddress firstAddr, IPAddress lastAddr) = MeterRegistry.GetAddressRange(batch, AddressPrefix);
+                                            <code>@firstAddr &ndash; @lastAddr</code>
+                                        }
+                                        else
+                                        {
+                                            @* Only 4G TCP meters get an IP; the rest are reached by node id. *@
+                                            <span class="mud-text-secondary">&mdash; not applicable on @NicLabel(batch.NicType)</span>
+                                        }
+                                    </MudItem>
+                                </MudGrid>
+                            </div>
+                        </td>
+                    </tr>
+                }
             }
         </tbody>
     </MudSimpleTable>
@@ -234,6 +273,20 @@ else
     private string? UploadMessage;
 
     private static readonly NicType[] AllNics = Enum.GetValues<NicType>();
+
+    /// <summary>
+    /// Batch ids whose detail panel is open. Kept by id rather than index so the open/closed state
+    /// survives a batch being added or deleted underneath the table.
+    /// </summary>
+    private HashSet<int> ExpandedBatches { get; } = new();
+
+    private void ToggleDetails(int batchId)
+    {
+        if (!ExpandedBatches.Remove(batchId))
+        {
+            ExpandedBatches.Add(batchId);
+        }
+    }
 
     /// <summary>
     /// Wirepas is the one NIC with a custom channel (endpoint 13) alongside plain DLMS, and the
@@ -272,6 +325,18 @@ else
         BatchStatus.Running => Color.Success,
         BatchStatus.Stopped => Color.Error,
         _ => Color.Default,
+    };
+
+    /// <summary>
+    /// Row accent class per state. Paired with the status chip rather than replacing it — the
+    /// accent is a muted left edge and a barely-there tint, so the table reads as scannable
+    /// without turning into a traffic light.
+    /// </summary>
+    private static string StatusRowClass(BatchStatus status) => status switch
+    {
+        BatchStatus.Running => "is-running",
+        BatchStatus.Stopped => "is-stopped",
+        _ => "is-idle",
     };
 
     protected override async Task OnInitializedAsync()

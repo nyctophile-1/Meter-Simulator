@@ -1,5 +1,9 @@
 @inherits LayoutComponentBase
 
+@* Canvas is a sibling of the card, not a parent, so the card never inherits its opacity.
+   aria-hidden: it is decoration and has nothing to announce. *@
+<canvas id="matrix-rain" aria-hidden="true"></canvas>
+
 <div class="login-page">
     @Body
 </div>

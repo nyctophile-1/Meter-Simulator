@@ -34,7 +34,9 @@
     </MudDrawer>
 
     <MudMainContent>
-        <MudContainer MaxWidth="MaxWidth.Large" Class="my-6">
+        @* ExtraLarge rather than Large: the batches table and the provision row are both wide,
+           and at 1280px the meter-model filenames truncated. *@
+        <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="my-6">
             @Body
         </MudContainer>
     </MudMainContent>

@@ -164,13 +164,18 @@ if (!app.Environment.IsDevelopment())
     app.UseExceptionHandler("/Error");
 }
 
-app.UseStaticFiles();
+// MapStaticAssets rather than UseStaticFiles: it content-hashes each asset at build time and
+// serves it with a fingerprinted URL, so a CSS or JS change reaches browsers immediately.
+// With UseStaticFiles the URL never changed, so an updated site.css sat behind the browser cache
+// and the page rendered new markup against old styles.
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseAntiforgery();
 
 app.MapAuthEndpoints();
 app.MapBatchEndpoints();
+
+app.MapStaticAssets();
 
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();

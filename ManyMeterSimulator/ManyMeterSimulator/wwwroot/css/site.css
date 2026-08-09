@@ -390,22 +390,227 @@ code {
     opacity: 0.9;
 }
 
-/* ---------- Login (LoginLayout, non-Mud) ---------- */
+/* ---------- Login (LoginLayout, non-Mud) ----------
+   Hand-written because this page renders before MudBlazor's theme is live. Colours are copied
+   from the MudTheme in MainLayout (primary #4ec9b0 on #1e1e1e / #252526) so the login and the
+   app read as one product. */
+
+#matrix-rain {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 0;
+    background: #111111;
+}
+
 .login-page {
+    position: relative;
+    z-index: 1;
     display: flex;
     align-items: center;
     justify-content: center;
-    height: 100vh;
+    min-height: 100vh;
+    padding: 24px;
 }
 
 .login-box {
+    width: 100%;
+    max-width: 340px;
+    padding: 36px 32px 28px;
     text-align: center;
+    background: rgba(37, 37, 38, 0.92);
+    border: 1px solid #333;
+    border-radius: 10px;
+    /* Depth against the animation, plus the faintest teal edge to tie the card to the rain. */
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(78, 201, 176, 0.08);
+    backdrop-filter: blur(3px);
+}
+
+.login-brand {
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    gap: 10px;
+}
+
+.login-mark {
+    font-family: "Cascadia Mono", Consolas, monospace;
+    font-size: 1.5rem;
+    color: #4ec9b0;
+    opacity: 0.85;
+    /* Terminal caret: the simulator is a tool, and this is cheaper than a logo. */
+    animation: maya-caret 1.2s steps(1) infinite;
+}
+
+@keyframes maya-caret {
+    50% { opacity: 0.2; }
+}
+
+/* Same teal as the appbar wordmark after login (Color.Primary #4ec9b0, weight 700), so the
+   brand does not change colour the moment you sign in. */
+.login-box h1 {
+    margin: 0;
+    font-size: 2.1rem;
+    letter-spacing: 0.18em;
+    font-weight: 700;
+    color: #4ec9b0;
+    text-shadow: 0 0 22px rgba(78, 201, 176, 0.45);
+}
+
+.brand-sub {
+    margin: 6px 0 26px;
+    font-size: 0.8rem;
+    letter-spacing: 0.08em;
+    color: #8a8f98;
+}
+
+.login-form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
 }
 
 .login-box input[type="password"] {
-    background: #2d2d2d;
+    width: 100%;
+    box-sizing: border-box;
+    background: #1e1e1e;
     color: #d4d4d4;
     border: 1px solid #444;
-    padding: 8px 12px;
-    width: 220px;
+    border-radius: 6px;
+    padding: 11px 13px;
+    font-size: 0.95rem;
+    transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.login-box input[type="password"]::placeholder {
+    color: #6b7078;
+}
+
+.login-box input[type="password"]:focus {
+    outline: none;
+    border-color: #4ec9b0;
+    box-shadow: 0 0 0 3px rgba(78, 201, 176, 0.15);
+}
+
+.login-box button[type="submit"] {
+    width: 100%;
+    padding: 11px 13px;
+    background: #4ec9b0;
+    color: #10241f;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    transition: filter 120ms ease;
+}
+
+.login-box button[type="submit"]:hover {
+    filter: brightness(1.08);
+}
+
+.login-box button[type="submit"]:active {
+    filter: brightness(0.94);
+}
+
+/* Always in the layout, only sometimes visible — keeps the card from resizing on a failed
+   attempt. */
+.login-box .error {
+    margin: 2px 0 0;
+    min-height: 1.1em;
+    font-size: 0.8rem;
+    color: #f48771;
+    visibility: hidden;
+}
+
+.login-box .error.is-visible {
+    visibility: visible;
+}
+
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* ---------- Batches table ---------- */
+
+/* Everything shrinks to its content except the name, which absorbs the slack. Without this the
+   browser spreads spare width across every column and opens voids mid-table on a wide screen. */
+.batch-table th,
+.batch-table td {
+    padding: 14px 16px;
+    white-space: nowrap;
+}
+
+.batch-table th.col-flex,
+.batch-table td.col-flex {
+    width: 100%;
+    white-space: normal;
+}
+
+.batch-table tbody tr.batch-row {
+    cursor: pointer;
+    transition: background-color 120ms ease;
+}
+
+.batch-table tbody tr.batch-row:hover > td {
+    background: rgba(255, 255, 255, 0.035);
+}
+
+.batch-chevron {
+    color: #8a8f98;
+    transition: color 120ms ease;
+}
+
+.batch-table tbody tr.batch-row:hover .batch-chevron {
+    color: #d4d4d4;
+}
+
+/* State accent: a 3px left edge plus a tint just strong enough to group the row at a glance.
+   Applied to the first cell because a border on <tr> is not painted in a collapsed table. */
+.batch-row > td:first-child,
+.batch-detail-row > td:first-child {
+    border-left: 3px solid transparent;
+}
+
+.batch-row.is-running > td:first-child,
+.batch-detail-row.is-running > td:first-child {
+    border-left-color: rgba(78, 201, 176, 0.65);
+}
+
+.batch-row.is-stopped > td:first-child,
+.batch-detail-row.is-stopped > td:first-child {
+    border-left-color: rgba(244, 135, 113, 0.55);
+}
+
+.batch-row.is-idle > td:first-child,
+.batch-detail-row.is-idle > td:first-child {
+    border-left-color: rgba(138, 143, 152, 0.45);
+}
+
+.batch-row.is-running > td {
+    background: rgba(78, 201, 176, 0.028);
+}
+
+.batch-row.is-stopped > td {
+    background: rgba(244, 135, 113, 0.028);
+}
+
+/* Open row and its panel read as one block. */
+.batch-row.is-expanded > td {
+    background: rgba(255, 255, 255, 0.045);
+}
+
+.batch-detail-row > td {
+    background: rgba(255, 255, 255, 0.02);
+    border-top: 0;
 }
