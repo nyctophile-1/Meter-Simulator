@@ -35,6 +35,7 @@ public class MeterSessionManagerTests
             registry,
             templates,
             Options.Create(new BrainOptions()),
+            Options.Create(new Networking.TcpOptions { AddressPrefix = Prefix }),
             NullLogger<MeterSessionManager>.Instance);
     }
 

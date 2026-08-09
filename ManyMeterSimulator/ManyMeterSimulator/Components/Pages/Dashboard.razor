@@ -14,6 +14,8 @@
 @inject MeterRegistry MeterRegistry
 @inject IOptions<TcpOptions> TcpOptions
 @inject MqttNicListenerService MqttListener
+@inject PushCoordinator Push
+@inject ISnackbar Snackbar
 @implements IDisposable
 
 <PageTitle>MAYA - Dashboard</PageTitle>
@@ -199,6 +201,15 @@
                 </MudText>
             </div>
 
+            @* Push destination — the single TCP IP every "Send Push" targets. The buffer/structure
+               is fixed by each meter's template; only this destination and the trigger are the
+               operator's to set. *@
+            <MudTextField @bind-Value="_pushDestination" Label="TCP push IP"
+                          Placeholder="e.g. 10.0.0.5 or [2406:da1a::1]:7000"
+                          Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-3"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Send"
+                          HelperText="Every meter in a batch pushes to this address on Send Push." />
+
             @if (_totalBatches == 0)
             {
                 <div class="batch-empty">
@@ -243,6 +254,15 @@
                                 <div class="batch-row-sub">@NicLabel(b.NicType) &middot; @b.TemplateName</div>
                             </div>
                             <span class="batch-row-count">@b.Count.ToString("N0")</span>
+                            @if (b.NicType == NicType.Tcp4G)
+                            {
+                                <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
+                                           StartIcon="@Icons.Material.Filled.Send" Class="ml-2"
+                                           Disabled="@_pushingBatchIds.Contains(b.Id)"
+                                           OnClick="@(() => SendPushAsync(b.Id))">
+                                    @(_pushingBatchIds.Contains(b.Id) ? "Sending…" : "Send Push")
+                                </MudButton>
+                            }
                         </div>
                     }
                 </div>
@@ -341,9 +361,50 @@
         ChartPalette = new[] { "#4ec9b0", "#0e639c", "#e0a458", "#f48771", "#8a8f98" },
     };
 
+    // ── Push (on-demand "Send Push" button) ──
+    private string _pushDestination = string.Empty;
+    private readonly HashSet<int> _pushingBatchIds = new();
+
+    private async Task SendPushAsync(int batchId)
+    {
+        if (string.IsNullOrWhiteSpace(_pushDestination))
+        {
+            Snackbar.Add("Enter a TCP push IP first.", Severity.Warning);
+            return;
+        }
+
+        _pushingBatchIds.Add(batchId);
+        try
+        {
+            PushBatchResult result = await Push.PushBatchAsync(batchId, _pushDestination.Trim());
+
+            if (!result.Ok)
+            {
+                Snackbar.Add(result.Error ?? "Push failed.", Severity.Error);
+            }
+            else if (result.Failed == 0)
+            {
+                Snackbar.Add($"Pushed {result.Sent} of {result.Total} meter(s) to {_pushDestination.Trim()}.", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add($"Pushed {result.Sent}/{result.Total}; {result.Failed} failed.", Severity.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Push error: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _pushingBatchIds.Remove(batchId);
+        }
+    }
+
     protected override void OnInitialized()
     {
         _maxConns = TcpOptions.Value.MaxConcurrentConnections;
+        _pushDestination = Push.Options.DefaultDestination;
         _lastSampleUtc = DateTime.UtcNow;
         Sample(initial: true);
         _timer = new System.Threading.Timer(
