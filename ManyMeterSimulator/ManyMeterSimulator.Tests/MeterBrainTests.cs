@@ -40,9 +40,43 @@ public class MeterBrainTests
         var session = new DLMSServerSession(meter, TemplatePath("SA1231166HP_values.xml"));
         session.Initialize(true);
 
-        var serial = session.Items.FindByLN(ObjectType.Data, "0.0.96.1.0.255") as GXDLMSData;
-        Assert.NotNull(serial);
-        Assert.Equal(meter.MeterNo, serial!.Value); // template's baked-in serial was rewritten
+        // The serial now lives in the meter's own value store, which is what PreRead answers reads
+        // from. It is deliberately NOT written onto the template object: that object is shared by
+        // every meter using this template, so writing there would give the whole fleet whichever
+        // serial happened to be built last.
+        Assert.Equal(meter.MeterNo, meter.GetValue("0.0.96.1.0.255"));
+        Assert.NotNull(session.Items.FindByLN(ObjectType.Data, "0.0.96.1.0.255"));
+    }
+
+    /// <summary>
+    /// The property that makes a shared template model safe: two meters built from the SAME
+    /// template must not be able to see each other's identity or values.
+    /// </summary>
+    [Fact]
+    public void TwoMetersOnOneTemplate_DoNotShareIdentityOrValues()
+    {
+        string template = TemplatePath("SA1231166HP_values.xml");
+
+        var meterA = new DLMSMeter(1, "1.0.0.0.0.255", clientAddress: 16, serverAddress: 1);
+        var meterB = new DLMSMeter(2, "1.0.0.0.0.255", clientAddress: 16, serverAddress: 1);
+
+        var sessionA = new DLMSServerSession(meterA, template);
+        var sessionB = new DLMSServerSession(meterB, template);
+        sessionA.Initialize(true);
+        sessionB.Initialize(true);
+
+        // Identity stays per meter even though the object model is shared.
+        Assert.Equal("MY000000001", meterA.GetValue("0.0.96.1.0.255"));
+        Assert.Equal("MY000000002", meterB.GetValue("0.0.96.1.0.255"));
+
+        // The two sessions really are sharing one object graph (that is the point) …
+        var objA = sessionA.Items.FindByLN(ObjectType.Data, "0.0.96.1.0.255");
+        var objB = sessionB.Items.FindByLN(ObjectType.Data, "0.0.96.1.0.255");
+        Assert.Same(objA, objB);
+
+        // … and a write to one meter must not be visible on the other.
+        meterA.SetValue("1.0.1.8.0.255", 12345u);
+        Assert.NotEqual(12345u, meterB.GetValue("1.0.1.8.0.255"));
     }
 }
 

@@ -30,7 +30,12 @@ namespace MeterSimulator.DLMS
         private readonly DLMSMeter _meter;
         //private readonly GXNet _network;
         private readonly GXDLMSObjectCollection _objects = new();
-        private readonly GXDLMSObjectCollection _objectsFromFile = new();
+
+        /// <summary>
+        /// The SHARED template model (see <see cref="TemplateModelCache"/>) — borrowed, not owned.
+        /// Read-only: writing to anything in here would leak across every meter using this template.
+        /// </summary>
+        private readonly GXDLMSObjectCollection _objectsFromFile;
 
         // ── Push (outbound DataNotification) ──────────────────────────────────
         // The meter acts as a TCP CLIENT for push: on a timer it builds a
@@ -38,8 +43,27 @@ namespace MeterSimulator.DLMS
         // to that object's Destination.  Gurux does NOT transmit push itself, so
         // the encoder (_notify), the timer, and the socket are ours.
         private readonly PushConfig? _pushConfig;
-        private readonly GXDLMSSecureNotify _notify;
-        private readonly object _pushLock = new();
+        /// <summary>
+        /// The outbound DataNotification encoder — a SECOND full DLMS stack. Created on first push
+        /// rather than in the constructor: push is on-demand, so the overwhelming majority of meters
+        /// never need one, and at fleet scale building it eagerly was pure per-meter overhead.
+        /// </summary>
+        private GXDLMSSecureNotify? _notify;
+
+        /// <summary>
+        /// Push briefly writes THIS meter's values onto the shared template objects so Gurux can
+        /// encode them, so the mutate→encode window must be exclusive across every meter — hence a
+        /// process-wide lock rather than a per-session one.
+        ///
+        /// This does not block the pull path: HES reads are answered from the per-meter store via
+        /// <see cref="PreRead"/> and never consult these objects' values, and profile reads encode
+        /// from Buffer rows rather than live objects. Only push encoding serialises, which is
+        /// in-memory and fast; the socket IO in <see cref="SendFrames"/> stays outside the lock.
+        ///
+        /// If push throughput ever becomes the bottleneck, the way out is transient per-meter copies
+        /// of the (small) push_object_list instead of borrowing the shared objects.
+        /// </summary>
+        private static readonly object PushEncodeLock = new();
         private Timer? _pushTimer;
 
         // The meter's OWN address, bound as the LOCAL endpoint of the outbound push socket so the
@@ -67,11 +91,6 @@ namespace MeterSimulator.DLMS
             _pushConfig = pushConfig;
             _sourceAddress = sourceAddress;
 
-            // Encoder for outbound DataNotification frames.  Meter is the source
-            // (server address); the client/HES is the destination address.
-            _notify = new GXDLMSSecureNotify(
-                true, meter.ClientAddress, meter.ServerAddress, InterfaceType.WRAPPER);
-
             Settings.Authentication = Authentication.High;
             //_network = new GXNet(NetworkType.Tcp, port)
             //{
@@ -84,23 +103,16 @@ namespace MeterSimulator.DLMS
 
             // Template (DLMS object model) is chosen per-batch and resolved to a path by
             // the host (MeterSessionManager) — no hardcoded/machine-specific path here.
-            var loader = new MeterObjectLoader(templatePath);
+            //
+            // SHARED, not loaded per meter: the cache parses each template exactly once and every
+            // meter built from it references the same objects (see TemplateModelCache for why this
+            // is safe). _objectsFromFile therefore holds borrowed, READ-ONLY objects — never write
+            // to them; per-meter divergence belongs in _meter.
+            _objectsFromFile = TemplateModelCache.Shared.Get(templatePath);
 
-            loader.Load(_objectsFromFile);
-
-            // The XML template bakes in a push Destination (often a real head-end
-            // address). If a Destination override is configured, rewrite it on every
-            // PushSetup NOW — before the objects are registered in Items — so both
-            // the push sender and the value the HES reads back reflect our target.
-            ApplyPushDestinationOverride(_objectsFromFile);
-
-            // The XML template bakes in a single serial (e.g. "SA1231166").  Every meter is
-            // built from a SHARED template, so rewrite the serial-number object to THIS meter's
-            // own serial before the values are copied into the meter store — otherwise every
-            // meter would report the template's serial and HES couldn't tell them apart
-            // (HES reconciles IP-vs-meterno using the serial in the DLMS payload).
-            ApplySerialOverride(_objectsFromFile);
-
+            // Seed this meter's own value store from the template's defaults. Reads are answered
+            // from here (see PreRead), so the shared objects are never consulted for a value and
+            // never need to be written to.
             foreach (var obj in _objectsFromFile)
             {
                 if (obj is GXDLMSRegister reg)
@@ -112,6 +124,13 @@ namespace MeterSimulator.DLMS
                     _meter.SetValue(data.LogicalName, data.Value);
                 }
             }
+
+            // The template bakes in a single serial (e.g. "SA1231166") and is SHARED by every meter,
+            // so this meter's own serial goes into ITS value store — never onto the shared object,
+            // which would give every meter the last-built meter's serial. Must run after the seeding
+            // loop above, which would otherwise overwrite it with the template's serial.
+            // (HES reconciles IP-vs-meterno using the serial in the DLMS payload.)
+            ApplySerialOverride();
 
             //InitializeObjects();
             InitializeSecuritySetup();
@@ -163,24 +182,10 @@ namespace MeterSimulator.DLMS
 
         #region Push (outbound DataNotification)
 
-        /// <summary>
-        /// Replaces the Destination on every PushSetup with the configured override
-        /// (if any).  No-op when the override is empty — the XML value is kept.
-        /// </summary>
-        private void ApplyPushDestinationOverride(GXDLMSObjectCollection objects)
-        {
-            var dest = _pushConfig?.Destination;
-            if (string.IsNullOrWhiteSpace(dest))
-                return;
-
-            foreach (var push in objects.OfType<GXDLMSPushSetup>())
-            {
-                CoreLog.Debug(
-                    $"[Push] {_meter.MeterNo}: rewriting Destination on {push.LogicalName} " +
-                    $"'{push.Destination}' → '{dest}'");
-                push.Destination = dest;
-            }
-        }
+        // ApplyPushDestinationOverride was removed with the move to a SHARED template model: it
+        // wrote PushSetup.Destination onto objects every meter now shares, so the last meter built
+        // would have decided the destination for the whole fleet. The destination is supplied per
+        // call instead — see PushNow — which is also what lets the dashboard change it at runtime.
 
         /// <summary>
         /// OBIS of the meter serial number (a GXDLMSData string, attr 2).
@@ -188,22 +193,20 @@ namespace MeterSimulator.DLMS
         private const string SerialNumberLN = "0.0.96.1.0.255";
 
         /// <summary>
-        /// Replaces the serial-number object's value with this meter's own serial
-        /// (<see cref="DLMSMeter.MeterNo"/>, "MY" + 9-digit index).  No-op if the template
-        /// has no serial object.
+        /// Records this meter's own serial (<see cref="DLMSMeter.MeterNo"/>, "MY" + 9-digit index)
+        /// in its per-meter value store, which is what <see cref="PreRead"/> answers from. The
+        /// shared template object is deliberately left untouched.
         /// </summary>
-        private void ApplySerialOverride(GXDLMSObjectCollection objects)
+        private void ApplySerialOverride()
         {
-            if (objects.FindByLN(ObjectType.Data, SerialNumberLN) is not GXDLMSData serial)
+            if (_objectsFromFile.FindByLN(ObjectType.Data, SerialNumberLN) is not GXDLMSData)
             {
                 CoreLog.Debug($"[Serial] {_meter.MeterNo}: no {SerialNumberLN} in template, skipping");
                 return;
             }
 
-            CoreLog.Debug(
-                $"[Serial] {_meter.MeterNo}: rewriting {SerialNumberLN} '{serial.Value}' → '{_meter.MeterNo}'");
-            serial.Value = _meter.MeterNo;
-            serial.SetDataType(2, DataType.String);
+            _meter.SetValue(SerialNumberLN, _meter.MeterNo);
+            CoreLog.Debug($"[Serial] {_meter.MeterNo}: {SerialNumberLN} set for this meter");
         }
 
         /// <summary>
@@ -271,14 +274,12 @@ namespace MeterSimulator.DLMS
 
                 // Make the push carry live meter values (GeneratePushSetupMessages
                 // reads each object's GetValue directly, NOT via the server PreRead).
-                SyncPushValues(push);
-
-                ConfigureNotifyCiphering(_pushConfig!.UseCiphering);
-
                 byte[][] frames;
-                lock (_pushLock)
+                lock (PushEncodeLock)
                 {
-                    frames = _notify.GeneratePushSetupMessages(DateTime.UtcNow, push);
+                    SyncPushValues(push);
+                    ConfigureNotifyCiphering(_pushConfig!.UseCiphering);
+                    frames = Notify.GeneratePushSetupMessages(DateTime.UtcNow, push);
                 }
 
                 SendFrames(push, host, port, frames);
@@ -327,13 +328,14 @@ namespace MeterSimulator.DLMS
             int sent = 0, failed = 0;
             foreach (var push in pushObjects)
             {
-                SyncPushValues(push);
-                ConfigureNotifyCiphering(useCiphering);
-
+                // Mutate-then-encode against the shared template objects must be exclusive; the
+                // socket write below deliberately is not. See PushEncodeLock.
                 byte[][] frames;
-                lock (_pushLock)
+                lock (PushEncodeLock)
                 {
-                    frames = _notify.GeneratePushSetupMessages(DateTime.UtcNow, push);
+                    SyncPushValues(push);
+                    ConfigureNotifyCiphering(useCiphering);
+                    frames = Notify.GeneratePushSetupMessages(DateTime.UtcNow, push);
                 }
 
                 if (SendFrames(push, host, port, frames))
@@ -371,19 +373,28 @@ namespace MeterSimulator.DLMS
             }
         }
 
+        /// <summary>
+        /// The DataNotification encoder for this meter, built on first use. Callers are already
+        /// inside <see cref="PushEncodeLock"/>, so no additional synchronisation is needed here.
+        /// Meter is the source (server address); the client/HES is the destination address.
+        /// </summary>
+        private GXDLMSSecureNotify Notify =>
+            _notify ??= new GXDLMSSecureNotify(
+                true, _meter.ClientAddress, _meter.ServerAddress, InterfaceType.WRAPPER);
+
         /// <summary>Applies plaintext or general-glo-ciphering to the notify encoder.</summary>
         private void ConfigureNotifyCiphering(bool useCiphering)
         {
             if (useCiphering)
             {
-                _notify.Ciphering.Security = Security.AuthenticationEncryption;
-                _notify.Ciphering.SystemTitle = _meter.SystemTitle;
-                _notify.Ciphering.BlockCipherKey = _meter.BlockCipherKey;
-                _notify.Ciphering.AuthenticationKey = _meter.AuthenticationKey;
+                Notify.Ciphering.Security = Security.AuthenticationEncryption;
+                Notify.Ciphering.SystemTitle = _meter.SystemTitle;
+                Notify.Ciphering.BlockCipherKey = _meter.BlockCipherKey;
+                Notify.Ciphering.AuthenticationKey = _meter.AuthenticationKey;
             }
             else
             {
-                _notify.Ciphering.Security = Security.None;
+                Notify.Ciphering.Security = Security.None;
             }
         }
 
@@ -520,10 +531,18 @@ namespace MeterSimulator.DLMS
         #endregion
 
         /// <summary>
-        /// For every ProfileGeneric in _objects, replace each CaptureObject's key
-        /// with the corresponding instance that already lives in Items.  If a
-        /// referenced object is missing from Items it is added so Gurux can still
-        /// encode the column.
+        /// Ensures every object a profile captures is present in THIS session's Items, so Gurux can
+        /// resolve each column's DataType while encoding.
+        ///
+        /// Deliberately read-only with respect to the profiles themselves. It used to rebuild each
+        /// profile's CaptureObjects list (Clear + AddRange), which is now a shared-state write: the
+        /// profiles belong to the shared template model, so two sessions constructing concurrently
+        /// would have one clearing the list while the other enumerated it —
+        /// "Collection was modified" — and, worse, could leave a profile half-rewired.
+        ///
+        /// The rebuild is also unnecessary: <see cref="MeterObjectLoader"/> already points every
+        /// CaptureObject at the canonical instance within the same collection, once, at template
+        /// load. Items is per-session, so topping it up here remains safe.
         /// </summary>
         private void RewireProfileCaptureObjects()
         {
@@ -531,26 +550,16 @@ namespace MeterSimulator.DLMS
             {
                 if (profile.CaptureObjects.Count == 0) continue;
 
-                CoreLog.Debug($"Re-wiring CaptureObjects for {profile.LogicalName} " +
-                                  $"({profile.CaptureObjects.Count} columns, {profile.Buffer.Count} rows)");
-
-                var rewired = new List<GXKeyValuePair<GXDLMSObject, GXDLMSCaptureObject>>();
                 foreach (var kv in profile.CaptureObjects)
                 {
-                    var real = Items.FindByLN(kv.Key.ObjectType, kv.Key.LogicalName);
-                    if (real == null)
+                    if (Items.FindByLN(kv.Key.ObjectType, kv.Key.LogicalName) == null)
                     {
-                        // Referenced object not in Items — register the stub so Gurux
-                        // can at least determine the column DataType.
-                        CoreLog.Warn($"  WARNING: {kv.Key.ObjectType} {kv.Key.LogicalName} not in Items — adding stub");
+                        // Referenced object not in Items — register it so Gurux can still determine
+                        // the column DataType. Adds to the per-session Items, never to the profile.
+                        CoreLog.Debug($"  {kv.Key.ObjectType} {kv.Key.LogicalName} not in Items — registering");
                         Items.Add(kv.Key);
-                        real = kv.Key;
                     }
-                    rewired.Add(new GXKeyValuePair<GXDLMSObject, GXDLMSCaptureObject>(real, kv.Value));
                 }
-
-                profile.CaptureObjects.Clear();
-                profile.CaptureObjects.AddRange(rewired);
             }
         }
 
@@ -766,18 +775,29 @@ namespace MeterSimulator.DLMS
                         var assoc = arg.Target as GXDLMSAssociationLogicalName;
                     }
 
+                    // Invocation counter: the client reads …43.1.3.255 but the live value is kept
+                    // under …43.1.0.255 in THIS meter's store (PreWrite puts it there). Reading the
+                    // shared object here would hand every meter the same counter.
                     if (arg.Target.LogicalName == "0.0.43.1.3.255" && arg.Index == 2)
                     {
-                        var ic0 = Items.FindByLN(ObjectType.Data, "0.0.43.1.0.255") as GXDLMSData;
-
-                        if (ic0 != null)
+                        var ic = _meter.GetValue("0.0.43.1.0.255");
+                        if (ic != null)
                         {
-                            CoreLog.Debug($"IC Value : {ic0.Value}");
-                            arg.Value = ic0.Value;
+                            arg.Value = ic;
                             arg.Handled = true;
+                            continue;
                         }
                     }
 
+                    // The clock lives on the SHARED template object, seeded once when the template
+                    // was parsed — so serving it from there would freeze every meter's clock at the
+                    // moment of first parse. Answer with the current time instead.
+                    if (arg.Target is GXDLMSClock && arg.Index == 2)
+                    {
+                        arg.Value = new GXDateTime(DateTime.UtcNow);
+                        arg.Handled = true;
+                        continue;
+                    }
 
                     var obis = arg.Target.LogicalName;
 
@@ -913,19 +933,38 @@ namespace MeterSimulator.DLMS
             CoreLog.Debug( $"DLMS client Disconnected");
         }
 
+        /// <summary>
+        /// Absorbs every client write into THIS meter's value store.
+        ///
+        /// Setting <c>Handled = true</c> is mandatory, not an optimisation. When the server leaves a
+        /// write unhandled, Gurux calls <c>IGXDLMSBase.SetValue</c> on the target object
+        /// (GXDLMSLNCommandHandlers, "else if (!e.Handled ...)") — and those objects are SHARED by
+        /// every meter using this template, so one meter's write would silently become every
+        /// meter's value.
+        ///
+        /// Note the matching trap: Gurux invokes PostWrite inside that same unhandled branch, so
+        /// once a write is marked handled PostWrite never runs. The value therefore has to be stored
+        /// HERE; relying on PostWrite would accept writes and silently drop them.
+        /// </summary>
         protected override void PreWrite(ValueEventArgs[] args)
         {
-            foreach(var arg in args)
+            foreach (var arg in args)
             {
+                // The invocation counter is mirrored onto a different object (…43.1.0.255) than the
+                // one the client writes (…43.1.3.255), so it keeps its own mapping.
                 if (arg.Target.LogicalName == "0.0.43.1.3.255" && arg.Index == 2)
                 {
-                    var ic0 = Items.FindByLN(ObjectType.Data, "0.0.43.1.0.255") as GXDLMSData;
+                    _meter.SetValue("0.0.43.1.0.255", arg.Value);
+                    arg.Handled = true;
+                    continue;
+                }
 
-                    if (ic0 != null)
-                    {
-                        ic0.Value = arg.Value;
-                        arg.Handled = true;
-                    }
+                if ((arg.Target is GXDLMSRegister || arg.Target is GXDLMSData) && arg.Index == 2)
+                {
+                    _meter.SetValue(arg.Target.LogicalName, arg.Value);
+                    arg.Handled = true;
+                    CoreLog.Debug(
+                        $"[Write] {_meter.MeterNo}: {arg.Target.ObjectType} {arg.Target.LogicalName} = {arg.Value}");
                 }
             }
         }
@@ -988,6 +1027,12 @@ namespace MeterSimulator.DLMS
         {
         }
 
+        /// <summary>
+        /// Safety net only. Gurux runs PostWrite exclusively for writes PreWrite left unhandled
+        /// (e.g. a block-transferred write), so in the normal path this does nothing — PreWrite has
+        /// already stored the value. Kept so any such path still lands in the per-meter store rather
+        /// than being lost.
+        /// </summary>
         protected override void PostWrite(ValueEventArgs[] args)
         {
             foreach (var arg in args)
