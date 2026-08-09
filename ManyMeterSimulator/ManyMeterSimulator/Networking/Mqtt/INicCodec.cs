@@ -52,4 +52,22 @@ public interface INicCodec
     /// Returns an empty list when there is nothing to send.
     /// </summary>
     IReadOnlyList<NicPublish> Encode(NicEnvelope request, NicRoute route, ushort frameId, ReadOnlyMemory<byte> dlmsResponse);
+
+    /// <summary>
+    /// Wraps an unsolicited PUSH — a meter-originated DataNotification — for this NIC's push topic.
+    ///
+    /// <para>
+    /// Unlike <see cref="Encode"/> there is no request to correlate against: a push is the meter
+    /// speaking first, identified only by its node id. Each NIC has its own push topic and framing,
+    /// reverse-engineered from the HES receiver clients (vayu-core <c>DataReceiverClients</c>).
+    /// Returns an empty list when there is nothing to send.
+    /// </para>
+    ///
+    /// <para>
+    /// Default: not implemented. A variant whose push wire-format is not built yet keeps this
+    /// default and the push coordinator reports it as unsupported rather than emitting a wrong frame.
+    /// </para>
+    /// </summary>
+    IReadOnlyList<NicPublish> EncodePush(string nodeId, ReadOnlyMemory<byte> dlmsPush) =>
+        throw new NotSupportedException($"{Nic} push encoding is not implemented yet.");
 }

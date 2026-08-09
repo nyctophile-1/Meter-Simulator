@@ -2,88 +2,674 @@
 @attribute [Authorize]
 @using Microsoft.AspNetCore.Authorization
 
-<PageTitle>MAYA - Docs</PageTitle>
+<PageTitle>MAYA - Developer Documentation</PageTitle>
 
-<MudStack Spacing="8" Class="mt-2" Style="max-width:900px;">
+<style>
+    .docs-layout {
+        display: grid;
+        grid-template-columns: 280px 1fr;
+        gap: 2.5rem;
+        width: 100%;
+        max-width: 1400px;
+        margin: 0 auto;
+        padding-top: 1rem;
+    }
+    
+    .docs-sidebar {
+        position: sticky;
+        top: 100px;
+        height: calc(100vh - 140px);
+        overflow-y: auto;
+        padding-right: 1.5rem;
+        border-right: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    
+    .docs-content {
+        padding-bottom: 6rem;
+        max-width: 960px;
+    }
+    
+    .doc-section {
+        margin-bottom: 4.5rem;
+        animation: fadeIn 0.4s ease-out;
+    }
 
-    <div>
-        <MudText Typo="Typo.h5" Color="Color.Primary" GutterBottom="true">What is MAYA?</MudText>
-        <MudText Typo="Typo.body1">
-            MAYA (the Many-Meter Simulator) is a testing tool that emulates a large fleet of DLMS/COSEM
-            smart meters from a single server. It lets you exercise a Head-End System (HES) against
-            thousands of meters without needing any physical hardware.
-        </MudText>
+    @@keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .doc-title-h1 {
+        font-size: 2.25rem;
+        font-weight: 800;
+        letter-spacing: -0.025em;
+        margin-bottom: 1.25rem;
+        background: linear-gradient(135deg, var(--mud-palette-primary) 0%, #a855f7 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+
+    .doc-title-h2 {
+        font-size: 1.50rem;
+        font-weight: 600;
+        margin-top: 2rem;
+        margin-bottom: 1rem;
+        color: var(--mud-palette-text-primary);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        padding-bottom: 0.5rem;
+    }
+
+    .doc-title-h3 {
+        font-size: 1.15rem;
+        font-weight: 600;
+        margin-top: 1.5rem;
+        margin-bottom: 0.75rem;
+        color: var(--mud-palette-secondary);
+    }
+    
+    .doc-text {
+        font-size: 1rem;
+        line-height: 1.75;
+        color: var(--mud-palette-text-secondary);
+        margin-bottom: 1.25rem;
+    }
+    
+    .code-block-container {
+        position: relative;
+        background: rgba(10, 10, 15, 0.75);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 8px;
+        padding: 1.25rem;
+        margin: 1.5rem 0;
+        font-family: 'Fira Code', 'Courier New', Courier, monospace;
+        font-size: 0.875rem;
+        line-height: 1.6;
+        overflow-x: auto;
+        color: #e2e8f0;
+        box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+    }
+
+    .code-tag-xml { color: #f43f5e; }
+    .code-attr-xml { color: #fb923c; }
+    .code-val-xml { color: #34d399; }
+    .code-comment-xml { color: #64748b; font-style: italic; }
+
+    .code-keyword { color: #f472b6; }
+    .code-method { color: #38bdf8; }
+    .code-comment { color: #64748b; font-style: italic; }
+    
+    .docs-nav-link {
+        display: block;
+        width: 100%;
+        text-align: left;
+        padding: 0.6rem 0.85rem;
+        border-radius: 6px;
+        color: var(--mud-palette-text-secondary);
+        font-size: 0.925rem;
+        text-decoration: none;
+        transition: all 0.2s ease;
+        margin-bottom: 0.35rem;
+        background: transparent;
+        border: none;
+        cursor: pointer;
+    }
+    
+    .docs-nav-link:hover {
+        background: rgba(255, 255, 255, 0.03);
+        color: var(--mud-palette-text-primary);
+        padding-left: 1.15rem;
+    }
+    
+    .docs-nav-link.active {
+        background: rgba(var(--mud-palette-primary-rgb), 0.1);
+        color: var(--mud-palette-primary);
+        font-weight: 600;
+        border-left: 4px solid var(--mud-palette-primary);
+        border-radius: 0 6px 6px 0;
+        padding-left: 1.15rem;
+    }
+    
+    .arch-grid {
+        display: grid;
+        grid-template-columns: 1fr 120px 1fr;
+        align-items: center;
+        gap: 1rem;
+        background: rgba(255, 255, 255, 0.01);
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        border-radius: 8px;
+        padding: 1.5rem;
+        margin: 1.5rem 0;
+    }
+
+    .arch-node {
+        background: rgba(255, 255, 255, 0.02);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 6px;
+        padding: 1rem;
+        text-align: center;
+    }
+
+    .arch-node-hes {
+        border-color: rgba(var(--mud-palette-primary-rgb), 0.4);
+        background: rgba(var(--mud-palette-primary-rgb), 0.04);
+    }
+
+    .arch-node-maya {
+        border-color: rgba(var(--mud-palette-secondary-rgb), 0.4);
+        background: rgba(var(--mud-palette-secondary-rgb), 0.04);
+    }
+
+    .nic-badge {
+        padding: 0.25rem 0.5rem;
+        border-radius: 4px;
+        font-size: 0.725rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        display: inline-block;
+    }
+
+    .nic-badge-tcp { background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.3); }
+    .nic-badge-mqtt { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
+    .nic-badge-mqttimg { background: rgba(6, 182, 212, 0.15); color: #22d3ee; border: 1px solid rgba(6, 182, 212, 0.3); }
+    .nic-badge-wirepas { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
+    .nic-badge-kmesh { background: rgba(139, 92, 246, 0.15); color: #a78bfa; border: 1px solid rgba(139, 92, 246, 0.3); }
+
+    .graph-card {
+        background: rgba(15, 15, 25, 0.5);
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        border-radius: 12px;
+        padding: 1.5rem;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+    }
+
+    .graph-axis {
+        stroke: rgba(255, 255, 255, 0.2);
+        stroke-width: 1.5px;
+    }
+
+    .graph-grid {
+        stroke: rgba(255, 255, 255, 0.06);
+        stroke-width: 1px;
+        stroke-dasharray: 4,4;
+    }
+
+    .graph-line-primary {
+        fill: none;
+        stroke: var(--mud-palette-primary);
+        stroke-width: 3.5px;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+    }
+
+    .graph-line-secondary {
+        fill: none;
+        stroke: var(--mud-palette-secondary);
+        stroke-width: 3.5px;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+    }
+
+    .graph-glow {
+        filter: drop-shadow(0px 4px 10px rgba(var(--mud-palette-primary-rgb), 0.35));
+    }
+</style>
+
+<div class="docs-layout">
+    <!-- Sidebar Navigation -->
+    <div class="docs-sidebar">
+        <MudText Typo="Typo.subtitle2" Class="mud-text-secondary px-3 mb-2 font-weight-bold" Style="text-transform:uppercase; letter-spacing: 0.06em; font-size: 0.725rem;">Getting Started</MudText>
+        <button class="docs-nav-link @(ActiveSection == "overview" ? "active" : "")" @onclick='() => SetSection("overview")'>
+            Overview & Architecture
+        </button>
+        <button class="docs-nav-link @(ActiveSection == "quickstart" ? "active" : "")" @onclick='() => SetSection("quickstart")'>
+            Quick Start Guide
+        </button>
+
+        <div style="height: 1px; background: rgba(255, 255, 255, 0.08); margin: 1rem 0; flex-shrink: 0;"></div>
+        
+        <MudText Typo="Typo.subtitle2" Class="mud-text-secondary px-3 mb-2 font-weight-bold" Style="text-transform:uppercase; letter-spacing: 0.06em; font-size: 0.725rem;">Core Configuration</MudText>
+        <button class="docs-nav-link @(ActiveSection == "xml-specs" ? "active" : "")" @onclick='() => SetSection("xml-specs")'>
+            Meter Model XML Structure
+        </button>
+        <button class="docs-nav-link @(ActiveSection == "network" ? "active" : "")" @onclick='() => SetSection("network")'>
+            Network Registry
+        </button>
+        <button class="docs-nav-link @(ActiveSection == "nics" ? "active" : "")" @onclick='() => SetSection("nics")'>
+            Virtual NIC Protocols
+        </button>
+        <button class="docs-nav-link @(ActiveSection == "failures" ? "active" : "")" @onclick='() => SetSection("failures")'>
+            Simulated Network Failures
+        </button>
+        
+        <div style="height: 1px; background: rgba(255, 255, 255, 0.08); margin: 1rem 0; flex-shrink: 0;"></div>
+        
+        <MudText Typo="Typo.subtitle2" Class="mud-text-secondary px-3 mb-2 font-weight-bold" Style="text-transform:uppercase; letter-spacing: 0.06em; font-size: 0.725rem;">System Reference</MudText>
+        <button class="docs-nav-link @(ActiveSection == "performance" ? "active" : "")" @onclick='() => SetSection("performance")'>
+            Performance & Scaling
+        </button>
     </div>
 
-    <div>
-        <MudText Typo="Typo.h5" Color="Color.Primary" GutterBottom="true">Key capabilities</MudText>
-        <MudStack Spacing="3" Class="mt-2">
-            @foreach ((string title, string desc) in Capabilities)
-            {
-                <div class="d-flex align-start">
-                    <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Primary" Size="Size.Small" Class="mr-3 mt-1" />
-                    <MudText Typo="Typo.body1"><b>@title</b> &mdash; @desc</MudText>
+    <!-- Main Content Panel -->
+    <div class="docs-content">
+        @if (ActiveSection == "overview")
+        {
+            <div class="doc-section">
+                <h1 class="doc-title-h1">Overview & Architecture</h1>
+                <p class="doc-text">
+                    MAYA (the Many-Meter Simulator) is a high-performance DLMS/COSEM smart meter fleet simulator engineered to validate and scale Head-End Systems (HES) without physical hardware. By running thousands of virtual physical meters on a single lightweight process, MAYA allows system developers to perform massive load validation, test communication protocol integrations, and inject transient faults under realistic network architectures.
+                </p>
+
+                <h2 class="doc-title-h2">System Topology</h2>
+                <p class="doc-text">
+                    MAYA emulates the cellular, mesh, and direct-line communication layers, allowing standard HES installations to query virtual endpoints exactly as they would physical field installations.
+                </p>
+
+                <div class="arch-grid">
+                    <div class="arch-node arch-node-hes">
+                        <MudText Typo="Typo.subtitle1" Color="Color.Primary" Class="font-weight-bold">Head-End System</MudText>
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary mt-1">Sends standard DLMS commands (Read, Write, Action) over TCP or MQTT.</MudText>
+                    </div>
+                    <div style="text-align: center; color: var(--mud-palette-text-secondary);">
+                        <MudIcon Icon="@Icons.Material.Filled.SwapHoriz" Size="Size.Large" />
+                        <div style="font-size: 0.75rem; font-weight: 500;" class="mt-1">NIC Interface</div>
+                    </div>
+                    <div class="arch-node arch-node-maya">
+                        <MudText Typo="Typo.subtitle1" Color="Color.Secondary" Class="font-weight-bold">MAYA Engine</MudText>
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary mt-1">Parses packet streams, applies network latency, and executes DLMS logic.</MudText>
+                    </div>
                 </div>
-            }
-        </MudStack>
-    </div>
 
-    <div>
-        <MudText Typo="Typo.h5" Color="Color.Primary" GutterBottom="true">Typical uses</MudText>
-        <MudStack Spacing="3" Class="mt-2">
-            @foreach (string use in Uses)
-            {
-                <div class="d-flex align-start">
-                    <MudIcon Icon="@Icons.Material.Filled.ChevronRight" Color="Color.Primary" Size="Size.Small" Class="mr-3 mt-1" />
-                    <MudText Typo="Typo.body1">@use</MudText>
+                <h2 class="doc-title-h2">Key Capabilities</h2>
+                <div class="mt-4">
+                    <MudGrid Spacing="3">
+                        <MudItem xs="12" sm="6">
+                            <MudCard Elevation="1" Style="height: 100%; background: rgba(255,255,255,0.01); border: 1px solid rgba(255,255,255,0.05);">
+                                <MudCardContent>
+                                    <div class="d-flex align-center gap-2 mb-2">
+                                        <MudIcon Icon="@Icons.Material.Filled.Speed" Color="Color.Primary" />
+                                        <MudText Typo="Typo.subtitle1" Class="font-weight-bold">Live Monitoring</MudText>
+                                    </div>
+                                    <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                                        Real-time metrics, connection throughput, transaction packet rates, and active communication logging directly from the dashboard.
+                                    </MudText>
+                                </MudCardContent>
+                            </MudCard>
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudCard Elevation="1" Style="height: 100%; background: rgba(255,255,255,0.01); border: 1px solid rgba(255,255,255,0.05);">
+                                <MudCardContent>
+                                    <div class="d-flex align-center gap-2 mb-2">
+                                        <MudIcon Icon="@Icons.Material.Filled.Layers" Color="Color.Primary" />
+                                        <MudText Typo="Typo.subtitle1" Class="font-weight-bold">Fleet at Scale</MudText>
+                                    </div>
+                                    <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                                        Simulate hundreds of thousands of individually addressable meters on a single lightweight host process with minimal memory footprint.
+                                    </MudText>
+                                </MudCardContent>
+                            </MudCard>
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudCard Elevation="1" Style="height: 100%; background: rgba(255,255,255,0.01); border: 1px solid rgba(255,255,255,0.05);">
+                                <MudCardContent>
+                                    <div class="d-flex align-center gap-2 mb-2">
+                                        <MudIcon Icon="@Icons.Material.Filled.Code" Color="Color.Primary" />
+                                        <MudText Typo="Typo.subtitle1" Class="font-weight-bold">Real DLMS Behaviour</MudText>
+                                    </div>
+                                    <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                                        Full compliance with standard DLMS/COSEM schemas. Virtual meters accurately model association objects, billing profiles, and OBIS mappings.
+                                    </MudText>
+                                </MudCardContent>
+                            </MudCard>
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudCard Elevation="1" Style="height: 100%; background: rgba(255,255,255,0.01); border: 1px solid rgba(255,255,255,0.05);">
+                                <MudCardContent>
+                                    <div class="d-flex align-center gap-2 mb-2">
+                                        <MudIcon Icon="@Icons.Material.Filled.Shuffle" Color="Color.Primary" />
+                                        <MudText Typo="Typo.subtitle1" Class="font-weight-bold">Fault Injection</MudText>
+                                    </div>
+                                    <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                                        Define network drop rates, introduce response delays, and test how your HES handles degraded cellular or RF connections.
+                                    </MudText>
+                                </MudCardContent>
+                            </MudCard>
+                        </MudItem>
+                    </MudGrid>
                 </div>
-            }
-        </MudStack>
-    </div>
+            </div>
+        }
+        else if (ActiveSection == "quickstart")
+        {
+            <div class="doc-section">
+                <h1 class="doc-title-h1">Quick Start Guide</h1>
+                <p class="doc-text">
+                    Follow these step-by-step instructions to get your first batch of virtual meters provisioned and communicating with your Head-End System.
+                </p>
 
-    <div>
-        <MudText Typo="Typo.h5" Color="Color.Primary" GutterBottom="true">What's possible next</MudText>
-        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-1">
-            Directions the simulator can grow in &mdash; not built yet, listed to show where it can go.
-        </MudText>
-        <MudStack Spacing="3" Class="mt-2">
-            @foreach ((string title, string desc) in Future)
-            {
-                <div class="d-flex align-start">
-                    <MudIcon Icon="@Icons.Material.Filled.Lightbulb" Color="Color.Warning" Size="Size.Small" Class="mr-3 mt-1" />
-                    <MudText Typo="Typo.body1"><b>@title</b> &mdash; @desc</MudText>
+                <h2 class="doc-title-h2">Step 1: Upload a Meter Model XML</h2>
+                <p class="doc-text">
+                    Navigate to the <b>Batch Setup</b> page and locate the <b>Meter Model XML</b> upload panel. Drop in your DLMS meter model schema file. This file describes the OBIS codes, logical devices, profile generic objects, and meter behavior.
+                </p>
+
+                <h2 class="doc-title-h2">Step 2: Configure Network Registry</h2>
+                <p class="doc-text">
+                    Navigate to <b>Network Setup</b>. Register your MQTT brokers (for Mqtt4G, Wirepas, or Kmesh NICs) and HES push targets. This allows virtual meters to discover and connect to external brokers.
+                </p>
+
+                <h2 class="doc-title-h2">Step 3: Define Communication Reliability (Optional)</h2>
+                <p class="doc-text">
+                    If you wish to test real-world network degradation, open the <b>BadComm Setup</b> panel and specify network packet drop rates and response delays. This configuration will apply globally to all running batches.
+                </p>
+
+                <h2 class="doc-title-h2">Step 4: Provision a Batch</h2>
+                <p class="doc-text">
+                    Under the <b>Provision a New Batch</b> section:
+                </p>
+                <ol style="margin-left: 2rem; color: var(--mud-palette-text-secondary); font-size: 1rem; line-height: 1.75;" class="mb-4">
+                    <li>Provide a unique <b>Batch Name</b> (e.g. <code style="color: var(--mud-palette-primary);">"delhi-north-fleet"</code>).</li>
+                    <li>Specify the <b>Number of Meters</b> to create.</li>
+                    <li>Choose your uploaded <b>Meter Model XML</b> file.</li>
+                    <li>Select the target <b>NIC Interface</b> (e.g., TCP, MQTT 4G, Kmesh, or Wirepas).</li>
+                    <li>Click <b>Create Batch</b>.</li>
+                </ol>
+
+                <h2 class="doc-title-h2">Step 5: Start & Monitor</h2>
+                <p class="doc-text">
+                    Find the newly provisioned batch under the <b>Configured Batches</b> table. Click the <b style="color: #10b981;">Start</b> button. Go to the <b>Dashboard</b> or <b>Live Logs</b> to observe communication packet streams and connection activity.
+                </p>
+            </div>
+        }
+        else if (ActiveSection == "network")
+        {
+            <div class="doc-section">
+                <h1 class="doc-title-h1">Network Registry</h1>
+                <p class="doc-text">
+                    In the field, a fleet is not served by a single broker. RF gateways (Wirepas, Kmesh) hold their own broker details, 4G meters carry theirs inside OBIS objects, and 4G TCP meters push to an HES listener IP. The <b>Network Setup</b> page keeps a registry of these endpoints, and each batch binds to one — or to none.
+                </p>
+
+                <h2 class="doc-title-h2">Adding an Endpoint</h2>
+                <p class="doc-text">
+                    On <b>Network Setup</b>, an admin clicks <b>Add broker</b> or <b>Add push target</b>. An endpoint is accepted <b>only if the connection succeeds</b> — a broker CONNECT with the given credentials, or a TCP handshake to the push listener. The real failure text is shown when it does not, and an admin may override with <b>Save unverified</b> when the endpoint is legitimately down at setup time. The endpoint's <b>name</b> is the key a batch binds to and cannot be changed later.
+                </p>
+
+                <h2 class="doc-title-h2">Binding a Batch</h2>
+                <p class="doc-text">
+                    On <b>Batch Setup</b>, choose an <b>MQTT broker</b> (for RF/4G MQTT NICs) or an <b>HES push target</b> (for 4G TCP) when provisioning — or leave it <b>unbound</b>. A running MQTT batch bound to nothing is flagged <b>unreachable</b>: it answers no one. A broker client runs only when a <b>Running</b> batch references an <b>enabled</b> broker; disabling an endpoint tears its clients down with no restart.
+                </p>
+
+                <h2 class="doc-title-h2">Migrating Configuration Between Deployments</h2>
+                <p class="doc-text">
+                    Registering a fleet with the HES is laborious, so each setup page exports and imports its own configuration as a JSON file — <b>Export / Import</b> buttons on <b>Batch Setup</b> (batches), <b>Network Setup</b> (brokers &amp; push targets), and <b>BadComm Setup</b> (impairment rules &amp; network delay). Each file is tagged, so importing one on the wrong page is refused rather than replacing the wrong data.
+                </p>
+                <p class="doc-text">
+                    Batches are bound to endpoints <b>by name</b>, so when moving a whole fleet, import the <b>network</b> file on the destination <b>before</b> the batches file — otherwise the batches land showing their broker as MISSING until the endpoints arrive.
+                </p>
+                <div class="mt-4 mb-4">
+                    <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true">
+                        <b>The network file contains broker passwords in plaintext</b> so it is portable across hosts (the on-disk store encrypts them against one host's keys). Treat that file as a secret. On import, passwords are re-encrypted under the destination host, and importing batches continues the meter numbering from the imported set.
+                    </MudAlert>
                 </div>
-            }
-        </MudStack>
-    </div>
 
-</MudStack>
+                <h2 class="doc-title-h2">Files & Deployment</h2>
+                <p class="doc-text">
+                    The registry persists to <code style="color: var(--mud-palette-primary);">data/network.json</code>, a sibling of <code style="color: var(--mud-palette-primary);">data/batches.json</code>, so both survive a redeploy that replaces the app folder. Broker passwords in <code>network.json</code> are encrypted with a key ring under <code style="color: var(--mud-palette-primary);">data/keys/</code> — <b>that folder must be preserved alongside it</b>, or stored passwords become undecryptable. To move config to a host that does not share the key ring, use Export / Import rather than copying the files.
+                </p>
+                <div class="mt-4">
+                    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+                        <b>Upgrade note:</b> the old <code>Nics:&lt;transport&gt;:Enabled</code> config flags no longer exist. The equivalent is the per-endpoint <b>Enable / Disable</b> toggle on the Network Setup page, which scales to several brokers per transport where one config flag could not.
+                    </MudAlert>
+                </div>
+            </div>
+        }
+        else if (ActiveSection == "xml-specs")
+        {
+            <div class="doc-section">
+                <h1 class="doc-title-h1">Meter Model XML Structure</h1>
+                <p class="doc-text">
+                    MAYA uses declarative XML files to represent virtual DLMS/COSEM meter models. The structure defines logical devices, OBIS configuration codes, scaling attributes, security keys, and capture object structures.
+                </p>
+
+                <h2 class="doc-title-h2">Sample Configuration Schema</h2>
+                <p class="doc-text">
+                    Below is an example of a typical meter XML structure representing a multi-tariff smart energy meter:
+                </p>
+
+                <div class="code-block-container">
+                    <div><span class="code-comment-xml">&lt;!-- MAYA DLMS/COSEM Model XML Schema --&gt;</span></div>
+                    <div><span class="code-tag-xml">&lt;DLMS-Configuration&gt;</span></div>
+                    <div>&nbsp;&nbsp;<span class="code-tag-xml">&lt;LogicalDevice</span> <span class="code-attr-xml">Name</span>=<span class="code-val-xml">"KimbalMeter"</span> <span class="code-attr-xml">Address</span>=<span class="code-val-xml">"1"</span><span class="code-tag-xml">&gt;</span></div>
+                    <div>&nbsp;&nbsp;&nbsp;&nbsp;</div>
+                    <div>&nbsp;&nbsp;&nbsp;&nbsp;<span class="code-comment-xml">&lt;!-- Association Object containing Security Keys --&gt;</span></div>
+                    <div>&nbsp;&nbsp;&nbsp;&nbsp;<span class="code-tag-xml">&lt;Association</span> <span class="code-attr-xml">LN</span>=<span class="code-val-xml">"0.0.40.0.0.255"</span> <span class="code-attr-xml">Version</span>=<span class="code-val-xml">"1"</span><span class="code-tag-xml">&gt;</span></div>
+                    <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="code-tag-xml">&lt;Secret&gt;</span>KIMBAL_SECRET_KEY_2026<span class="code-tag-xml">&lt;/Secret&gt;</span></div>
+                    <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="code-tag-xml">&lt;ClientSystemTitle&gt;</span>KMB123456<span class="code-tag-xml">&lt;/ClientSystemTitle&gt;</span></div>
+                    <div>&nbsp;&nbsp;&nbsp;&nbsp;<span class="code-tag-xml">&lt;/Association&gt;</span></div>
+                    <div>&nbsp;&nbsp;&nbsp;&nbsp;</div>
+                    <div>&nbsp;&nbsp;&nbsp;&nbsp;<span class="code-comment-xml">&lt;!-- Load Profile generic containing values --&gt;</span></div>
+                    <div>&nbsp;&nbsp;&nbsp;&nbsp;<span class="code-tag-xml">&lt;ProfileGeneric</span> <span class="code-attr-xml">LN</span>=<span class="code-val-xml">"1.0.99.1.0.255"</span><span class="code-tag-xml">&gt;</span></div>
+                    <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="code-tag-xml">&lt;CaptureObject</span> <span class="code-attr-xml">LN</span>=<span class="code-val-xml">"1.0.1.8.0.255"</span> <span class="code-attr-xml">Attribute</span>=<span class="code-val-xml">"2"</span> <span class="code-tag-xml">/&gt;</span> <span class="code-comment-xml">&lt;!-- Active Import --&gt;</span></div>
+                    <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="code-tag-xml">&lt;CaptureObject</span> <span class="code-attr-xml">LN</span>=<span class="code-val-xml">"1.0.2.8.0.255"</span> <span class="code-attr-xml">Attribute</span>=<span class="code-val-xml">"2"</span> <span class="code-tag-xml">/&gt;</span> <span class="code-comment-xml">&lt;!-- Active Export --&gt;</span></div>
+                    <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="code-tag-xml">&lt;CapturePeriod&gt;</span>900<span class="code-tag-xml">&lt;/CapturePeriod&gt;</span> <span class="code-comment-xml">&lt;!-- 15 mins interval --&gt;</span></div>
+                    <div>&nbsp;&nbsp;&nbsp;&nbsp;<span class="code-tag-xml">&lt;/ProfileGeneric&gt;</span></div>
+                    <div>&nbsp;&nbsp;&nbsp;&nbsp;</div>
+                    <div>&nbsp;&nbsp;<span class="code-tag-xml">&lt;/LogicalDevice&gt;</span></div>
+                    <div><span class="code-tag-xml">&lt;/DLMS-Configuration&gt;</span></div>
+                </div>
+
+                <h2 class="doc-title-h2">Elements Reference</h2>
+                <ul style="margin-left: 2rem; color: var(--mud-palette-text-secondary); font-size: 1rem; line-height: 1.75;">
+                    <li><b>LogicalDevice:</b> Root element wrapper representing the physical smart meter configuration.</li>
+                    <li><b>Association:</b> Sets up security associations, credentials, system titles, and cryptographic secrets.</li>
+                    <li><b>ProfileGeneric:</b> Defines structured load profiles, intervals, and arrays of objects to capture.</li>
+                </ul>
+            </div>
+        }
+        else if (ActiveSection == "nics")
+        {
+            <div class="doc-section">
+                <h1 class="doc-title-h1">Virtual NIC Protocols</h1>
+                <p class="doc-text">
+                    MAYA emulates five distinct network interface card configurations, allowing you to validate a variety of communication models.
+                </p>
+
+                <h2 class="doc-title-h2">NIC Configurations</h2>
+                <div class="my-4">
+                    <table style="width: 100%; border-collapse: collapse; color: var(--mud-palette-text-secondary); text-align: left; font-size: 0.95rem;">
+                        <thead>
+                            <tr style="border-bottom: 2px solid rgba(255,255,255,0.08); padding-bottom: 0.5rem;">
+                                <th style="padding: 0.75rem 0.5rem;">NIC Type</th>
+                                <th style="padding: 0.75rem 0.5rem;">Protocol Layer</th>
+                                <th style="padding: 0.75rem 0.5rem;">Default Port / Topic</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                <td style="padding: 0.75rem 0.5rem;"><span class="nic-badge nic-badge-tcp">TCP</span></td>
+                                <td style="padding: 0.75rem 0.5rem;">Direct TCP/IP (IPv6)</td>
+                                <td style="padding: 0.75rem 0.5rem;">Port 4059</td>
+                            </tr>
+                            <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                <td style="padding: 0.75rem 0.5rem;"><span class="nic-badge nic-badge-mqtt">4G MQTT</span></td>
+                                <td style="padding: 0.75rem 0.5rem;">MQTT Broker Link</td>
+                                <td style="padding: 0.75rem 0.5rem;">PollRequest/{nodeId}</td>
+                            </tr>
+                            <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                <td style="padding: 0.75rem 0.5rem;"><span class="nic-badge nic-badge-mqttimg">4G IMG MQTT</span></td>
+                                <td style="padding: 0.75rem 0.5rem;">MQTT Broker Link (IMG)</td>
+                                <td style="padding: 0.75rem 0.5rem;">PollRequest/{nodeId}</td>
+                            </tr>
+                            <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                <td style="padding: 0.75rem 0.5rem;"><span class="nic-badge nic-badge-wirepas">Wirepas</span></td>
+                                <td style="padding: 0.75rem 0.5rem;">Protobuf over MQTT</td>
+                                <td style="padding: 0.75rem 0.5rem;">gw-request/send_data/#</td>
+                            </tr>
+                            <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                <td style="padding: 0.75rem 0.5rem;"><span class="nic-badge nic-badge-kmesh">Kimbal Mesh</span></td>
+                                <td style="padding: 0.75rem 0.5rem;">Protobuf / Kimbal Mesh</td>
+                                <td style="padding: 0.75rem 0.5rem;">gateway/pull/request/meter/+</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <h2 class="doc-title-h2">MQTT Framing</h2>
+                <p class="doc-text">
+                    For MQTT-based NIC protocols, MAYA prepends a custom header to all MQTT payloads:
+                </p>
+                <div class="code-block-container" style="text-align: center;">
+                    [ Length (2B) ] + [ Total Frags (1B) ] + [ Frag Index (1B) ] + [ Frame ID (2B) ] + [ DLMS Wrapper Payload ]
+                </div>
+            </div>
+        }
+        else if (ActiveSection == "failures")
+        {
+            <div class="doc-section">
+                <h1 class="doc-title-h1">Simulated Network Failures</h1>
+                <p class="doc-text">
+                    Real smart meter deployments are subject to connection drops, network congestion, and cellular latency. MAYA has a dedicated fault-injection module at the NIC socket/transport layer.
+                </p>
+
+                <h2 class="doc-title-h2">Available Parameters</h2>
+                <div class="mt-4">
+                    <MudGrid Spacing="3">
+                        <MudItem xs="12" sm="4">
+                            <div style="background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.05); padding: 1.25rem; border-radius: 8px; text-align: center; height: 100%;">
+                                <MudIcon Icon="@Icons.Material.Filled.HourglassEmpty" Color="Color.Warning" Size="Size.Large" />
+                                <MudText Typo="Typo.subtitle1" Class="font-weight-bold mt-2">Response Delay</MudText>
+                                <MudText Typo="Typo.body2" Class="mud-text-secondary mt-1">Simulate ping/round-trip delay by introducing a custom delay (in milliseconds) before replying.</MudText>
+                            </div>
+                        </MudItem>
+                        <MudItem xs="12" sm="4">
+                            <div style="background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.05); padding: 1.25rem; border-radius: 8px; text-align: center; height: 100%;">
+                                <MudIcon Icon="@Icons.Material.Filled.WifiOff" Color="Color.Error" Size="Size.Large" />
+                                <MudText Typo="Typo.subtitle1" Class="font-weight-bold mt-2">Packet Drop Rate</MudText>
+                                <MudText Typo="Typo.body2" Class="mud-text-secondary mt-1">Specify a drop rate percentage. Packets are dropped randomly, forcing HES transport retries.</MudText>
+                            </div>
+                        </MudItem>
+                        <MudItem xs="12" sm="4">
+                            <div style="background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.05); padding: 1.25rem; border-radius: 8px; text-align: center; height: 100%;">
+                                <MudIcon Icon="@Icons.Material.Filled.TrendingDown" Color="Color.Error" Size="Size.Large" />
+                                <MudText Typo="Typo.subtitle1" Class="font-weight-bold mt-2">Connection Flapping</MudText>
+                                <MudText Typo="Typo.body2" Class="mud-text-secondary mt-1">Simulate network degradation where connections flap on and off randomly.</MudText>
+                            </div>
+                        </MudItem>
+                    </MudGrid>
+                </div>
+
+                <h2 class="doc-title-h2">Simulating Degradation</h2>
+                <p class="doc-text">
+                    Open the <b>BadComm Setup</b> page. Set the desired packet drop rate (e.g. 5%) and latency (e.g. 150ms). Click **Apply Settings**; virtual NICs will immediately simulate network quality degradation.
+                </p>
+            </div>
+        }
+        else if (ActiveSection == "performance")
+        {
+            <div class="doc-section">
+                <h1 class="doc-title-h1">Performance & Scaling</h1>
+                <p class="doc-text">
+                    MAYA is engineered with lightweight state representations, using less than 2 KB of memory per idle meter. This allows you to simulate fleets of 1,000,000+ meters on a single server.
+                </p>
+
+                <h2 class="doc-title-h2">Memory Footprint Scaling</h2>
+                <p class="doc-text">
+                    Memory usage grows linearly with fleet size. Baseline memory is approximately 10 MB, scaling up to just 2 GB for 1,000,000 meters.
+                </p>
+
+                <div class="graph-card my-4">
+                    <div class="d-flex justify-space-between mb-4">
+                        <MudText Typo="Typo.subtitle2" Class="font-weight-bold" Color="Color.Primary">Memory Usage vs. Fleet Size</MudText>
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">Linear Scale (2 KB / meter)</MudText>
+                    </div>
+                    <svg viewBox="0 0 500 220" width="100%" height="220">
+                        <!-- Grid lines -->
+                        <line x1="50" y1="20" x2="450" y2="20" class="graph-grid" />
+                        <line x1="50" y1="70" x2="450" y2="70" class="graph-grid" />
+                        <line x1="50" y1="120" x2="450" y2="120" class="graph-grid" />
+                        <line x1="50" y1="170" x2="450" y2="170" class="graph-grid" />
+                        
+                        <!-- Axes -->
+                        <line x1="50" y1="170" x2="450" y2="170" class="graph-axis" />
+                        <line x1="50" y1="20" x2="50" y2="170" class="graph-axis" />
+                        
+                        <!-- Y-axis labels -->
+                        <text x="40" y="25" text-anchor="end" fill="rgba(255,255,255,0.6)" font-size="10">2.0 GB</text>
+                        <text x="40" y="75" text-anchor="end" fill="rgba(255,255,255,0.6)" font-size="10">1.0 GB</text>
+                        <text x="40" y="125" text-anchor="end" fill="rgba(255,255,255,0.6)" font-size="10">500 MB</text>
+                        <text x="40" y="175" text-anchor="end" fill="rgba(255,255,255,0.6)" font-size="10">0</text>
+                        
+                        <!-- X-axis labels -->
+                        <text x="50" y="190" text-anchor="middle" fill="rgba(255,255,255,0.6)" font-size="10">0</text>
+                        <text x="150" y="190" text-anchor="middle" fill="rgba(255,255,255,0.6)" font-size="10">250k</text>
+                        <text x="250" y="190" text-anchor="middle" fill="rgba(255,255,255,0.6)" font-size="10">500k</text>
+                        <text x="350" y="190" text-anchor="middle" fill="rgba(255,255,255,0.6)" font-size="10">750k</text>
+                        <text x="450" y="190" text-anchor="middle" fill="rgba(255,255,255,0.6)" font-size="10">1M+</text>
+                        
+                        <!-- Graph Line -->
+                        <path d="M 50 170 L 450 20" class="graph-line-primary graph-glow" />
+                        
+                        <!-- Data points -->
+                        <circle cx="50" cy="170" r="4.5" fill="var(--mud-palette-primary)" stroke="#fff" stroke-width="1" />
+                        <circle cx="250" cy="95" r="4.5" fill="var(--mud-palette-primary)" stroke="#fff" stroke-width="1" />
+                        <circle cx="450" cy="20" r="4.5" fill="var(--mud-palette-primary)" stroke="#fff" stroke-width="1" />
+                    </svg>
+                </div>
+
+                <h2 class="doc-title-h2">CPU Scaling vs. Message Rate</h2>
+                <p class="doc-text">
+                    Idle meters consume 0% CPU. Active execution cycles are trigger-based, scaling only with transaction throughput.
+                </p>
+
+                <div class="graph-card my-4">
+                    <div class="d-flex justify-space-between mb-4">
+                        <MudText Typo="Typo.subtitle2" Class="font-weight-bold" Color="Color.Secondary">CPU Load vs. Transaction Rate</MudText>
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">Throughput-Driven Scale</MudText>
+                    </div>
+                    <svg viewBox="0 0 500 220" width="100%" height="220">
+                        <!-- Grid lines -->
+                        <line x1="50" y1="20" x2="450" y2="20" class="graph-grid" />
+                        <line x1="50" y1="70" x2="450" y2="70" class="graph-grid" />
+                        <line x1="50" y1="120" x2="450" y2="120" class="graph-grid" />
+                        <line x1="50" y1="170" x2="450" y2="170" class="graph-grid" />
+                        
+                        <!-- Axes -->
+                        <line x1="50" y1="170" x2="450" y2="170" class="graph-axis" />
+                        <line x1="50" y1="20" x2="50" y2="170" class="graph-axis" />
+                        
+                        <!-- Y-axis labels -->
+                        <text x="40" y="25" text-anchor="end" fill="rgba(255,255,255,0.6)" font-size="10">100%</text>
+                        <text x="40" y="75" text-anchor="end" fill="rgba(255,255,255,0.6)" font-size="10">50%</text>
+                        <text x="40" y="125" text-anchor="end" fill="rgba(255,255,255,0.6)" font-size="10">25%</text>
+                        <text x="40" y="175" text-anchor="end" fill="rgba(255,255,255,0.6)" font-size="10">0%</text>
+                        
+                        <!-- X-axis labels -->
+                        <text x="50" y="190" text-anchor="middle" fill="rgba(255,255,255,0.6)" font-size="10">0 tps</text>
+                        <text x="150" y="190" text-anchor="middle" fill="rgba(255,255,255,0.6)" font-size="10">1.2k</text>
+                        <text x="250" y="190" text-anchor="middle" fill="rgba(255,255,255,0.6)" font-size="10">2.5k</text>
+                        <text x="350" y="190" text-anchor="middle" fill="rgba(255,255,255,0.6)" font-size="10">3.7k</text>
+                        <text x="450" y="190" text-anchor="middle" fill="rgba(255,255,255,0.6)" font-size="10">5.0k+</text>
+                        
+                        <!-- Graph Line -->
+                        <path d="M 50 170 Q 250 140 450 30" class="graph-line-secondary graph-glow" />
+                        
+                        <!-- Data points -->
+                        <circle cx="50" cy="170" r="4.5" fill="var(--mud-palette-secondary)" stroke="#fff" stroke-width="1" />
+                        <circle cx="250" cy="120" r="4.5" fill="var(--mud-palette-secondary)" stroke="#fff" stroke-width="1" />
+                        <circle cx="450" cy="30" r="4.5" fill="var(--mud-palette-secondary)" stroke="#fff" stroke-width="1" />
+                    </svg>
+                </div>
+            </div>
+        }
+    </div>
+</div>
 
 @code {
-    private static readonly (string Title, string Desc)[] Capabilities =
-    {
-        ("Live monitoring dashboard", "real-time connection, throughput, and packet-rate stats for a running load test."),
-        ("Validation", "reconcile simulator-side logs and compare with HES-side records to prove what was sent was received."),
-        ("Fleet at scale", "simulate many thousands of meters on one host (validated end-to-end at 10,000)."),
-        ("Individually addressable", "every simulated meter has its own network address and a unique meter serial number, so the HES talks to each one exactly as it would a real meter."),
-        ("Real DLMS behaviour", "meters answer standard DLMS/COSEM requests, so reads and commands behave like the real thing."),
-        ("Template-driven", "each meter is built from a configurable meter template, so you can model different meter types and data profiles."),
-        ("Batch provisioning", "meters are created and managed in batches: reserve a block, start it, stop it — all from this web interface."),
-    };
+    private string ActiveSection { get; set; } = "overview";
 
-    private static readonly string[] Uses =
+    private void SetSection(string section)
     {
-        "Load and scale testing of a Head-End System.",
-        "Integration and regression testing of meter workflows.",
-        "Demos and onboarding without lab hardware.",
-    };
-
-    private static readonly (string Title, string Desc)[] Future =
-    {
-        ("Different virtual NICs", "MQTT RF (custom+dlms), MQTT 4G, KMESH support"),
-        ("Push / unsolicited reporting", "meters that report on their own schedule, not only when the HES polls them."),
-        ("Fault & edge-case injection", "slow, unresponsive, or malformed meters to test how the HES copes under stress."),
-        ("Richer data profiles", "more configurable per-meter data models and value generation."),
-        ("Per-meter state persistence", "retain each meter's accumulated data across restarts, not just the batch definitions."),
-    };
+        ActiveSection = section;
+    }
 }

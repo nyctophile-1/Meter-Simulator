@@ -180,4 +180,42 @@ public class BrokerBindingPlannerTests
 
         Assert.Empty(BrokerBindingPlanner.Compute(registry.Batches, Registry(Enabled("eqa"))).Desired);
     }
+
+    /// <summary>
+    /// The kill switch is reversible: a disabled broker contributes nothing, and flipping it back on
+    /// makes the running batch's binding reappear on the next reconcile — no restart.
+    /// </summary>
+    [Fact]
+    public void ReEnablingABroker_BringsItsBindingBack()
+    {
+        MeterRegistry fleet = Fleet(("a", NicType.Mqtt4G, "eqa", true));
+        var disabled = new BrokerEndpoint { Key = "eqa", Host = "x", Enabled = false };
+        var enabled = new BrokerEndpoint { Key = "eqa", Host = "x", Enabled = true };
+
+        Assert.Empty(BrokerBindingPlanner.Compute(fleet.Batches, Registry(disabled)).Desired);
+        Assert.Single(BrokerBindingPlanner.Compute(fleet.Batches, Registry(enabled)).Desired);
+    }
+
+    /// <summary>
+    /// Rebinding a running batch changes what the reconcile pass will act on: the old broker's
+    /// binding disappears and the new one's appears, which is how live traffic follows the rebind.
+    /// </summary>
+    [Fact]
+    public void RebindingARunningBatch_MovesTheDesiredBinding()
+    {
+        var registry = new MeterRegistry();
+        MeterBatch batch = registry.AddBatch("a", Tpl, 10, NicType.Mqtt4G, null, "eqa");
+        registry.TryStart(batch.Id);
+
+        Func<string, BrokerEndpoint?> lookup = Registry(Enabled("eqa"), Enabled("pune"));
+        Assert.Equal(
+            new BrokerBinding(NicType.Mqtt4G, "eqa"),
+            Assert.Single(BrokerBindingPlanner.Compute(registry.Batches, lookup).Desired).Key);
+
+        registry.SetNetworkBinding(batch.Id, "pune", null);
+
+        Assert.Equal(
+            new BrokerBinding(NicType.Mqtt4G, "pune"),
+            Assert.Single(BrokerBindingPlanner.Compute(registry.Batches, lookup).Desired).Key);
+    }
 }

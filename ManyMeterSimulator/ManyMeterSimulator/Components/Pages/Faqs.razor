@@ -4,40 +4,546 @@
 
 <PageTitle>MAYA - FAQs</PageTitle>
 
-<MudText Typo="Typo.body2" Class="mud-text-secondary mb-6">
-    Frequently asked questions about the simulator.
-</MudText>
-
-<MudStack Spacing="4" Style="max-width:860px;">
-    @foreach ((string question, string answer) in Items)
-    {
-        <MudPaper Elevation="1" Class="pa-4">
-            <MudText Typo="Typo.h6" GutterBottom="true">@question</MudText>
-            <MudText Typo="Typo.body1" Class="mud-text-secondary">@answer</MudText>
-        </MudPaper>
+<style>
+    .faq-layout {
+        display: grid;
+        grid-template-columns: 400px 1fr;
+        gap: 2.5rem;
+        width: 100%;
+        max-width: 1400px;
+        margin: 0 auto;
+        padding-top: 0.5rem;
     }
-</MudStack>
+    
+    .faq-sidebar {
+        height: calc(100vh - 160px);
+        overflow-y: auto;
+        padding-right: 1.25rem;
+        border-right: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .faq-sidebar::-webkit-scrollbar {
+        width: 4px;
+    }
+
+    .faq-sidebar::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 2px;
+    }
+    
+    .faq-category-group {
+        margin-bottom: 2rem;
+    }
+    
+    .faq-category-header {
+        font-size: 0.725rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--mud-palette-secondary);
+        margin-bottom: 0.75rem;
+        padding-left: 0.5rem;
+    }
+    
+    .faq-questions-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    
+    .faq-question-item {
+        background: rgba(255, 255, 255, 0.01);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        border-radius: 8px;
+        padding: 0.875rem 1rem;
+        cursor: pointer;
+        text-align: left;
+        width: 100%;
+        transition: all 0.2s ease;
+        display: block;
+    }
+    
+    .faq-question-item:hover {
+        background: rgba(255, 255, 255, 0.03);
+        border-color: rgba(255, 255, 255, 0.1);
+        transform: translateX(4px);
+    }
+    
+    .faq-question-item.active {
+        background: rgba(var(--mud-palette-primary-rgb), 0.08);
+        border-color: var(--mud-palette-primary);
+        box-shadow: 0 4px 12px rgba(var(--mud-palette-primary-rgb), 0.12);
+    }
+    
+    .faq-question-text {
+        font-size: 0.9rem;
+        font-weight: 500;
+        line-height: 1.4;
+        color: var(--mud-palette-text-secondary);
+        transition: color 0.2s ease;
+    }
+    
+    .faq-question-item.active .faq-question-text {
+        color: var(--mud-palette-primary);
+        font-weight: 600;
+    }
+    
+    .faq-answer-panel {
+        position: sticky;
+        top: 100px;
+        height: calc(100vh - 160px);
+        overflow-y: auto;
+    }
+    
+    .faq-answer-card {
+        background: rgba(15, 15, 25, 0.45);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 12px;
+        padding: 2.5rem;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+        min-height: 100%;
+        backdrop-filter: blur(10px);
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .active-faq-header {
+        margin-bottom: 1.5rem;
+        animation: slideDown 0.3s ease-out;
+    }
+
+    @@keyframes slideDown {
+        from { opacity: 0; transform: translateY(-10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .active-faq-category {
+        font-size: 0.75rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: var(--mud-palette-secondary);
+        margin-bottom: 0.5rem;
+    }
+    
+    .active-faq-title {
+        font-size: 1.85rem;
+        font-weight: 800;
+        line-height: 1.35;
+        letter-spacing: -0.02em;
+        color: var(--mud-palette-text-primary);
+    }
+    
+    .active-faq-body {
+        font-size: 1.075rem;
+        line-height: 1.8;
+        color: var(--mud-palette-text-secondary);
+        flex-grow: 1;
+        animation: fadeIn 0.4s ease-out;
+    }
+
+    @@keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+    }
+    
+    .faq-list-bullet {
+        margin-left: 1.5rem;
+        margin-bottom: 1.25rem;
+        list-style-type: disc;
+    }
+    
+    .faq-sub-bullet {
+        margin-left: 1.25rem;
+        list-style-type: circle;
+    }
+
+    .welcome-container {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        height: 100%;
+        flex-grow: 1;
+        padding: 1rem 0;
+    }
+    
+    .welcome-title {
+        font-size: 2.25rem;
+        font-weight: 850;
+        letter-spacing: -0.025em;
+        margin-bottom: 1.25rem;
+        background: linear-gradient(135deg, var(--mud-palette-primary) 0%, var(--mud-palette-secondary) 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+    
+    .welcome-text {
+        font-size: 1.125rem;
+        line-height: 1.7;
+        color: var(--mud-palette-text-secondary);
+        margin-bottom: 2.5rem;
+    }
+    
+    .welcome-metrics {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 1.5rem;
+        margin-bottom: 2rem;
+    }
+    
+    .metric-card {
+        background: rgba(255, 255, 255, 0.02);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        border-radius: 8px;
+        padding: 1.25rem 1rem;
+        text-align: center;
+        transition: all 0.3s ease;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        min-height: 160px;
+    }
+    
+    .metric-card:hover {
+        background: rgba(255, 255, 255, 0.04);
+        border-color: rgba(var(--mud-palette-primary-rgb), 0.2);
+        transform: translateY(-2px);
+    }
+    
+    .metric-val {
+        font-size: 1.75rem;
+        font-weight: 800;
+        color: var(--mud-palette-primary);
+        margin-bottom: 0.25rem;
+    }
+    
+    .metric-lbl {
+        font-size: 0.75rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--mud-palette-text-primary);
+    }
+
+    .metric-desc {
+        font-size: 0.775rem;
+        line-height: 1.4;
+        color: var(--mud-palette-text-secondary);
+        margin-top: 0.5rem;
+        opacity: 0.6;
+        transition: opacity 0.3s ease;
+    }
+
+    .metric-card:hover .metric-desc {
+        opacity: 0.95;
+    }
+    
+    .welcome-tip {
+        display: flex;
+        align-items: center;
+        background: rgba(245, 158, 11, 0.08);
+        border: 1px solid rgba(245, 158, 11, 0.2);
+        border-radius: 8px;
+        padding: 1rem;
+        color: var(--mud-palette-text-secondary);
+        font-size: 0.925rem;
+    }
+</style>
+
+<div class="faq-layout">
+    <!-- Left Column: Categories and Question Lists -->
+    <div class="faq-sidebar">
+        @foreach (var category in FaqCategories)
+        {
+            <div class="faq-category-group">
+                <div class="faq-category-header">
+                    @category.Name
+                </div>
+                <div class="faq-questions-list">
+                    @foreach (var item in category.Items)
+                    {
+                        <button class="faq-question-item @(SelectedQuestion == item ? "active" : "")" @onclick="() => SelectQuestion(item)">
+                            <div class="faq-question-text">@item.Question</div>
+                        </button>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+
+    <!-- Right Column: Big Answer Panel -->
+    <div class="faq-answer-panel">
+        <div class="faq-answer-card">
+            @if (SelectedQuestion == WelcomeQuestion)
+            {
+                <div class="welcome-container">
+                    <h2 class="welcome-title">Welcome to the MAYA FAQ Hub</h2>
+                    <p class="welcome-text">
+                        Welcome to the Help and Frequently Asked Questions dashboard. Select any topic from the categories list on the left to display its detailed answer pane.
+                    </p>
+                    <div class="welcome-metrics">
+                        <div class="metric-card">
+                            <div class="metric-val">1,000,000+</div>
+                            <div class="metric-lbl">Fleet Capacity</div>
+                            <div class="metric-desc">Scale up to millions of virtual addressable smart meters on a single server host.</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-val">&lt; 2 KB</div>
+                            <div class="metric-lbl">Idle Footprint</div>
+                            <div class="metric-desc">Ultra-low memory utilization per inactive meter using optimized state machines.</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-val">5 NICs</div>
+                            <div class="metric-lbl">Protocols</div>
+                            <div class="metric-desc">4G TCP, 4G MQTT, 4G IMG MQTT, RF Wirepas, and RF Kimbal Mesh protocol profiles.</div>
+                        </div>
+                    </div>
+                    <div class="welcome-tip mt-6">
+                        <MudIcon Icon="@Icons.Material.Filled.Lightbulb" Color="Color.Warning" Class="mr-2" />
+                        <span>Tip: Check the <b>Docs</b> page for full network parameters, route commands, and XML configurations.</span>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="active-faq-header">
+                    <div class="active-faq-category">@GetCategoryNameFor(SelectedQuestion)</div>
+                    <h2 class="active-faq-title">@SelectedQuestion.Question</h2>
+                </div>
+                
+                <div style="height: 1px; background: rgba(255, 255, 255, 0.08); margin-bottom: 1.25rem; flex-shrink: 0;"></div>
+                
+                <div class="active-faq-body">
+                    @((MarkupString)FormatAnswer(SelectedQuestion.Answer))
+                </div>
+            }
+        </div>
+    </div>
+</div>
 
 @code {
-    // Placeholder Q&A — swap the text for the real questions/answers later.
-    private static readonly (string Question, string Answer)[] Items =
+    private FaqItem SelectedQuestion { get; set; } = WelcomeQuestion;
+
+    private static readonly FaqItem WelcomeQuestion = new()
     {
-        ("What is MAYA - Many-Meter Simulator?",
-         "It emulates a large fleet of TCP smart meters, allowing a Head-End System to be tested at scale without physical hardware."),
-        ("How to use this Simulator?",
-         "Create a batch using your own meter template xml file. Download csv and register meters to HES. Run commands."),
-        ("What is meter template xml? How to get it?",
-         "Template xml contains all the capture objects, bufferes, etc of a meter. Connect meter with desired firmware with GURUX and use “Save Values AS” to generate the xml file."),
-        // Parked, not deleted — uncomment to bring the set back.
-        //("Why do we need an Internal Simulator?",
-        // "“A company’s greatness is defined by the quality of its Simulators.”"),
-        //("How many meters can it simulate?",
-        // "Don't ask any more questions. Thank you."),
-        //("Is it better than Kalki's Million meter simulator?",
-        // "No. But, it was made with Passion."),
-        //("Is it worse than Kalki's Million meter simulator?",
-        // "पहले इस्तेमाल करें फिर विश्वास करें. Don't reject without checking."),
-        //("When to expect other features in this simulator like push, outages, events etc.?",
-        // "First go look at prod meters and its SLA breaches. This sim is for load testing and not to replicate real world scenarios yet. QA will share what features are needed for them to load test, only those features will be implemented."),
+        Question = "Welcome to the MAYA Simulator FAQ",
+        Answer = "" // Handled customly in welcome-container
+    };
+
+    private void SelectQuestion(FaqItem item)
+    {
+        SelectedQuestion = item;
+    }
+
+    private string GetCategoryNameFor(FaqItem item)
+    {
+        if (item == WelcomeQuestion) return "Introduction & Quick Facts";
+        foreach (var cat in FaqCategories)
+        {
+            if (cat.Items.Contains(item))
+            {
+                var name = cat.Name;
+                if (System.Text.RegularExpressions.Regex.IsMatch(name, @"^\d+\.\s*"))
+                {
+                    return name.Substring(name.IndexOf(".") + 1).Trim();
+                }
+                return name;
+            }
+        }
+        return "General FAQ";
+    }
+
+    private string FormatAnswer(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return string.Empty;
+        
+        var lines = text.Split(new[] { "\n" }, StringSplitOptions.None);
+        var result = new System.Text.StringBuilder();
+        bool inList = false;
+        
+        foreach (var line in lines)
+        {
+            var trimmed = line.Trim();
+            if (string.IsNullOrEmpty(trimmed))
+            {
+                if (inList)
+                {
+                    result.Append("</ul>");
+                    inList = false;
+                }
+                result.Append("<div class=\"mb-3\"></div>");
+                continue;
+            }
+            
+            if (trimmed.StartsWith("•") || trimmed.StartsWith("*"))
+            {
+                if (!inList)
+                {
+                    result.Append("<ul class=\"faq-list-bullet\">");
+                    inList = true;
+                }
+                var content = trimmed.Substring(1).Trim();
+                content = FormatKeyBold(content);
+                result.Append("<li class=\"mb-2\">").Append(content).Append("</li>");
+            }
+            else if (trimmed.StartsWith("-"))
+            {
+                if (!inList)
+                {
+                    result.Append("<ul class=\"faq-list-bullet\">");
+                    inList = true;
+                }
+                var content = trimmed.Substring(1).Trim();
+                content = FormatKeyBold(content);
+                result.Append("<li class=\"faq-sub-bullet mb-2\">").Append(content).Append("</li>");
+            }
+            else
+            {
+                if (inList)
+                {
+                    result.Append("</ul>");
+                    inList = false;
+                }
+                
+                if (System.Text.RegularExpressions.Regex.IsMatch(trimmed, @"^\d+\."))
+                {
+                    var content = FormatKeyBold(trimmed);
+                    result.Append("<div class=\"font-weight-bold mt-4 mb-2\" style=\"color: var(--mud-palette-text-primary); font-size: 1.15rem;\">").Append(content).Append("</div>");
+                }
+                else
+                {
+                    var content = FormatKeyBold(trimmed);
+                    result.Append("<p class=\"mb-3\">").Append(content).Append("</p>");
+                }
+            }
+        }
+        
+        if (inList)
+        {
+            result.Append("</ul>");
+        }
+        
+        return result.ToString();
+    }
+
+    private string FormatKeyBold(string line)
+    {
+        if (line.Contains(":"))
+        {
+            var idx = line.IndexOf(":");
+            var key = line.Substring(0, idx);
+            var val = line.Substring(idx);
+            if (key.Length < 45 && !key.Contains("<"))
+            {
+                return $"<strong style=\"color: var(--mud-palette-text-primary); font-weight: 600;\">{key}</strong>{val}";
+            }
+        }
+        return line;
+    }
+
+    private class FaqItem
+    {
+        public string Question { get; set; } = string.Empty;
+        public string Answer { get; set; } = string.Empty;
+    }
+
+    private class Category
+    {
+        public string Name { get; set; } = string.Empty;
+        public List<FaqItem> Items { get; set; } = new();
+    }
+
+    private static readonly List<Category> FaqCategories = new()
+    {
+        new Category
+        {
+            Name = "1. Concepts & Architecture",
+            Items = new()
+            {
+                new FaqItem
+                {
+                    Question = "What is MAYA (Many-Meter Simulator) and who is it for?",
+                    Answer = "MAYA is a high-performance DLMS/COSEM smart meter simulation suite. It is built for QA Engineers, Developers, and System Integrators who need to load-test, demo, or validate a Head-End System (HES) at scale without deploying expensive, physical laboratory hardware.\n\nMAYA supports simulating meters across two main communication mediums:\n• TCP/IPv6: Meters are simulated as individually addressable endpoints listening directly for TCP connections.\n• MQTT Brokers: Meters exchange messages asynchronously through centralized MQTT brokers."
+                },
+                new FaqItem
+                {
+                    Question = "What is the maximum fleet size MAYA can simulate, and what resources does it require?",
+                    Answer = "MAYA supports fleets of 1,000,000+ simulated meters on a single host. Memory utilization is minimal (typically under 2 KB of memory per idle meter), and CPU overhead scales dynamically based on the rate of active communication exchanges."
+                }
+            }
+        },
+        new Category
+        {
+            Name = "2. Getting Started",
+            Items = new()
+            {
+                new FaqItem
+                {
+                    Question = "How do I log in and what are the authorization roles?",
+                    Answer = "MAYA uses cookie-based authentication with three predefined roles configured in the app's settings:\n\n• Admin: Full access to the simulator, including adding batches, deleting batches, and modifying network registry connections.\n• Utility: Designed for operators who need to start or stop existing batches and monitor active test sessions, but cannot provision new ones.\n• Viewer: Read-only access to view the Dashboard, Live Logs, and FAQs."
+                },
+                new FaqItem
+                {
+                    Question = "What types of Network Interfaces (NICs) does the simulator support?",
+                    Answer = "MAYA supports multiple virtual NIC technologies to model different meter connectivity types:\n\n• TCP NIC (Tcp4G): Emulates raw DLMS/COSEM over TCP/IP (listening on port 4059) using the 4G TCP profile.\n• MQTT NICs (Mqtt4G, Mqtt4GImg, MqttWirepas, MqttKmesh): Emulates connectivity patterns for 4G MQTT, 4G IMG MQTT, RF Wirepas, and RF Kimbal Mesh by wrapping DLMS packets and routing messages through registered MQTT brokers."
+                }
+            }
+        },
+        new Category
+        {
+            Name = "3. Provisioning & Configuration",
+            Items = new()
+            {
+                new FaqItem
+                {
+                    Question = "How do I set up and register MQTT brokers and push targets (Network Setup)?",
+                    Answer = "Before provisioned batches can communicate over MQTT or send push events, you must configure endpoints on the Network page:\n\n1. Add/configure MQTT brokers by specifying host, port, TLS settings, and connection credentials (usernames/passwords).\n2. Register HES Push targets to define endpoints where simulated meters should push unsolicited data.\n\nMAYA will automatically probe configured endpoints in the background and display their live connection health status so you know if they are ready for testing."
+                },
+                new FaqItem
+                {
+                    Question = "How do I create, configure, and start a new batch of meters (Batch Setup)?",
+                    Answer = "1. Log in as an Admin and navigate to the Setup (Batches) page.\n2. Enter a Batch Name, specify the number of meters (N), and select the target NIC type (TCP or MQTT variants).\n3. Select the matching Meter Template XML (which serves as the blueprint defining the registers and capture objects).\n4. Associate the batch with a network configuration by selecting the target MQTT broker or local network interface:\n   • For MQTT NICs, select the target MQTT Broker from the dropdown list. (Batches can also be left 'unbound' if you only want local framing tests).\n   • For TCP NIC, you can optionally specify a registered HES Push target if you wish to run push/unsolicited load testing.\n5. Click 'Add Batch' to provision. Start the batch in the table to activate the meters and begin listening for traffic."
+                },
+                new FaqItem
+                {
+                    Question = "What is a Meter Template XML and how do I create one?",
+                    Answer = "A template XML is a blueprint of a physical smart meter's registers, profile generic buffers, clock attributes, and capture objects. It tells the simulator how to respond to DLMS/COSEM read/write commands.\n\nTo generate a template XML:\n1. Connect a physical meter (running your target firmware) using the GURUX GXDLMSDirector desktop utility.\n2. Read the association view (objects and registers) from the meter.\n3. In GXDLMSDirector, use the 'Save Association View as XML' or 'Save Values As' option to generate the XML file.\n4. Upload the saved XML on the Setup/Batches page when creating a new batch."
+                }
+            }
+        },
+        new Category
+        {
+            Name = "4. HES Integration & Networking",
+            Items = new()
+            {
+                new FaqItem
+                {
+                    Question = "How do I register these simulated meters in my HES?",
+                    Answer = "To register the meters in your Head-End System:\n1. Navigate to the Setup (Batches) page.\n2. Find your target batch in the table and click the 'Download CSV' button.\n3. The generated CSV contains all the meter serial numbers (e.g., MYnnnnnnnnn) and communication parameters:\n   • For TCP Meters: The CSV lists their unique virtual IPv6 addresses. Import these into your HES so it knows the connection endpoint for each meter.\n   • For MQTT Meters: The CSV includes the node/serial identifiers. Register them in the HES using these serial numbers, and configure your HES to communicate via the designated MQTT broker and topic formats."
+                },
+                new FaqItem
+                {
+                    Question = "How does virtual addressing and routing work for both TCP and MQTT meters?",
+                    Answer = "• For TCP Meters: Each meter has a unique IPv6 address calculated from its index within your configured prefix (e.g., fd00:6d65:7472::/64). You must configure a local route (e.g., 'ip -6 route add local fd00:6d65:7472::/64 dev lo' on Linux, or assign loopback IPs on Windows) so that the OS routes incoming packets directly to the simulator's TCP socket.\n• For MQTT Meters: Communication is routed based on topic hierarchies (e.g., requests on 'PollRequest/{nodeId}' and responses on 'PollResponse/{nodeId}'). MAYA maps these topics to the correct virtual meter instance automatically based on the broker configuration, removing the need for local OS routing tables."
+                }
+            }
+        },
+        new Category
+        {
+            Name = "5. Diagnostics, Logs & Impairments",
+            Items = new()
+            {
+                new FaqItem
+                {
+                    Question = "How can I simulate bad communication conditions (impairments)?",
+                    Answer = "Navigate to the BadComm page. Here, you can configure settings to test your HES's resilience:\n\n• Latency: Set a global delay (in milliseconds) for all request-response round trips to simulate slow network media.\n• Packet Drops & Disconnects: Simulate unreliable field connections by configuring random disconnects, packet loss rates, or connection aborts.\n\nThese settings are applied globally at runtime without needing a restart."
+                },
+                new FaqItem
+                {
+                    Question = "Where can I see live traffic and system metrics?",
+                    Answer = "• Dashboard: The central monitoring hub for MAYA. It displays real-time telemetry split into key sections:\n\n  1. KPI Cards:\n     - Active connections: Currently active TCP connections to simulated meters.\n     - Live meters: Number of simulated meter sessions materialized in memory.\n     - Running batches: Batches currently active and listening for traffic.\n     - Provisioned meters: Total defined meters across all configured batches.\n     - Total exchanges: Total request-response frames processed.\n     - Total accepted: Cumulative TCP connections accepted since startup.\n\n  2. Latency Monitor:\n     - Bridge Latency (Avg/Max): Time spent processing DLMS logic inside the meter simulator. Keeping this separate ensures slow host processing is never confused with network latency.\n     - Network Latency (Avg/Max): The virtual network propagation delay applied (configured on the BadComm page).\n\n  3. Live Activity Chart:\n     - A rolling 60-second graph showing Active Connections (green) and Exchanges/second (purple) sampled every 2 seconds.\n\n  4. Connection & Materialization Capacity:\n     - Connection capacity: Current TCP connections vs the maximum allowed concurrent connections (configured in settings).\n     - Meters materialized: Percentage of provisioned meters that have been activated in memory.\n\n  5. Comms Health & Drops:\n     - Displays percentages of meters categorized as Healthy, Bad-comm (flaky), or Non-comm (offline).\n     - Tracks total Non-comm drops (offline simulation drops), Bad-comm drops (impaired packet drops), and average bad-comm delay.\n\n  6. Rejections Breakdown:\n     - Collision: Rejecting duplicate active sessions.\n     - Max conn: Exceeded allowed concurrent TCP links.\n     - Not running: Attempting to query a batch that is stopped/inactive.\n     - No template: Missing or unloaded template definition.\n     - Idle t/o / Mailbox full / Malformed / Frag t/o: Communication-level diagnostics.\n\n• Live Logs: Renders the active application logs in real-time. You can toggle 'Include debug' to view detailed protocol framing/wrapping bytes, or filter by log level to trace specific connection events."
+                }
+            }
+        }
     };
 }

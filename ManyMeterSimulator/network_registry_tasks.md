@@ -150,22 +150,33 @@ once 2 lands.
       into false shows a brand-new endpoint as broken
 - [x] Snapshot surface the page reads without triggering probes of its own
 
-## Phase 7 — Tests
-- [ ] `JsonNetworkRegistryStore` round-trip; corrupt file throws rather than starting empty
-- [ ] Duplicate key rejected; key comparison is case-insensitive
-- [ ] Delete refused while referenced, allowed once the batch is gone
-- [ ] Binding computation from a mixed batch set (4G + IMG + Wirepas across two brokers)
-- [ ] Reply publishes on the originating client when two brokers serve one transport
-- [ ] Legacy batch (no keys) loads and resolves to the `default` broker
-- [ ] `AddBatch` rejects a key of the wrong kind for the NIC
-- [ ] A disabled endpoint contributes no bindings; re-enabling brings its client back
-- [ ] An unbound (null-key) MQTT batch contributes no binding; a null/null batch is legal and
-      persists as null/null
-- [ ] Pre-feature `batches.json` migrates MQTT batches to `default`, exactly once
-- [ ] `SetNetworkBinding` moves a running batch's traffic to the new broker
-- [ ] Password survives a store round-trip encrypted, and the on-disk JSON does not contain it in
-      plaintext
-- [ ] IPv4 push target rejected
+## Phase 7 — Tests — DONE (275/275)
+Most landed with the phase they cover rather than here; the covering file is named for each.
+- [x] `JsonNetworkRegistryStore` round-trip; corrupt file throws rather than starting empty
+      — `JsonNetworkRegistryStoreTests`
+- [x] Duplicate key rejected; key comparison is case-insensitive — `NetworkRegistryTests`
+- [x] Delete refused while referenced, allowed once the batch is gone — `NetworkRegistryTests`,
+      `NetworkBindingValidatorTests`
+- [x] Binding computation from a mixed batch set (4G + IMG + Wirepas across two brokers)
+      — `BrokerBindingPlannerTests`
+- [x] Legacy batch (no keys) loads and resolves to the `default` broker — `BatchNetworkBindingTests`
+- [x] `AddBatch` rejects a key of the wrong kind for the NIC — `NetworkBindingValidatorTests`
+- [x] A disabled endpoint contributes no bindings; **re-enabling brings its client back**
+      — `BrokerBindingPlannerTests` (`ReEnablingABroker_BringsItsBindingBack`)
+- [x] An unbound (null-key) MQTT batch contributes no binding; a null/null batch is legal and
+      persists as null/null — `BatchNetworkBindingTests`, `BrokerBindingPlannerTests`
+- [x] Pre-feature `batches.json` migrates MQTT batches to `default`, exactly once
+      — `BatchNetworkBindingTests`
+- [x] `SetNetworkBinding` moves a running batch's binding to the new broker
+      — `BrokerBindingPlannerTests` (`RebindingARunningBatch_MovesTheDesiredBinding`)
+- [x] Password survives a store round-trip encrypted, and the on-disk JSON does not contain it in
+      plaintext — `JsonNetworkRegistryStoreTests`
+- [x] IPv4 push target rejected — `NetworkRegistryTests`, and push resolution in `PushDestinationTests`
+
+> **Still integration-only, not unit-tested**: that a reply is physically published on the
+> originating connection (design §5.2). The routing is structural — the client rides on the work
+> item and `ProcessAsync` reaches for no other — but proving it end-to-end needs two live brokers.
+> Run against EQA before shipping.
 
 ## Phase 8 — Documentation
 - [x] `appsettings.json` sample updated; note that broker details now live in the registry, and

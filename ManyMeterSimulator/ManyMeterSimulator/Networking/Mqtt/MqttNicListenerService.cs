@@ -36,7 +36,7 @@ namespace ManyMeterSimulator.Networking.Mqtt;
 /// broker (network_registry.md §5.2).
 /// </para>
 /// </summary>
-public sealed class MqttNicListenerService : BackgroundService
+public sealed class MqttNicListenerService : BackgroundService, IMqttPushPublisher
 {
     private readonly ILogger<MqttNicListenerService> _logger;
     private readonly ILoggerFactory _loggerFactory;
@@ -96,6 +96,35 @@ public sealed class MqttNicListenerService : BackgroundService
             .Where(kv => string.Equals(kv.Key.BrokerKey, brokerKey, StringComparison.OrdinalIgnoreCase))
             .Select(kv => (kv.Key.Transport, kv.Value.Client.Status))
             .ToArray();
+
+    /// <summary>
+    /// Whether a live client exists for this binding — i.e. a running batch has brought its broker
+    /// connection up. MQTT push needs one: a meter can only push over a broker it is connected to.
+    /// </summary>
+    public bool HasClient(BrokerBinding binding) => _clients.ContainsKey(binding);
+
+    /// <summary>
+    /// Publishes one meter-originated push on the binding's broker connection — the MQTT counterpart
+    /// of the TCP push socket. Returns false if no live client serves the binding (the batch is not
+    /// running, or its broker is disabled), so the caller can report it rather than silently drop.
+    ///
+    /// <para>
+    /// This is the same connection the meter answers pulls on, which is the point: HES sees the push
+    /// arrive on the broker it expects that meter's traffic on, and the node id in the topic is the
+    /// identity — the MQTT equivalent of the TCP push's source IP.
+    /// </para>
+    /// </summary>
+    public async Task<bool> TryPublishPushAsync(
+        BrokerBinding binding, NicPublish publish, int qos, CancellationToken cancellationToken)
+    {
+        if (!_clients.TryGetValue(binding, out BoundBrokerClient? bound))
+        {
+            return false;
+        }
+
+        await bound.Client.PublishAsync(publish.Topic, publish.Payload, qos, cancellationToken);
+        return true;
+    }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {

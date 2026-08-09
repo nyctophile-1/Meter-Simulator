@@ -8,6 +8,7 @@ using ManyMeterSimulator.Networking;
 using ManyMeterSimulator.Networking.Mqtt;
 using ManyMeterSimulator.Networking.Mqtt.Codecs;
 using ManyMeterSimulator.Networking.Nic;
+using ManyMeterSimulator.Networking.Push;
 using ManyMeterSimulator.Networking.Registry;
 using ManyMeterSimulator.Provisioning;
 using ManyMeterSimulator.Settings;
@@ -132,10 +133,13 @@ builder.Services.AddSingleton<NetworkRegistry>();
 // Registered after MeterRegistry: it is the one place that sees both registries, which is what
 // lets neither of them depend on the other.
 builder.Services.AddSingleton<NetworkBindingValidator>();
+// Portable export/import of the whole operator config (batches + endpoints) as one bundle.
+builder.Services.AddSingleton<ConfigBundleService>();
 // Depends on both MeterRegistry and BadCommSettings, so it is registered after the batch store.
 builder.Services.AddSingleton<FleetCompositionCache>();
 builder.Services.AddSingleton<TemplateRegistry>();
 builder.Services.AddSingleton<MeterSessionManager>();
+builder.Services.AddSingleton<TcpPushSender>();
 builder.Services.AddSingleton<PushCoordinator>();
 
 // Bridge selection: the real in-process brain (default) or the echo stand-in (framing only).
@@ -164,6 +168,8 @@ builder.Services.AddSingleton<NicCaptureWriter>();
 builder.Services.AddSingleton<NicCodecFactory>();
 builder.Services.AddSingleton<MqttNicListenerService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<MqttNicListenerService>());
+// Same instance, seen as the narrow push-publish interface by PushCoordinator.
+builder.Services.AddSingleton<IMqttPushPublisher>(sp => sp.GetRequiredService<MqttNicListenerService>());
 
 // Registered after the listener: for a broker that is IN USE the monitor reports that client's live
 // status rather than probing, since a probe can succeed while the real client is stuck in backoff.
@@ -235,6 +241,7 @@ app.UseAntiforgery();
 
 app.MapAuthEndpoints();
 app.MapBatchEndpoints();
+app.MapConfigEndpoints();
 
 app.MapStaticAssets();
 
