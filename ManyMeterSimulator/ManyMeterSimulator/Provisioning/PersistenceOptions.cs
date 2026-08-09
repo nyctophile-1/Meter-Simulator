@@ -27,4 +27,20 @@ public sealed class PersistenceOptions
     /// failure: a corrupt config file falls back to defaults, a corrupt batch store is fatal.
     /// </summary>
     public string RuntimeConfigFileName { get; set; } = "maya-runtime-config.json";
+
+    /// <summary>
+    /// File name of the network registry (brokers and HES push targets) within <see cref="Folder"/>.
+    /// Shares the BATCH store's fail-fast-on-corrupt policy rather than the runtime config's
+    /// fall-back-to-defaults one: a lost registry leaves every batch bound to keys that no longer
+    /// resolve, which is silent rather than merely degraded (network_registry.md §3.4).
+    /// </summary>
+    public string NetworkRegistryFileName { get; set; } = "network.json";
+
+    /// <summary>
+    /// Folder within <see cref="Folder"/> holding the ASP.NET Data Protection key ring that encrypts
+    /// broker passwords. Pinned explicitly because the default key location is per-user: a redeploy
+    /// that runs the app under a different account would otherwise silently lose every stored
+    /// password, surfacing much later as a broker that will not authenticate.
+    /// </summary>
+    public string KeyRingFolderName { get; set; } = "keys";
 }

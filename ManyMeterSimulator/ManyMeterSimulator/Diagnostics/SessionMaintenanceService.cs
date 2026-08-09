@@ -113,7 +113,21 @@ public sealed class SessionMaintenanceService : BackgroundService
         }
     }
 
-    private void Log(string kind, string scope, SimulatorMetricsSnapshot snapshot) =>
+    /// <summary>
+    /// The network-delay and bad-comm figures are appended only to the fleet-wide line. They are
+    /// tracked fleet-wide (see <see cref="SimulatorMetrics"/>), so repeating them on each per-NIC
+    /// line would restate the same number and read as if it were that NIC's own.
+    ///
+    /// <para>
+    /// They were dropped from the summary when the TCP listener's own reporter was hoisted into
+    /// this service — bad-comm was still being applied and counted, but nothing logged it, which
+    /// made a working impairment look dead.
+    /// </para>
+    /// </summary>
+    private void Log(string kind, string scope, SimulatorMetricsSnapshot snapshot)
+    {
+        bool fleetWide = scope == "all";
+
         _logger.LogInformation(
             "{Kind} metrics [{Scope}]: active={Active}, accepted={Accepted}, rejectedCollision={RejectedCollision}, " +
             "rejectedMaxConn={RejectedMaxConn}, rejectedBatchNotRunning={RejectedBatchNotRunning}, " +
@@ -121,12 +135,20 @@ public sealed class SessionMaintenanceService : BackgroundService
             "avgExchangesPerSession={AvgExchanges:F1}, " +
             "avgBridgeLatency={AvgLatencyMs}ms, maxBridgeLatency={MaxLatencyMs}ms, " +
             "droppedMailboxFull={MailboxFull}, malformed={Malformed}, ignored={Ignored}, " +
-            "fragmentTimeouts={FragmentTimeouts}",
+            "fragmentTimeouts={FragmentTimeouts}{Impairment}",
             kind, scope, snapshot.ActiveConnections, snapshot.TotalAccepted, snapshot.TotalRejectedCollision,
             snapshot.TotalRejectedMaxConnections, snapshot.TotalRejectedBatchNotRunning,
             snapshot.TotalRejectedNoTemplate, snapshot.TotalIdleTimeouts, snapshot.TotalExchanges,
             snapshot.AvgExchangesPerSession,
             snapshot.AvgBridgeLatency.TotalMilliseconds, snapshot.MaxBridgeLatency.TotalMilliseconds,
             snapshot.TotalDroppedMailboxFull, snapshot.TotalMalformedPackets, snapshot.TotalIgnoredPackets,
-            snapshot.TotalFragmentTimeouts);
+            snapshot.TotalFragmentTimeouts,
+            fleetWide
+                ? $", avgNetworkLatency={snapshot.AvgNetworkLatency.TotalMilliseconds}ms" +
+                  $", maxNetworkLatency={snapshot.MaxNetworkLatency.TotalMilliseconds}ms" +
+                  $", nonCommDrops={snapshot.TotalNonCommDrops}" +
+                  $", badCommDrops={snapshot.TotalBadCommDrops}" +
+                  $", avgBadCommDelay={snapshot.AvgBadCommDelay.TotalMilliseconds}ms"
+                : string.Empty);
+    }
 }

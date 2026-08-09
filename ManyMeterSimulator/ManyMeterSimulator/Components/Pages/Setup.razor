@@ -29,19 +29,19 @@
 
 @if (IsAdmin)
 {
-    <MudPaper Elevation="1" Class="pa-4 mb-6">
+    <MudPaper Elevation="1" Class="pa-6 mb-6">
         <MudText Typo="Typo.h6" GutterBottom="true">Provision a new batch</MudText>
 
-        <MudGrid>
+        <MudGrid Spacing="4" Class="mt-1">
             <MudItem xs="12" sm="6" md="2">
                 <MudTextField T="string" @bind-Value="BatchName" Immediate="true"
                               Label="Batch name" Placeholder="e.g. batch-1"
-                              Variant="Variant.Outlined" Margin="Margin.Dense" />
+                              Variant="Variant.Outlined" Margin="Margin.Normal" />
             </MudItem>
             <MudItem xs="12" sm="6" md="2">
                 <MudNumericField T="int" @bind-Value="MeterCount" Immediate="true" Min="1"
                                  Label="Number of meters (N)"
-                                 Variant="Variant.Outlined" Margin="Margin.Dense" />
+                                 Variant="Variant.Outlined" Margin="Margin.Normal" />
             </MudItem>
             @* Widest column of the row: it holds full XML filenames, which truncated at md=3.
                Upload sits against the picker because that is the list it adds to — as a
@@ -51,7 +51,7 @@
             <MudItem xs="12" sm="6" md="4">
                 <div class="d-flex align-start" style="gap:6px;">
                     <MudSelect T="string" @bind-Value="SelectedTemplate" Label="Meter model (XML)"
-                               Variant="Variant.Outlined" Margin="Margin.Dense" Class="flex-grow-1">
+                               Variant="Variant.Outlined" Margin="Margin.Normal" Class="flex-grow-1">
                         @foreach (string t in Templates)
                         {
                             <MudSelectItem Value="@t">@t</MudSelectItem>
@@ -72,7 +72,7 @@
             </MudItem>
             <MudItem xs="12" sm="6" md="2">
                 <MudSelect T="NicType" @bind-Value="SelectedNic" Label="NIC"
-                           Variant="Variant.Outlined" Margin="Margin.Dense">
+                           Variant="Variant.Outlined" Margin="Margin.Normal">
                     @foreach (NicType nic in AllNics)
                     {
                         <MudSelectItem Value="@nic">@NicLabel(nic)</MudSelectItem>
@@ -89,7 +89,7 @@
                                  HelperText="@(NeedsHesTemplateId(SelectedNic)
                                      ? "Optional — needed only for the custom channel"
                                      : "Wirepas only")"
-                                 Variant="Variant.Outlined" Margin="Margin.Dense" />
+                                 Variant="Variant.Outlined" Margin="Margin.Normal" />
             </MudItem>
         </MudGrid>
 
@@ -134,11 +134,21 @@
 
 <div class="d-flex align-center justify-space-between mb-2" style="gap:12px;">
     <MudText Typo="Typo.h6" Class="mb-0">Batches (@MeterRegistry.Batches.Count)</MudText>
-    @if (IsAdmin && MeterRegistry.Batches.Count > 0)
-    {
-        <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Error"
-                   StartIcon="@Icons.Material.Filled.RestartAlt" OnClick="ResetAll">Reset all batches</MudButton>
-    }
+    <div class="d-flex align-center" style="gap:8px;">
+        @if (MeterRegistry.Batches.Count > 0)
+        {
+            @* Any authenticated user can export, same as the per-batch download. *@
+            <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                       StartIcon="@Icons.Material.Filled.Download" OnClick="DownloadAllCsv">
+                Download all meters
+            </MudButton>
+        }
+        @if (IsAdmin && MeterRegistry.Batches.Count > 0)
+        {
+            <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Error"
+                       StartIcon="@Icons.Material.Filled.RestartAlt" OnClick="ResetAll">Reset all batches</MudButton>
+        }
+    </div>
 </div>
 
 @{
@@ -156,12 +166,10 @@ else
     <MudSimpleTable Hover="true" Dense="true" Bordered="false" Class="batch-table">
         <thead>
             <tr>
-                <th></th>
-                <th></th>
+                <th>NIC</th>
                 @* Absorbs all the slack, so the remaining columns stay grouped instead of
                    drifting apart into voids on a wide screen. *@
                 <th class="col-flex">Name</th>
-                <th>NIC</th>
                 <th style="text-align:right">Count</th>
                 <th>Status</th>
                 @if (CanOperate)
@@ -175,20 +183,11 @@ else
             {
                 bool expanded = ExpandedBatches.Contains(batch.Id);
                 (string firstNode, string lastNode) = MeterRegistry.GetNodeIdRange(batch);
-                @* The whole row is the hit target — a 24px chevron was a needlessly small one.
-                   Cells holding their own controls stop propagation so Start/Stop/Delete and the
-                   CSV download do not also toggle the panel. *@
+                @* The whole row is the hit target — no chevron; the row itself is the affordance,
+                   with the open state shown by its background. Cells holding their own controls
+                   stop propagation so Start/Stop/Delete do not also toggle the panel. *@
                 <tr class="batch-row @StatusRowClass(batch.Status) @(expanded ? "is-expanded" : "")"
                     @onclick="() => ToggleDetails(batch.Id)">
-                    <td>
-                        <MudIcon Size="Size.Small" Class="batch-chevron"
-                                 Icon="@(expanded ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)" />
-                    </td>
-                    <td @onclick:stopPropagation="true">
-                        <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Download"
-                                       Title="Download meter list (CSV)" OnClick="() => DownloadCsv(batch.Id)" />
-                    </td>
-                    <td class="col-flex">@batch.Name</td>
                     <td>
                         <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@NicLabel(batch.NicType)</MudChip>
                         @if (batch.HesTemplateId is int hesId)
@@ -196,6 +195,7 @@ else
                             <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">tpl @hesId</MudText>
                         }
                     </td>
+                    <td class="col-flex">@batch.Name</td>
                     <td style="text-align:right">@batch.Count.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</td>
                     <td>
                         <MudChip T="string" Size="Size.Small" Variant="Variant.Filled" Color="@StatusColor(batch.Status)">
@@ -220,7 +220,7 @@ else
                 @if (expanded)
                 {
                     <tr class="batch-detail-row @StatusRowClass(batch.Status)">
-                        <td colspan="@(CanOperate ? 7 : 6)" class="pa-0">
+                        <td colspan="@(CanOperate ? 5 : 4)" class="pa-0">
                             <div class="pa-4">
                                 <MudGrid Spacing="3">
                                     <MudItem xs="12" sm="6" md="3">
@@ -249,6 +249,15 @@ else
                                         }
                                     </MudItem>
                                 </MudGrid>
+
+                                @* Lives here rather than on the row: it belongs with the
+                                   registration detail it exports. No stopPropagation needed —
+                                   the toggle handler is on .batch-row, not on this detail row. *@
+                                <MudButton Size="Size.Small" Variant="Variant.Outlined" Class="mt-4"
+                                           StartIcon="@Icons.Material.Filled.Download"
+                                           OnClick="() => DownloadCsv(batch.Id)">
+                                    Download meter list (CSV)
+                                </MudButton>
                             </div>
                         </td>
                     </tr>
@@ -434,6 +443,13 @@ else
 
         MeterRegistry.Delete(batchId);
     }
+
+    /// <summary>
+    /// Every meter across every batch in one file — what you register a whole fleet with, rather
+    /// than downloading each batch and stitching them together.
+    /// </summary>
+    private async Task DownloadAllCsv() =>
+        await JS.InvokeVoidAsync("mayaDownload", "/batches/meters.csv");
 
     private async Task DownloadCsv(int batchId) =>
         await JS.InvokeVoidAsync("mayaDownload", $"/batches/{batchId}/meters.csv");

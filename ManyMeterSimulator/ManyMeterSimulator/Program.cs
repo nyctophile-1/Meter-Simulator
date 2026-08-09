@@ -8,9 +8,11 @@ using ManyMeterSimulator.Networking;
 using ManyMeterSimulator.Networking.Mqtt;
 using ManyMeterSimulator.Networking.Mqtt.Codecs;
 using ManyMeterSimulator.Networking.Nic;
+using ManyMeterSimulator.Networking.Registry;
 using ManyMeterSimulator.Provisioning;
 using ManyMeterSimulator.Settings;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.DataProtection;
 using MudBlazor.Services;
 using Serilog;
 
@@ -106,6 +108,26 @@ builder.Services.AddSingleton<BadCommSettings>();
 // their status, and the allocation cursor survive restarts/reboots/redeployments.
 builder.Services.AddSingleton<IBatchStore, JsonBatchStore>();
 builder.Services.AddSingleton<MeterRegistry>();
+
+// ── Network registry ─────────────────────────────────────────────────────────────────────────
+// Named, validated MQTT brokers and HES push targets that batches bind to (network_registry.md).
+// The key ring is pinned to data/keys/ rather than left at its per-user default: broker passwords
+// are encrypted with it, and a redeploy under a different service account would otherwise render
+// every stored password undecryptable — surfacing much later as a broker that will not
+// authenticate. It sits beside data/batches.json, so the same "survives a redeploy" rule covers it.
+string dataFolder = builder.Configuration.GetValue("Persistence:Folder", "../data") ?? "../data";
+string keyRingPath = Path.GetFullPath(Path.Combine(
+    Path.IsPathRooted(dataFolder) ? dataFolder : Path.Combine(builder.Environment.ContentRootPath, dataFolder),
+    builder.Configuration.GetValue("Persistence:KeyRingFolderName", "keys") ?? "keys"));
+Directory.CreateDirectory(keyRingPath);
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo(keyRingPath))
+    .SetApplicationName("ManyMeterSimulator");
+
+builder.Services.AddSingleton<ISecretProtector, DataProtectionSecretProtector>();
+builder.Services.AddSingleton<INetworkRegistryStore, JsonNetworkRegistryStore>();
+builder.Services.AddSingleton<EndpointProber>();
+builder.Services.AddSingleton<NetworkRegistry>();
 // Depends on both MeterRegistry and BadCommSettings, so it is registered after the batch store.
 builder.Services.AddSingleton<FleetCompositionCache>();
 builder.Services.AddSingleton<TemplateRegistry>();

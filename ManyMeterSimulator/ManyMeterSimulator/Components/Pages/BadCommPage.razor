@@ -86,7 +86,7 @@ else
     <MudPaper Elevation="1" Class="pa-4 mb-6">
         <div class="d-flex align-center justify-space-between flex-wrap mb-2" style="gap:12px;">
             <MudText Typo="Typo.h6">Auto allocation</MudText>
-            <MudSwitch T="bool" @bind-Value="_draft.Enabled" Color="Color.Primary" Label="Impairment enabled" />
+            <MudSwitch T="bool" @bind-Value="_draft.Enabled" @bind-Value:after="Refresh" Color="Color.Primary" Label="Impairment enabled" />
         </div>
         <MudText Typo="Typo.caption" Class="mud-text-secondary">
             Which meters are affected is derived from the meter number, so the same meters stay
@@ -95,32 +95,32 @@ else
 
         <MudGrid Class="mt-2">
             <MudItem xs="12" sm="6" md="3">
-                <MudNumericField T="double" @bind-Value="_draft.Auto.NonCommPercent" Immediate="true"
+                <MudNumericField T="double" @bind-Value="_draft.Auto.NonCommPercent" @bind-Value:after="Refresh" Immediate="true"
                                  Label="Non-comm %" Min="0" Max="100" Step="0.1"
                                  Variant="Variant.Outlined" Margin="Margin.Dense" />
             </MudItem>
             <MudItem xs="12" sm="6" md="3">
-                <MudNumericField T="double" @bind-Value="_draft.Auto.BadCommPercent" Immediate="true"
+                <MudNumericField T="double" @bind-Value="_draft.Auto.BadCommPercent" @bind-Value:after="Refresh" Immediate="true"
                                  Label="Bad-comm %" Min="0" Max="100" Step="0.5"
                                  Variant="Variant.Outlined" Margin="Margin.Dense" />
             </MudItem>
             <MudItem xs="12" sm="6" md="3">
-                <MudNumericField T="double" @bind-Value="_draft.Defaults.FailureRatePercent" Immediate="true"
+                <MudNumericField T="double" @bind-Value="_draft.Defaults.FailureRatePercent" @bind-Value:after="Refresh" Immediate="true"
                                  Label="Failure rate % (per exchange)" Min="0" Max="100" Step="1"
                                  Variant="Variant.Outlined" Margin="Margin.Dense" />
             </MudItem>
             <MudItem xs="12" sm="6" md="3">
-                <MudNumericField T="int" @bind-Value="_draft.Seed" Immediate="true"
+                <MudNumericField T="int" @bind-Value="_draft.Seed" @bind-Value:after="Refresh" Immediate="true"
                                  Label="Seed (reshuffles who is affected)" Min="0"
                                  Variant="Variant.Outlined" Margin="Margin.Dense" />
             </MudItem>
             <MudItem xs="12" sm="6" md="3">
-                <MudNumericField T="int" @bind-Value="_draft.Defaults.MultiplierMin" Immediate="true"
+                <MudNumericField T="int" @bind-Value="_draft.Defaults.MultiplierMin" @bind-Value:after="Refresh" Immediate="true"
                                  Label="Multiplier min" Min="1" Max="@DelayLimits.MaxMultiplier"
                                  Variant="Variant.Outlined" Margin="Margin.Dense" />
             </MudItem>
             <MudItem xs="12" sm="6" md="3">
-                <MudNumericField T="int" @bind-Value="_draft.Defaults.MultiplierMax" Immediate="true"
+                <MudNumericField T="int" @bind-Value="_draft.Defaults.MultiplierMax" @bind-Value:after="Refresh" Immediate="true"
                                  Label="Multiplier max" Min="1" Max="@DelayLimits.MaxMultiplier"
                                  Variant="Variant.Outlined" Margin="Margin.Dense" />
             </MudItem>
@@ -143,11 +143,29 @@ else
             <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Check"
                        Disabled="@(DraftError is not null)" OnClick="ApplyDraft">Apply</MudButton>
             <MudButton Variant="Variant.Text" OnClick="ResetDraft">Discard changes</MudButton>
-            <MudText Typo="Typo.caption" Class="mud-text-secondary">
-                Preview: @_preview.NonComm.ToString("N0") non-comm &middot;
-                @_preview.BadComm.ToString("N0") bad-comm &middot;
-                @_preview.Healthy.ToString("N0") healthy
-            </MudText>
+            @* When impairment is off the classifier short-circuits to healthy, so the preview is
+               all zeroes however the percentages are set. Saying so beats printing three zeroes
+               that read as broken arithmetic. *@
+            @if (!_draft.Enabled)
+            {
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                    Preview: impairment is <strong>off</strong> — every meter stays healthy
+                    whatever the percentages below say. Turn it on to apply them.
+                </MudText>
+            }
+            else
+            {
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                    Preview: @_preview.NonComm.ToString("N0") non-comm &middot;
+                    @_preview.BadComm.ToString("N0") bad-comm &middot;
+                    @_preview.Healthy.ToString("N0") healthy
+                    @if (_preview.Total > 0 && _preview.NonComm == 0 && _draft.Auto.NonCommPercent > 0)
+                    {
+                        @* e.g. 0.1% of a 100-meter fleet is 0.1 meters, which floors to none. *@
+                        <span> &middot; @_draft.Auto.NonCommPercent.ToString("0.###")% of @_preview.Total.ToString("N0") rounds to none</span>
+                    }
+                </MudText>
+            }
         </div>
     </MudPaper>
 
@@ -331,10 +349,31 @@ else
 
     protected override void OnParametersSet() => Refresh();
 
+    /// <summary>
+    /// Recomputes the live composition and the draft preview.
+    ///
+    /// <para>
+    /// Called from <c>@bind-Value:after</c> on every auto-allocation control, not just from
+    /// <see cref="OnParametersSet"/>. Blazor does not re-run OnParametersSet after a field edit,
+    /// so previously the numbers were computed once on load and then never again — you could set
+    /// bad-comm to 50% and watch the preview keep reporting the old split.
+    /// </para>
+    /// </summary>
     private void Refresh()
     {
         _composition = Composition.Current();
-        _preview = DraftError is null ? Composition.Preview(_draft) : _composition;
+
+        if (DraftError is not null)
+        {
+            _preview = _composition;
+            return;
+        }
+
+        // A disabled draft is all-healthy by definition, so short-circuit rather than walking
+        // every provisioned index — Preview is O(fleet) and this runs on each keystroke.
+        _preview = _draft.Enabled
+            ? Composition.Preview(_draft)
+            : new FleetComposition(_composition.Total, 0, 0);
     }
 
     private void ResetDraft()

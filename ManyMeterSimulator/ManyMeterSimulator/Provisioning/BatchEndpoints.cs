@@ -48,7 +48,51 @@ public static class BatchEndpoints
                 }, "text/csv", fileName);
             })
             .RequireAuthorization();
+
+        // Every meter in every batch, one file. Registering a whole fleet with the HES otherwise
+        // means downloading each batch and concatenating by hand, which is exactly where a
+        // duplicated or skipped batch creeps in. Same columns and row format as the per-batch
+        // file, plus a "batch" column so any row can still be traced back to where it came from.
+        app.MapGet("/batches/meters.csv",
+            (MeterRegistry registry, IOptions<TcpOptions> tcp) =>
+            {
+                string prefix = tcp.Value.AddressPrefix;
+                string tcpPort = tcp.Value.ListenPort.ToString();
+
+                // Snapshot up front: the stream callback runs after this handler returns, so a
+                // batch added or deleted midway would otherwise change what we iterate.
+                List<MeterBatch> batches = registry.Batches.OrderBy(b => b.StartIndex).ToList();
+
+                return Results.Stream(async stream =>
+                {
+                    await using var writer = new StreamWriter(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+                    await writer.WriteLineAsync("\"index\",\"nodeid\",\"serial\",\"nic\",\"ipv6\",\"port\",\"template\",\"batch\"");
+
+                    foreach (MeterBatch batch in batches)
+                    {
+                        bool isTcp = batch.NicType == NicType.Tcp4G;
+                        string port = isTcp ? tcpPort : string.Empty;
+                        string nic = batch.NicType.ToString();
+                        string batchName = EscapeCsv(batch.Name);
+                        string templateName = EscapeCsv(batch.TemplateName);
+
+                        foreach ((long index, IPAddress address, string serial) in registry.GetMeters(batch, prefix))
+                        {
+                            string ip = isTcp ? address.ToString() : string.Empty;
+                            await writer.WriteLineAsync(
+                                $"\"{index}\",\"{MeterIdentity.NodeId(index)}\",\"{serial}\",\"{nic}\",\"{ip}\",\"{port}\",\"{templateName}\",\"{batchName}\"");
+                        }
+                    }
+                }, "text/csv", "all-meters.csv");
+            })
+            .RequireAuthorization();
     }
+
+    /// <summary>
+    /// Doubles embedded quotes, per RFC 4180. Batch names are operator-entered free text, so one
+    /// containing a quote would otherwise break every column after it on that row.
+    /// </summary>
+    private static string EscapeCsv(string value) => value.Replace("\"", "\"\"");
 
     private static string SanitizeFileName(string name)
     {

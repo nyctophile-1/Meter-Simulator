@@ -545,10 +545,17 @@ code {
 
 /* Everything shrinks to its content except the name, which absorbs the slack. Without this the
    browser spreads spare width across every column and opens voids mid-table on a wide screen. */
+/* Up from MudBlazor's dense default — this table is read at a glance, and 0.8125rem was small
+   for the primary listing on the page. */
 .batch-table th,
 .batch-table td {
     padding: 14px 16px;
     white-space: nowrap;
+    font-size: 0.9375rem;
+}
+
+.batch-table th {
+    font-size: 0.875rem;
 }
 
 .batch-table th.col-flex,
@@ -564,15 +571,6 @@ code {
 
 .batch-table tbody tr.batch-row:hover > td {
     background: rgba(255, 255, 255, 0.035);
-}
-
-.batch-chevron {
-    color: #8a8f98;
-    transition: color 120ms ease;
-}
-
-.batch-table tbody tr.batch-row:hover .batch-chevron {
-    color: #d4d4d4;
 }
 
 /* State accent: a 3px left edge plus a tint just strong enough to group the row at a glance.
