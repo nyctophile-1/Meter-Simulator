@@ -7,6 +7,17 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ManyMeterSimulator", "ManyM
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ManyMeterSimulator.Tests", "..\ManyMeterSimulator.Tests\ManyMeterSimulator.Tests.csproj", "{B6504582-6C6E-475F-87F4-2E76022CEB5A}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "deploy", "deploy", "{3F1C7A94-6E4B-4D2A-9C58-7B21D0E4A115}"
+	ProjectSection(SolutionItems) = preProject
+		..\..\deploy\build.ps1 = ..\..\deploy\build.ps1
+		..\..\deploy\deploy.sh = ..\..\deploy\deploy.sh
+		..\..\deploy\host-prep.sh = ..\..\deploy\host-prep.sh
+		..\..\deploy\push-listener.ps1 = ..\..\deploy\push-listener.ps1
+		..\..\deploy\push-test-addresses.ps1 = ..\..\deploy\push-test-addresses.ps1
+		..\..\deploy\appsettings.Production.json = ..\..\deploy\appsettings.Production.json
+		..\..\deploy\push_runbook.md = ..\..\deploy\push_runbook.md
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
