@@ -30,62 +30,50 @@
     <code>@MeterRegistry.MaxIndex.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</code>
     &middot; every meter has a node id whatever its NIC; only 4G TCP meters also get an IP
 </MudText>
-
 @if (IsAdmin)
 {
-    <MudPaper Elevation="1" Class="pa-6 mb-6">
-        <MudText Typo="Typo.h6" GutterBottom="true">Provision a new batch</MudText>
+    <div class="d-flex align-center mb-4" style="gap:8px;">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => _addBatchOpen = true)">Add Batch</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.CloudUpload" OnClick="@(() => _uploadOpen = true)">Upload Meter Model</MudButton>
+    </div>
+}
 
-        <MudGrid Spacing="4" Class="mt-1">
-            <MudItem xs="12" sm="6" md="2">
+@* ══════════ Add Batch Dialog ══════════ *@
+<MudDialog @bind-Visible="_addBatchOpen" Options="_addBatchDialogOptions">
+    <TitleContent><MudText Typo="Typo.h6">Provision a new batch</MudText></TitleContent>
+    <DialogContent>
+        <MudGrid Spacing="3" Class="mt-1">
+            <MudItem xs="12" sm="6">
                 <MudTextField T="string" @bind-Value="BatchName" Immediate="true"
                               Label="Batch name" Placeholder="e.g. batch-1"
-                              Variant="Variant.Outlined" Margin="Margin.Normal" />
+                              Variant="Variant.Outlined" Margin="Margin.Dense" />
             </MudItem>
-            <MudItem xs="12" sm="6" md="2">
+            <MudItem xs="12" sm="6">
                 <MudNumericField T="int" @bind-Value="MeterCount" Immediate="true" Min="1"
                                  Label="Number of meters (N)"
-                                 Variant="Variant.Outlined" Margin="Margin.Normal" />
+                                 Variant="Variant.Outlined" Margin="Margin.Dense" />
             </MudItem>
-            @* Widest column of the row: it holds full XML filenames, which truncated at md=3.
-               Upload sits against the picker because that is the list it adds to — as a
-               full-width button at the end of the row it read as an action on the whole form.
-               HtmlTag="label" is required: MudFileUpload renders ActivatorContent inside a
-               <label> for its hidden input, and a nested <button> swallows the click. *@
-            <MudItem xs="12" sm="6" md="4">
-                <div class="d-flex align-start" style="gap:6px;">
-                    <MudSelect T="string" @bind-Value="SelectedTemplate" Label="Meter model (XML)"
-                               Variant="Variant.Outlined" Margin="Margin.Normal" Class="flex-grow-1">
-                        @foreach (string t in Templates)
-                        {
-                            <MudSelectItem Value="@t">@t</MudSelectItem>
-                        }
-                    </MudSelect>
-                    <MudFileUpload T="IBrowserFile" Accept=".xml" FilesChanged="OnTemplateUpload"
-                                   MaximumFileCount="1" Class="ma-0 flex-none">
-                        <ActivatorContent>
-                            <MudTooltip Text="Upload a meter model (.xml)">
-                                <MudIconButton HtmlTag="label"
-                                               Icon="@Icons.Material.Filled.UploadFile"
-                                               Variant="Variant.Outlined" Color="Color.Default"
-                                               Size="Size.Medium" aria-label="Upload a meter model" />
-                            </MudTooltip>
-                        </ActivatorContent>
-                    </MudFileUpload>
-                </div>
+            <MudItem xs="12" sm="6">
+                <MudSelect T="string" @bind-Value="SelectedTemplate" Label="Meter model (XML)"
+                           Variant="Variant.Outlined" Margin="Margin.Dense">
+                    @foreach (string t in Templates)
+                    {
+                        <MudSelectItem Value="@t">@t</MudSelectItem>
+                    }
+                </MudSelect>
             </MudItem>
-            <MudItem xs="12" sm="6" md="2">
+            <MudItem xs="12" sm="6">
                 <MudSelect T="NicType" @bind-Value="SelectedNic" Label="NIC"
-                           Variant="Variant.Outlined" Margin="Margin.Normal">
+                           Variant="Variant.Outlined" Margin="Margin.Dense">
                     @foreach (NicType nic in AllNics)
                     {
                         <MudSelectItem Value="@nic">@NicLabel(nic)</MudSelectItem>
                     }
                 </MudSelect>
             </MudItem>
-            @* Always rendered, disabled unless the NIC has a custom channel. Showing it
-               conditionally reflowed the whole row the moment the NIC changed. *@
-            <MudItem xs="12" sm="6" md="2">
+            <MudItem xs="12" sm="6">
                 <MudNumericField T="int?" @bind-Value="HesTemplateId" Immediate="true" Min="1"
                                  Label="HES template id"
                                  Placeholder="e.g. 122"
@@ -93,19 +81,15 @@
                                  HelperText="@(NeedsHesTemplateId(SelectedNic)
                                      ? "Optional — needed only for the custom channel"
                                      : "Wirepas only")"
-                                 Variant="Variant.Outlined" Margin="Margin.Normal" />
+                                 Variant="Variant.Outlined" Margin="Margin.Dense" />
             </MudItem>
-            @* Both selects are always rendered and disabled when the NIC does not use them — the
-               same reason the HES-template-id field above is: rendering them conditionally reflowed
-               the whole row the moment the NIC changed. "(none)" is a real choice, not a blank
-               default: a batch bound to nothing is a legal, deliberate state. *@
-            <MudItem xs="12" sm="6" md="3">
+            <MudItem xs="12" sm="6">
                 <MudSelect T="string" @bind-Value="SelectedBroker" Label="MQTT broker"
                            Disabled="@(!NicTypes.IsMqtt(SelectedNic))"
                            HelperText="@(NicTypes.IsMqtt(SelectedNic)
                                ? "Unbound meters are never reached"
                                : "TCP is broker-agnostic")"
-                           Variant="Variant.Outlined" Margin="Margin.Normal">
+                           Variant="Variant.Outlined" Margin="Margin.Dense">
                     <MudSelectItem T="string" Value="@UnboundOption">(none — unbound)</MudSelectItem>
                     @foreach (BrokerEndpoint b in Network.Brokers)
                     {
@@ -113,13 +97,13 @@
                     }
                 </MudSelect>
             </MudItem>
-            <MudItem xs="12" sm="6" md="3">
+            <MudItem xs="12" sm="6">
                 <MudSelect T="string" @bind-Value="SelectedPushTarget" Label="HES push target"
                            Disabled="@(SelectedNic != NicType.Tcp4G)"
                            HelperText="@(SelectedNic == NicType.Tcp4G
                                ? "Only needed for push; pulls work regardless"
                                : "4G TCP only")"
-                           Variant="Variant.Outlined" Margin="Margin.Normal">
+                           Variant="Variant.Outlined" Margin="Margin.Dense">
                     <MudSelectItem T="string" Value="@UnboundOption">(none — unbound)</MudSelectItem>
                     @foreach (PushTargetEndpoint t in Network.PushTargets)
                     {
@@ -128,18 +112,6 @@
                 </MudSelect>
             </MudItem>
         </MudGrid>
-
-        @if (Templates.Count == 0)
-        {
-            <MudAlert Severity="Severity.Warning" Dense="true" Variant="Variant.Outlined" Class="mt-3">
-                No meter models found in the models folder.
-            </MudAlert>
-        }
-
-        @if (UploadMessage is not null)
-        {
-            <MudText Typo="Typo.caption" Class="d-block mt-2">@UploadMessage</MudText>
-        }
 
         @if (MeterCount > 0)
         {
@@ -155,18 +127,72 @@
             </MudAlert>
         }
 
-        <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-4"
-                   StartIcon="@Icons.Material.Filled.Add" OnClick="AddBatch"
-                   Disabled="@(MeterCount <= 0 || string.IsNullOrWhiteSpace(BatchName) || string.IsNullOrWhiteSpace(SelectedTemplate))">
-            Add Batch
-        </MudButton>
-
         @if (ErrorMessage is not null)
         {
             <MudAlert Severity="Severity.Error" Dense="true" Class="mt-3">@ErrorMessage</MudAlert>
         }
-    </MudPaper>
-}
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => _addBatchOpen = false)">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="AddBatchFromDialog"
+                   Disabled="@(MeterCount <= 0 || string.IsNullOrWhiteSpace(BatchName) || string.IsNullOrWhiteSpace(SelectedTemplate))">
+            Add Batch
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@* ══════════ Upload Meter Model Dialog ══════════ *@
+<MudDialog @bind-Visible="_uploadOpen" Options="_uploadDialogOptions">
+    <TitleContent><MudText Typo="Typo.h6">Meter Model XML</MudText></TitleContent>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
+            Upload new DLMS/COSEM meter model XML files. Files uploaded here are saved directly to the models folder on the server and are instantly available for selection when provisioning batches.
+        </MudText>
+
+        <MudFileUpload T="IBrowserFile" Accept=".xml" FilesChanged="OnTemplateUpload" MaximumFileCount="1" Class="ma-0">
+            <ActivatorContent>
+                <MudButton HtmlTag="label"
+                           Variant="Variant.Filled"
+                           Color="Color.Secondary"
+                           StartIcon="@Icons.Material.Filled.CloudUpload">
+                    Upload Meter Model XML
+                </MudButton>
+            </ActivatorContent>
+        </MudFileUpload>
+
+        @if (UploadMessage is not null)
+        {
+            <MudAlert Severity="@(UploadMessage.Contains("failed") ? Severity.Error : Severity.Success)" Dense="true" Class="mt-3">
+                @UploadMessage
+            </MudAlert>
+        }
+
+        <div style="height: 1px; background: rgba(255, 255, 255, 0.08); margin: 1rem 0; flex-shrink: 0;"></div>
+
+        <MudText Typo="Typo.subtitle2" Class="mb-2">Available Meter Models on Server:</MudText>
+        @if (Templates.Count == 0)
+        {
+            <MudAlert Severity="Severity.Warning" Dense="true" Variant="Variant.Outlined">
+                No meter models found on the server. Please upload a meter model XML file to get started.
+            </MudAlert>
+        }
+        else
+        {
+            <div class="d-flex flex-wrap gap-2">
+                @foreach (string t in Templates)
+                {
+                    <MudChip T="string" Color="Color.Default" Variant="Variant.Outlined">
+                        @t
+                    </MudChip>
+                }
+            </div>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => _uploadOpen = false)">Close</MudButton>
+    </DialogActions>
+</MudDialog>
 
 <div class="d-flex align-center justify-space-between mb-2" style="gap:12px;">
     <MudText Typo="Typo.h6" Class="mb-0">Batches (@MeterRegistry.Batches.Count)</MudText>
@@ -228,10 +254,10 @@ else
                 <tr class="batch-row @StatusRowClass(batch.Status) @(expanded ? "is-expanded" : "")"
                     @onclick="() => ToggleDetails(batch.Id)">
                     <td>
-                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@NicLabel(batch.NicType)</MudChip>
+                        <span class="nic-badge nic-badge-@batch.NicType.ToString().ToLowerInvariant()">@NicLabel(batch.NicType)</span>
                         @if (batch.HesTemplateId is int hesId)
                         {
-                            <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">tpl @hesId</MudText>
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mt-1">tpl @hesId</MudText>
                         }
                     </td>
                     <td class="col-flex">
@@ -423,6 +449,14 @@ else
     private string _rebindPushTarget = UnboundOption;
     private string? _rebindError;
 
+    // ── Add Batch dialog ──
+    private readonly DialogOptions _addBatchDialogOptions = new() { MaxWidth = MaxWidth.Medium, FullWidth = true };
+    private bool _addBatchOpen;
+
+    // ── Upload Model dialog ──
+    private readonly DialogOptions _uploadDialogOptions = new() { MaxWidth = MaxWidth.Small, FullWidth = true };
+    private bool _uploadOpen;
+
     private static string BindingLabel(string? key, bool exists) => key switch
     {
         null or "" => "— none",
@@ -552,7 +586,7 @@ else
         NicType.Mqtt4G => "4G MQTT",
         NicType.Mqtt4GImg => "4G IMG MQTT",
         NicType.MqttWirepas => "RF Wirepas",
-        NicType.MqttKmesh => "RF Kmesh",
+        NicType.MqttKmesh => "RF Kimbal Mesh",
         _ => nic.ToString(),
     };
 
@@ -632,6 +666,19 @@ else
         }
     }
 
+    /// <summary>
+    /// Called from the dialog's "Add Batch" button. Delegates to <see cref="AddBatch"/> and closes
+    /// the dialog on success (ErrorMessage is null after the call).
+    /// </summary>
+    private void AddBatchFromDialog()
+    {
+        AddBatch();
+        if (ErrorMessage is null)
+        {
+            _addBatchOpen = false;
+        }
+    }
+
     private async Task OnTemplateUpload(IBrowserFile? file)
     {
         if (!IsAdmin || file is null)
@@ -652,6 +699,8 @@ else
             UploadMessage = $"Upload failed: {ex.Message}";
         }
     }
+
+
 
     private void Start(int batchId)
     {

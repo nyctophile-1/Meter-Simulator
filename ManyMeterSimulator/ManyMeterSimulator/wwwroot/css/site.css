@@ -671,3 +671,21 @@ code {
     text-overflow: ellipsis;
     white-space: nowrap;
 }
+
+/* ---------- Shared Nic Badges ---------- */
+.nic-badge {
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.725rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    display: inline-block;
+    letter-spacing: 0.05em;
+    text-align: center;
+    line-height: 1.2;
+}
+
+.nic-badge-tcp4g { background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.3); }
+.nic-badge-mqtt4g, .nic-badge-mqtt4gimg { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
+.nic-badge-mqttwirepas { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
+.nic-badge-mqttkmesh { background: rgba(139, 92, 246, 0.15); color: #a78bfa; border: 1px solid rgba(139, 92, 246, 0.3); }
