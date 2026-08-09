@@ -15,6 +15,7 @@
 @inject NetworkHealthMonitor Health
 @inject TemplateRegistry TemplateRegistry
 @inject MeterSessionManager Sessions
+@inject ConfigBundleService ConfigBundles
 @inject IOptions<TcpOptions> TcpOptionsAccessor
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
@@ -32,11 +33,26 @@
 </MudText>
 @if (IsAdmin)
 {
-    <div class="d-flex align-center mb-4" style="gap:8px;">
+    <div class="d-flex align-center flex-wrap mb-4" style="gap:8px;">
         <MudButton Variant="Variant.Filled" Color="Color.Primary"
                    StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => _addBatchOpen = true)">Add Batch</MudButton>
         <MudButton Variant="Variant.Filled" Color="Color.Primary"
                    StartIcon="@Icons.Material.Filled.CloudUpload" OnClick="@(() => _uploadOpen = true)">Upload Meter Model</MudButton>
+
+        <MudSpacer />
+
+        @* Batches only — identity, not per-meter rows. Migrating a fleet whole? Import the network
+           file first so bindings resolve as batches land. *@
+        <MudButton Variant="Variant.Outlined" Color="Color.Default"
+                   StartIcon="@Icons.Material.Filled.Download" OnClick="ExportBatches">
+            Export batches
+        </MudButton>
+        @* Native InputFile + label-for: MudFileUpload's ActivatorContent slot does not bind in 9.7. *@
+        <InputFile id="batches-import-input" OnChange="OnBatchesFileSelected" accept=".json" class="d-none" />
+        <MudButton HtmlTag="label" for="batches-import-input" Variant="Variant.Outlined" Color="Color.Default"
+                   StartIcon="@Icons.Material.Filled.Upload">
+            Import batches
+        </MudButton>
     </div>
 }
 
@@ -755,6 +771,78 @@ else
 
     private async Task DownloadCsv(int batchId) =>
         await JS.InvokeVoidAsync("mayaDownload", $"/batches/{batchId}/meters.csv");
+
+    // ── Batch config import / export ──────────────────────────────────────────────────────────
+
+    private const long MaxConfigBytes = 16 * 1024 * 1024;
+
+    private async Task ExportBatches()
+    {
+        if (IsAdmin)
+        {
+            await JS.InvokeVoidAsync("mayaDownload", "/config/batches.json");
+        }
+    }
+
+    private async Task OnBatchesFileSelected(InputFileChangeEventArgs e)
+    {
+        IBrowserFile? file = e.FileCount > 0 ? e.File : null;
+        if (!IsAdmin || file is null)
+        {
+            return;
+        }
+
+        string json;
+        try
+        {
+            await using Stream stream = file.OpenReadStream(MaxConfigBytes);
+            using var reader = new StreamReader(stream);
+            json = await reader.ReadToEndAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not read the file: {ex.Message}", Severity.Error);
+            return;
+        }
+
+        // Peek first (also rejects a wrong-kind file), then confirm — import REPLACES every batch
+        // and rewrites the allocation cursor, so it is not something to do by half.
+        int count;
+        try
+        {
+            count = ConfigBundles.PreviewBatches(json);
+        }
+        catch (ArgumentException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+            return;
+        }
+
+        bool? confirmed = await DialogService.ShowMessageBoxAsync(
+            "Replace ALL batches?",
+            $"This file holds {count} batch(es). Importing REPLACES every current batch, resets the " +
+            "meter numbering to continue from the imported set, and clears live meter sessions. Batches " +
+            "keep their broker / push-target bindings by name — import the network file too if those " +
+            "endpoints are not already here. This cannot be undone.",
+            yesText: "Replace batches", cancelText: "Cancel");
+
+        if (confirmed != true)
+        {
+            return;
+        }
+
+        try
+        {
+            int applied = ConfigBundles.ImportBatches(json);
+            // Live brain sessions belonged to the batches we just replaced — same as Reset all.
+            Sessions.Clear();
+            Snackbar.Add($"Imported {applied} batch(es).", Severity.Success);
+        }
+        catch (ArgumentException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
 
     private async Task ResetAll()
     {

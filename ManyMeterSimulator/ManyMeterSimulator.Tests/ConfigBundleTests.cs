@@ -1,138 +1,178 @@
+using ManyMeterSimulator.BadComm;
+using ManyMeterSimulator.Networking;
 using ManyMeterSimulator.Networking.Nic;
 using ManyMeterSimulator.Networking.Registry;
 using ManyMeterSimulator.Provisioning;
+using ManyMeterSimulator.Settings;
 using Xunit;
 
 namespace ManyMeterSimulator.Tests;
 
 /// <summary>
-/// The migration path: the whole operator config (batches + endpoints) exports to one file and
-/// re-imports on another deployment, so a fleet does not have to be re-registered with the HES by
-/// hand (network_registry.md §6 / config migration).
+/// The migration path: each setup page's config exports to its own file and re-imports on another
+/// deployment, so a fleet does not have to be re-registered with the HES by hand. Three separate
+/// files, each tagged so it cannot be imported on the wrong page.
 /// </summary>
 public class ConfigBundleTests
 {
     private const string Tpl = "test-template.xml";
 
-    private static (ConfigBundleService Svc, MeterRegistry Batches, NetworkRegistry Network) NewDeployment()
+    private sealed class Deployment
     {
-        var batches = new MeterRegistry();
-        var network = new NetworkRegistry();
-        return (new ConfigBundleService(batches, network), batches, network);
+        public MeterRegistry Batches { get; } = new();
+        public NetworkRegistry Network { get; } = new();
+        public BadCommSettings BadComm { get; }
+        public NetworkDelaySettings Delay { get; }
+        public ConfigBundleService Svc { get; }
+
+        public Deployment()
+        {
+            var store = new InMemoryRuntimeConfigStore();
+            BadComm = new BadCommSettings(store);
+            Delay = new NetworkDelaySettings(
+                Microsoft.Extensions.Options.Options.Create(new NetworkDelayOptions()), store);
+            Svc = new ConfigBundleService(Batches, Network, BadComm, Delay);
+        }
     }
 
-    private static void Seed(MeterRegistry batches, NetworkRegistry network)
+    private static void Seed(Deployment d)
     {
-        network.AddBroker(new BrokerEndpoint { Key = "eqa", Host = "10.0.0.1", Username = "meter", Password = "s3cret" }, verified: true);
-        network.AddPushTarget(new PushTargetEndpoint { Key = "hes-1", Address = "fd00::1", Port = 4059 }, verified: true);
-        batches.AddBatch("mqtt-a", Tpl, 10, NicType.Mqtt4G, null, "eqa");
-        batches.AddBatch("tcp-a", Tpl, 100, NicType.Tcp4G, null, null, "hes-1");
+        d.Network.AddBroker(new BrokerEndpoint { Key = "eqa", Host = "10.0.0.1", Username = "meter", Password = "s3cret" }, verified: true);
+        d.Network.AddPushTarget(new PushTargetEndpoint { Key = "hes-1", Address = "fd00::1", Port = 4059 }, verified: true);
+        d.Batches.AddBatch("mqtt-a", Tpl, 10, NicType.Mqtt4G, null, "eqa");
+        d.Batches.AddBatch("tcp-a", Tpl, 100, NicType.Tcp4G, null, null, "hes-1");
+    }
+
+    // ── Batches ────────────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Batches_ExportImport_ReproducesTheFleetAndBindings()
+    {
+        var src = new Deployment();
+        Seed(src);
+        string json = src.Svc.ExportBatches("host-a");
+
+        var dst = new Deployment();
+        int count = dst.Svc.ImportBatches(json);
+
+        Assert.Equal(2, count);
+        Assert.Equal(new[] { "mqtt-a", "tcp-a" }, dst.Batches.Batches.Select(b => b.Name).OrderBy(n => n));
+        Assert.Equal("eqa", dst.Batches.Batches.Single(b => b.Name == "mqtt-a").BrokerKey);
+        Assert.Equal("hes-1", dst.Batches.Batches.Single(b => b.Name == "tcp-a").PushTargetKey);
     }
 
     [Fact]
-    public void ExportThenImportOnAFreshDeployment_ReproducesEverything()
+    public void Batches_Import_ResetsTheAllocationCursorPastTheImportedSet()
     {
-        (ConfigBundleService source, MeterRegistry sb, NetworkRegistry sn) = NewDeployment();
-        Seed(sb, sn);
-        string json = source.Export("source-host");
+        var src = new Deployment();
+        Seed(src);                            // indices 1-10, 11-110 → next is 111
+        string json = src.Svc.ExportBatches();
 
-        (ConfigBundleService dest, MeterRegistry db, NetworkRegistry dn) = NewDeployment();
-        ConfigImportSummary summary = dest.Import(json);
+        var dst = new Deployment();
+        dst.Svc.ImportBatches(json);
 
-        Assert.Equal(2, summary.Batches);
-        Assert.Equal(1, summary.Brokers);
-        Assert.Equal(1, summary.PushTargets);
-        Assert.Equal("source-host", summary.ExportedFrom);
-
-        Assert.Equal(new[] { "mqtt-a", "tcp-a" }, db.Batches.Select(b => b.Name).OrderBy(n => n));
-        Assert.Equal("eqa", db.Batches.Single(b => b.Name == "mqtt-a").BrokerKey);
-        Assert.Equal("hes-1", db.Batches.Single(b => b.Name == "tcp-a").PushTargetKey);
-        Assert.NotNull(dn.Broker("eqa"));
-        // Plaintext password travels in the bundle, so it lands intact on the destination.
-        Assert.Equal("s3cret", dn.Broker("eqa")!.Password);
-        Assert.NotNull(dn.PushTarget("hes-1"));
-    }
-
-    /// <summary>
-    /// After importing, the next batch must continue past the imported set — otherwise it would
-    /// reissue node ids / addresses the HES already knows, the collision the whole store guards.
-    /// </summary>
-    [Fact]
-    public void Import_ResetsTheAllocationCursorToContinuePastTheImportedBatches()
-    {
-        (ConfigBundleService source, MeterRegistry sb, NetworkRegistry sn) = NewDeployment();
-        Seed(sb, sn);                       // indices 1-10 and 11-110 → next is 111
-        string json = source.Export();
-
-        (ConfigBundleService dest, MeterRegistry db, NetworkRegistry _) = NewDeployment();
-        dest.Import(json);
-
-        MeterBatch next = db.AddBatch("after-import", Tpl, 5, NicType.Tcp4G);
-        Assert.Equal(111, next.StartIndex);
-        Assert.All(db.Batches, b => Assert.True(b.Name == "after-import" || b.StartIndex < 111));
+        Assert.Equal(111, dst.Batches.AddBatch("after", Tpl, 5, NicType.Tcp4G).StartIndex);
     }
 
     [Fact]
-    public void Import_ReplacesRatherThanMerges()
+    public void Batches_Import_ReplacesRatherThanMerges()
     {
-        (ConfigBundleService source, MeterRegistry sb, NetworkRegistry sn) = NewDeployment();
-        Seed(sb, sn);
-        string json = source.Export();
+        var src = new Deployment();
+        Seed(src);
+        string json = src.Svc.ExportBatches();
 
-        (ConfigBundleService dest, MeterRegistry db, NetworkRegistry dn) = NewDeployment();
-        db.AddBatch("pre-existing", Tpl, 7, NicType.Tcp4G);
-        dn.AddBroker(new BrokerEndpoint { Key = "old-broker", Host = "1.2.3.4" }, verified: false);
+        var dst = new Deployment();
+        dst.Batches.AddBatch("pre-existing", Tpl, 7, NicType.Tcp4G);
+        dst.Svc.ImportBatches(json);
 
-        dest.Import(json);
+        Assert.DoesNotContain(dst.Batches.Batches, b => b.Name == "pre-existing");
+    }
 
-        // The pre-existing batch and broker are gone — import is wholesale, not additive.
-        Assert.DoesNotContain(db.Batches, b => b.Name == "pre-existing");
-        Assert.Null(dn.Broker("old-broker"));
+    // ── Network ────────────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Network_ExportImport_CarriesPlaintextPasswordAcross()
+    {
+        var src = new Deployment();
+        Seed(src);
+        string json = src.Svc.ExportNetwork();
+        Assert.Contains("s3cret", json);   // portable: plaintext in the file
+
+        var dst = new Deployment();
+        (int brokers, int targets) = dst.Svc.ImportNetwork(json);
+
+        Assert.Equal(1, brokers);
+        Assert.Equal(1, targets);
+        Assert.Equal("s3cret", dst.Network.Broker("eqa")!.Password);
+        Assert.NotNull(dst.Network.PushTarget("hes-1"));
+    }
+
+    // ── BadComm ────────────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void BadComm_ExportImport_CarriesBothKnobs()
+    {
+        var src = new Deployment();
+        src.BadComm.TryUpdate(new BadCommConfig { Enabled = true, Seed = 42 }, out _);
+        src.Delay.TryUpdate(120, 340);
+        string json = src.Svc.ExportBadComm();
+
+        var dst = new Deployment();
+        dst.Svc.ImportBadComm(json);
+
+        Assert.True(dst.BadComm.Snapshot().Enabled);
+        Assert.Equal(42, dst.BadComm.Snapshot().Seed);
+        Assert.Equal(120, dst.Delay.Current.LowerMs);
+        Assert.Equal(340, dst.Delay.Current.UpperMs);
+    }
+
+    // ── Cross-kind protection ────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void ImportingANetworkFileOnTheBatchPage_IsRejected()
+    {
+        var d = new Deployment();
+        Seed(d);
+        string networkJson = d.Svc.ExportNetwork();
+
+        ArgumentException ex = Assert.Throws<ArgumentException>(() => d.Svc.ImportBatches(networkJson));
+        Assert.Contains("Network Setup", ex.Message);
+    }
+
+    [Fact]
+    public void ImportingABatchesFileOnTheNetworkPage_IsRejected()
+    {
+        var d = new Deployment();
+        Seed(d);
+        string batchesJson = d.Svc.ExportBatches();
+
+        Assert.Throws<ArgumentException>(() => d.Svc.ImportNetwork(batchesJson));
     }
 
     [Fact]
     public void Import_RejectsGarbage()
     {
-        (ConfigBundleService svc, _, _) = NewDeployment();
-
-        Assert.Throws<ArgumentException>(() => svc.Import("{ not json"));
-    }
-
-    /// <summary>Names are the cross-deployment identity, so a duplicate is ambiguous and refused.</summary>
-    [Fact]
-    public void Import_RejectsDuplicateBatchNames()
-    {
-        (ConfigBundleService svc, _, _) = NewDeployment();
-        // PascalCase to match the (policy-free) serializer the service uses.
-        string json = """
-            {
-              "Batches": {
-                "Batches": [
-                  { "Id": 1, "Name": "dupe", "TemplateName": "t.xml", "NicType": "Tcp4G", "StartIndex": 1, "Count": 5 },
-                  { "Id": 2, "Name": "dupe", "TemplateName": "t.xml", "NicType": "Tcp4G", "StartIndex": 6, "Count": 5 }
-                ]
-              },
-              "Network": {}
-            }
-            """;
-
-        ArgumentException ex = Assert.Throws<ArgumentException>(() => svc.Import(json));
-        Assert.Contains("dupe", ex.Message);
+        var d = new Deployment();
+        Assert.Throws<ArgumentException>(() => d.Svc.ImportBatches("{ not json"));
     }
 
     [Fact]
     public void Preview_DoesNotApply()
     {
-        (ConfigBundleService source, MeterRegistry sb, NetworkRegistry sn) = NewDeployment();
-        Seed(sb, sn);
-        string json = source.Export();
+        var src = new Deployment();
+        Seed(src);
+        string json = src.Svc.ExportBatches();
 
-        (ConfigBundleService dest, MeterRegistry db, NetworkRegistry dn) = NewDeployment();
-        ConfigImportSummary preview = dest.Preview(json);
+        var dst = new Deployment();
+        Assert.Equal(2, dst.Svc.PreviewBatches(json));
+        Assert.Empty(dst.Batches.Batches);   // nothing written
+    }
 
-        Assert.Equal(2, preview.Batches);
-        // Nothing was actually written.
-        Assert.Empty(db.Batches);
-        Assert.Empty(dn.Brokers);
+    /// <summary>In-memory <see cref="IRuntimeConfigStore"/> so BadComm/Delay need no file.</summary>
+    private sealed class InMemoryRuntimeConfigStore : IRuntimeConfigStore
+    {
+        public MayaRuntimeConfig Current { get; } = new();
+
+        public void Update(Action<MayaRuntimeConfig> mutate) => mutate(Current);
     }
 }

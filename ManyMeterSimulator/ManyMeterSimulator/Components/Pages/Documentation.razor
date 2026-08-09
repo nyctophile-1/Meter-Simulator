@@ -402,11 +402,14 @@
 
                 <h2 class="doc-title-h2">Migrating Configuration Between Deployments</h2>
                 <p class="doc-text">
-                    Registering a fleet with the HES is laborious, so the whole configuration — every batch and every network endpoint — moves as one file. On <b>Network Setup</b>, <b>Export all config</b> downloads a JSON bundle; <b>Import all config</b> replaces everything on another deployment after a confirmation.
+                    Registering a fleet with the HES is laborious, so each setup page exports and imports its own configuration as a JSON file — <b>Export / Import</b> buttons on <b>Batch Setup</b> (batches), <b>Network Setup</b> (brokers &amp; push targets), and <b>BadComm Setup</b> (impairment rules &amp; network delay). Each file is tagged, so importing one on the wrong page is refused rather than replacing the wrong data.
+                </p>
+                <p class="doc-text">
+                    Batches are bound to endpoints <b>by name</b>, so when moving a whole fleet, import the <b>network</b> file on the destination <b>before</b> the batches file — otherwise the batches land showing their broker as MISSING until the endpoints arrive.
                 </p>
                 <div class="mt-4 mb-4">
                     <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true">
-                        <b>The exported bundle contains broker passwords in plaintext</b> so it is portable across hosts (the on-disk store encrypts them against one host's keys). Treat the file as a secret. On import, passwords are re-encrypted under the destination host, and the batch numbering continues from the imported set.
+                        <b>The network file contains broker passwords in plaintext</b> so it is portable across hosts (the on-disk store encrypts them against one host's keys). Treat that file as a secret. On import, passwords are re-encrypted under the destination host, and importing batches continues the meter numbering from the imported set.
                     </MudAlert>
                 </div>
 

@@ -9,14 +9,12 @@
 @using ManyMeterSimulator.Networking.Nic
 @using ManyMeterSimulator.Networking.Registry
 @using ManyMeterSimulator.Provisioning
-@using ManyMeterSimulator.Brain
 @using Microsoft.AspNetCore.Components.Forms
 @inject NetworkRegistry Network
 @inject MeterRegistry MeterRegistry
 @inject EndpointProber Prober
 @inject NetworkHealthMonitor Health
 @inject ConfigBundleService ConfigBundles
-@inject MeterSessionManager Sessions
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
 @inject IJSRuntime JS
@@ -41,22 +39,20 @@
 
         <MudSpacer />
 
-        @* One bundle carries batches AND endpoints, because a batch is bound to a broker by name
-           and the two are useless apart. This is the migration path — moving a fleet otherwise
-           means re-registering every meter with the HES by hand. *@
+        @* Network config only (brokers + push targets). Migrating a whole fleet? Import this on the
+           destination BEFORE the batches file, so bindings resolve as batches land. *@
         <MudButton Variant="Variant.Outlined" Color="Color.Default"
                    StartIcon="@Icons.Material.Filled.Download" OnClick="ExportConfig">
-            Export all config
+            Export network
         </MudButton>
-        <MudFileUpload T="IBrowserFile" Accept=".json" FilesChanged="OnConfigFileSelected"
-                       MaximumFileCount="1" Class="ma-0">
-            <ActivatorContent>
-                <MudButton Variant="Variant.Outlined" Color="Color.Default"
-                           StartIcon="@Icons.Material.Filled.Upload" HtmlTag="label">
-                    Import all config
-                </MudButton>
-            </ActivatorContent>
-        </MudFileUpload>
+        @* Native InputFile + a label that targets it by id. MudFileUpload's ActivatorContent slot
+           does not bind in MudBlazor 9.7 (it falls back to a default "Browse files" button), so the
+           import control is built from the primitives that do work. *@
+        <InputFile id="network-import-input" OnChange="OnConfigFileSelected" accept=".json" class="d-none" />
+        <MudButton HtmlTag="label" for="network-import-input" Variant="Variant.Outlined" Color="Color.Default"
+                   StartIcon="@Icons.Material.Filled.Upload">
+            Import network
+        </MudButton>
     </div>
 }
 
@@ -393,11 +389,12 @@ else
         }
 
         // The endpoint is admin-gated and sets the filename; the browser downloads it directly.
-        await JS.InvokeVoidAsync("mayaDownload", "/config/export.json");
+        await JS.InvokeVoidAsync("mayaDownload", "/config/network.json");
     }
 
-    private async Task OnConfigFileSelected(IBrowserFile? file)
+    private async Task OnConfigFileSelected(InputFileChangeEventArgs e)
     {
+        IBrowserFile? file = e.FileCount > 0 ? e.File : null;
         if (!IsAdmin || file is null)
         {
             return;
@@ -416,12 +413,12 @@ else
             return;
         }
 
-        // Peek at what it contains, then make the operator confirm — import REPLACES every batch and
-        // endpoint, and rewrites the allocation cursor, so it is not something to do by half.
-        ConfigImportSummary summary;
+        // Peek first (also rejects a wrong-kind file), then confirm — import REPLACES every broker
+        // and push target, so it is not something to do by half.
+        int brokers, pushTargets;
         try
         {
-            summary = ConfigBundles.Preview(json);
+            (brokers, pushTargets) = ConfigBundles.PreviewNetwork(json);
         }
         catch (ArgumentException ex)
         {
@@ -429,18 +426,12 @@ else
             return;
         }
 
-        string from = summary.ExportedFrom is { Length: > 0 } src
-            ? $" (exported from {src} on {summary.ExportedAtUtc:yyyy-MM-dd HH:mm} UTC)"
-            : string.Empty;
-
         bool? confirmed = await DialogService.ShowMessageBoxAsync(
-            "Replace ALL configuration?",
-            $"This file{from} holds {summary.Batches} batch(es), {summary.Brokers} broker(s) and " +
-            $"{summary.PushTargets} push target(s). Importing REPLACES every current batch and network " +
-            "endpoint, resets the batch numbering to continue from the imported set, and clears live " +
-            "meter sessions. Broker passwords in the file are re-encrypted under this host. This cannot " +
-            "be undone.",
-            yesText: "Replace everything", cancelText: "Cancel");
+            "Replace all network endpoints?",
+            $"This file holds {brokers} broker(s) and {pushTargets} push target(s). Importing REPLACES " +
+            "every current broker and push target. Broker passwords in the file are re-encrypted under " +
+            "this host. Batches keep their bindings by name. This cannot be undone.",
+            yesText: "Replace endpoints", cancelText: "Cancel");
 
         if (confirmed != true)
         {
@@ -449,12 +440,8 @@ else
 
         try
         {
-            ConfigImportSummary applied = ConfigBundles.Import(json);
-            // Live brain sessions belonged to the batches we just replaced — same as Reset all.
-            Sessions.Clear();
-            Snackbar.Add(
-                $"Imported {applied.Batches} batch(es), {applied.Brokers} broker(s), {applied.PushTargets} push target(s).",
-                Severity.Success);
+            (int b, int p) = ConfigBundles.ImportNetwork(json);
+            Snackbar.Add($"Imported {b} broker(s) and {p} push target(s).", Severity.Success);
         }
         catch (ArgumentException ex)
         {
