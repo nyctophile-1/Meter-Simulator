@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using ManyMeterSimulator.Networking.Mqtt;
+using ManyMeterSimulator.Provisioning;
 using Microsoft.Extensions.Options;
 using MQTTnet;
 
@@ -21,11 +22,13 @@ public sealed class EndpointProber
 {
     private readonly ILogger<EndpointProber> _logger;
     private readonly NicsOptions _nics;
+    private readonly TcpOptions _tcp;
 
-    public EndpointProber(ILogger<EndpointProber> logger, IOptions<NicsOptions> nics)
+    public EndpointProber(ILogger<EndpointProber> logger, IOptions<NicsOptions> nics, IOptions<TcpOptions> tcp)
     {
         _logger = logger;
         _nics = nics.Value;
+        _tcp = tcp.Value;
     }
 
     /// <summary>
@@ -143,7 +146,14 @@ public sealed class EndpointProber
         }
 
         var stopwatch = Stopwatch.StartNew();
-        using var client = new TcpClient(AddressFamily.InterNetworkV6);
+
+        // Bind the SAME source address a real push would leave from, rather than letting the OS
+        // pick one. On a prefix-only ENI (the EQA instance) the host has NO global IPv6 address of
+        // its own — only the delegated meter prefix — so an unbound IPv6 connect has no source to
+        // select and fails instantly, reporting a healthy endpoint as unreachable. Push never hits
+        // that because TcpPushSender binds the meter's address; the probe has to do the same or it
+        // is testing a path the simulator never uses.
+        using TcpClient client = CreateProbeClient(address!);
 
         try
         {
@@ -168,6 +178,32 @@ public sealed class EndpointProber
             stopwatch.Stop();
             return ProbeResult.Fail(ex.Message, stopwatch.Elapsed);
         }
+    }
+
+    /// <summary>
+    /// A client bound to the first meter address in the configured prefix, when the destination is
+    /// IPv6 and that bind is possible. Falls back to an unbound client — a bind only fails when the
+    /// meter prefix isn't locally routed on this host, and in that case an unbound attempt still
+    /// gives the operator a real result instead of a bind error they can't act on.
+    /// </summary>
+    private TcpClient CreateProbeClient(IPAddress destination)
+    {
+        if (destination.AddressFamily == AddressFamily.InterNetworkV6)
+        {
+            try
+            {
+                IPAddress source = MeterAddressing.ComputeAddress(_tcp.AddressPrefix, 1);
+                return new TcpClient(new IPEndPoint(source, 0));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex,
+                    "Could not bind a meter source address from prefix {Prefix} for the probe; " +
+                    "falling back to the host's default source.", _tcp.AddressPrefix);
+            }
+        }
+
+        return new TcpClient(destination.AddressFamily);
     }
 }
 
