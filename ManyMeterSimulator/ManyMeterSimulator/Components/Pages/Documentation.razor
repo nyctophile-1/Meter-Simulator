@@ -234,6 +234,9 @@
         <button class="docs-nav-link @(ActiveSection == "xml-specs" ? "active" : "")" @onclick='() => SetSection("xml-specs")'>
             Meter Model XML Structure
         </button>
+        <button class="docs-nav-link @(ActiveSection == "network" ? "active" : "")" @onclick='() => SetSection("network")'>
+            Network Registry
+        </button>
         <button class="docs-nav-link @(ActiveSection == "nics" ? "active" : "")" @onclick='() => SetSection("nics")'>
             Virtual NIC Protocols
         </button>
@@ -377,6 +380,45 @@
                 <p class="doc-text">
                     Find the newly provisioned batch under the <b>Configured Batches</b> table. Click the <b style="color: #10b981;">Start</b> button. Go to the <b>Dashboard</b> or <b>Live Logs</b> to observe communication packet streams and connection activity.
                 </p>
+            </div>
+        }
+        else if (ActiveSection == "network")
+        {
+            <div class="doc-section">
+                <h1 class="doc-title-h1">Network Registry</h1>
+                <p class="doc-text">
+                    In the field, a fleet is not served by a single broker. RF gateways (Wirepas, Kmesh) hold their own broker details, 4G meters carry theirs inside OBIS objects, and 4G TCP meters push to an HES listener IP. The <b>Network Setup</b> page keeps a registry of these endpoints, and each batch binds to one — or to none.
+                </p>
+
+                <h2 class="doc-title-h2">Adding an Endpoint</h2>
+                <p class="doc-text">
+                    On <b>Network Setup</b>, an admin clicks <b>Add broker</b> or <b>Add push target</b>. An endpoint is accepted <b>only if the connection succeeds</b> — a broker CONNECT with the given credentials, or a TCP handshake to the push listener. The real failure text is shown when it does not, and an admin may override with <b>Save unverified</b> when the endpoint is legitimately down at setup time. The endpoint's <b>name</b> is the key a batch binds to and cannot be changed later.
+                </p>
+
+                <h2 class="doc-title-h2">Binding a Batch</h2>
+                <p class="doc-text">
+                    On <b>Batch Setup</b>, choose an <b>MQTT broker</b> (for RF/4G MQTT NICs) or an <b>HES push target</b> (for 4G TCP) when provisioning — or leave it <b>unbound</b>. A running MQTT batch bound to nothing is flagged <b>unreachable</b>: it answers no one. A broker client runs only when a <b>Running</b> batch references an <b>enabled</b> broker; disabling an endpoint tears its clients down with no restart.
+                </p>
+
+                <h2 class="doc-title-h2">Migrating Configuration Between Deployments</h2>
+                <p class="doc-text">
+                    Registering a fleet with the HES is laborious, so the whole configuration — every batch and every network endpoint — moves as one file. On <b>Network Setup</b>, <b>Export all config</b> downloads a JSON bundle; <b>Import all config</b> replaces everything on another deployment after a confirmation.
+                </p>
+                <div class="mt-4 mb-4">
+                    <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true">
+                        <b>The exported bundle contains broker passwords in plaintext</b> so it is portable across hosts (the on-disk store encrypts them against one host's keys). Treat the file as a secret. On import, passwords are re-encrypted under the destination host, and the batch numbering continues from the imported set.
+                    </MudAlert>
+                </div>
+
+                <h2 class="doc-title-h2">Files & Deployment</h2>
+                <p class="doc-text">
+                    The registry persists to <code style="color: var(--mud-palette-primary);">data/network.json</code>, a sibling of <code style="color: var(--mud-palette-primary);">data/batches.json</code>, so both survive a redeploy that replaces the app folder. Broker passwords in <code>network.json</code> are encrypted with a key ring under <code style="color: var(--mud-palette-primary);">data/keys/</code> — <b>that folder must be preserved alongside it</b>, or stored passwords become undecryptable. To move config to a host that does not share the key ring, use Export / Import rather than copying the files.
+                </p>
+                <div class="mt-4">
+                    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
+                        <b>Upgrade note:</b> the old <code>Nics:&lt;transport&gt;:Enabled</code> config flags no longer exist. The equivalent is the per-endpoint <b>Enable / Disable</b> toggle on the Network Setup page, which scales to several brokers per transport where one config flag could not.
+                    </MudAlert>
+                </div>
             </div>
         }
         else if (ActiveSection == "xml-specs")

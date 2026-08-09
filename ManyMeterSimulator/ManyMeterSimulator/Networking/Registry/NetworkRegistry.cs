@@ -436,6 +436,58 @@ public sealed class NetworkRegistry
             DefaultBrokerKey, configured.Host, configured.Port);
     }
 
+    /// <summary>
+    /// Current state as a portable snapshot, with broker passwords in <b>plaintext</b>.
+    ///
+    /// <para>
+    /// Plaintext on purpose: the on-disk <c>network.json</c> encrypts passwords against THIS host's
+    /// key ring, so copying it to another deployment yields brokers that cannot authenticate unless
+    /// the key ring is copied too. An export is the portable alternative — it carries the real
+    /// password so the destination can re-encrypt it under its own keys on import. The trade-off is
+    /// that the exported file DOES contain credentials, which the UI states plainly.
+    /// </para>
+    /// </summary>
+    public NetworkRegistrySnapshot Snapshot()
+    {
+        lock (_lock)
+        {
+            return new NetworkRegistrySnapshot
+            {
+                Brokers = _brokers.Values.ToList(),
+                PushTargets = _pushTargets.Values.ToList(),
+            };
+        }
+    }
+
+    /// <summary>
+    /// Replaces every broker and push target with an imported snapshot, then persists — which
+    /// re-encrypts each password under this host's key ring. Wholesale, matching the batch import:
+    /// the two are one bundle, and a half-applied config (new batches, old endpoints) would leave
+    /// bindings pointing at brokers that are not there.
+    /// </summary>
+    public void ImportSnapshot(NetworkRegistrySnapshot snapshot)
+    {
+        lock (_lock)
+        {
+            _brokers.Clear();
+            _pushTargets.Clear();
+
+            foreach (BrokerEndpoint broker in snapshot.Brokers)
+            {
+                _brokers[broker.Key] = broker;
+            }
+
+            foreach (PushTargetEndpoint target in snapshot.PushTargets)
+            {
+                _pushTargets[target.Key] = target;
+            }
+
+            Persist();
+        }
+
+        Changed?.Invoke();
+    }
+
     /// <summary>Writes current state to the store. Must be called while holding <see cref="_lock"/>.</summary>
     private void Persist()
     {

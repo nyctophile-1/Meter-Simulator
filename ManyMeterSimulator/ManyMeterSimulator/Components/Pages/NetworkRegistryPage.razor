@@ -8,12 +8,18 @@
 @using ManyMeterSimulator.Networking.Mqtt
 @using ManyMeterSimulator.Networking.Nic
 @using ManyMeterSimulator.Networking.Registry
+@using ManyMeterSimulator.Provisioning
+@using ManyMeterSimulator.Brain
+@using Microsoft.AspNetCore.Components.Forms
 @inject NetworkRegistry Network
 @inject MeterRegistry MeterRegistry
 @inject EndpointProber Prober
 @inject NetworkHealthMonitor Health
+@inject ConfigBundleService ConfigBundles
+@inject MeterSessionManager Sessions
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
+@inject IJSRuntime JS
 @implements IDisposable
 
 <PageTitle>MAYA - Network Setup</PageTitle>
@@ -27,11 +33,30 @@
 
 @if (IsAdmin)
 {
-    <div class="d-flex align-center mb-4" style="gap:8px;">
+    <div class="d-flex align-center flex-wrap mb-4" style="gap:8px;">
         <MudButton Variant="Variant.Filled" Color="Color.Primary"
                    StartIcon="@Icons.Material.Filled.Hub" OnClick="OpenAddBroker">Add broker</MudButton>
         <MudButton Variant="Variant.Filled" Color="Color.Primary"
                    StartIcon="@Icons.Material.Filled.CallReceived" OnClick="OpenAddPushTarget">Add push target</MudButton>
+
+        <MudSpacer />
+
+        @* One bundle carries batches AND endpoints, because a batch is bound to a broker by name
+           and the two are useless apart. This is the migration path — moving a fleet otherwise
+           means re-registering every meter with the HES by hand. *@
+        <MudButton Variant="Variant.Outlined" Color="Color.Default"
+                   StartIcon="@Icons.Material.Filled.Download" OnClick="ExportConfig">
+            Export all config
+        </MudButton>
+        <MudFileUpload T="IBrowserFile" Accept=".json" FilesChanged="OnConfigFileSelected"
+                       MaximumFileCount="1" Class="ma-0">
+            <ActivatorContent>
+                <MudButton Variant="Variant.Outlined" Color="Color.Default"
+                           StartIcon="@Icons.Material.Filled.Upload" HtmlTag="label">
+                    Import all config
+                </MudButton>
+            </ActivatorContent>
+        </MudFileUpload>
     </div>
 }
 
@@ -354,6 +379,88 @@ else
     }
 
     public void Dispose() => _refresh?.Dispose();
+
+    // ── Import / export whole config ───────────────────────────────────────────────────────────
+
+    /// <summary>Largest config bundle we will read. Batches are lightweight (ranges, not per-meter rows).</summary>
+    private const long MaxConfigBytes = 16 * 1024 * 1024;
+
+    private async Task ExportConfig()
+    {
+        if (!IsAdmin)
+        {
+            return;
+        }
+
+        // The endpoint is admin-gated and sets the filename; the browser downloads it directly.
+        await JS.InvokeVoidAsync("mayaDownload", "/config/export.json");
+    }
+
+    private async Task OnConfigFileSelected(IBrowserFile? file)
+    {
+        if (!IsAdmin || file is null)
+        {
+            return;
+        }
+
+        string json;
+        try
+        {
+            await using Stream stream = file.OpenReadStream(MaxConfigBytes);
+            using var reader = new StreamReader(stream);
+            json = await reader.ReadToEndAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not read the file: {ex.Message}", Severity.Error);
+            return;
+        }
+
+        // Peek at what it contains, then make the operator confirm — import REPLACES every batch and
+        // endpoint, and rewrites the allocation cursor, so it is not something to do by half.
+        ConfigImportSummary summary;
+        try
+        {
+            summary = ConfigBundles.Preview(json);
+        }
+        catch (ArgumentException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+            return;
+        }
+
+        string from = summary.ExportedFrom is { Length: > 0 } src
+            ? $" (exported from {src} on {summary.ExportedAtUtc:yyyy-MM-dd HH:mm} UTC)"
+            : string.Empty;
+
+        bool? confirmed = await DialogService.ShowMessageBoxAsync(
+            "Replace ALL configuration?",
+            $"This file{from} holds {summary.Batches} batch(es), {summary.Brokers} broker(s) and " +
+            $"{summary.PushTargets} push target(s). Importing REPLACES every current batch and network " +
+            "endpoint, resets the batch numbering to continue from the imported set, and clears live " +
+            "meter sessions. Broker passwords in the file are re-encrypted under this host. This cannot " +
+            "be undone.",
+            yesText: "Replace everything", cancelText: "Cancel");
+
+        if (confirmed != true)
+        {
+            return;
+        }
+
+        try
+        {
+            ConfigImportSummary applied = ConfigBundles.Import(json);
+            // Live brain sessions belonged to the batches we just replaced — same as Reset all.
+            Sessions.Clear();
+            Snackbar.Add(
+                $"Imported {applied.Batches} batch(es), {applied.Brokers} broker(s), {applied.PushTargets} push target(s).",
+                Severity.Success);
+        }
+        catch (ArgumentException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
 
     // ── Add ──────────────────────────────────────────────────────────────────────────────────
 

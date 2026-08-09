@@ -132,6 +132,8 @@ builder.Services.AddSingleton<NetworkRegistry>();
 // Registered after MeterRegistry: it is the one place that sees both registries, which is what
 // lets neither of them depend on the other.
 builder.Services.AddSingleton<NetworkBindingValidator>();
+// Portable export/import of the whole operator config (batches + endpoints) as one bundle.
+builder.Services.AddSingleton<ConfigBundleService>();
 // Depends on both MeterRegistry and BadCommSettings, so it is registered after the batch store.
 builder.Services.AddSingleton<FleetCompositionCache>();
 builder.Services.AddSingleton<TemplateRegistry>();
@@ -235,6 +237,7 @@ app.UseAntiforgery();
 
 app.MapAuthEndpoints();
 app.MapBatchEndpoints();
+app.MapConfigEndpoints();
 
 app.MapStaticAssets();
 

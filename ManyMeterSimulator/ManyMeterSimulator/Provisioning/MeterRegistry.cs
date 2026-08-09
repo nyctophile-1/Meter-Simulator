@@ -415,32 +415,85 @@ public sealed class MeterRegistry
         }
     }
 
-    /// <summary>Writes the current state to the store. Must be called while holding <see cref="_lock"/>.</summary>
-    private void Persist()
+    /// <summary>
+    /// The current state as a portable snapshot — the exact shape written to <c>batches.json</c>,
+    /// carrying no secrets (a batch holds only identity and registry KEYS, never credentials). This
+    /// is what the export button serializes, so a fleet — the painful part, since every meter is
+    /// registered with the HES — can be moved to another deployment intact.
+    /// </summary>
+    public BatchStoreSnapshot Snapshot()
     {
-        var snapshot = new BatchStoreSnapshot
+        lock (_lock)
         {
-            Version = _storeVersion,
-            NextIndex = _nextIndex,
-            NextBatchId = _nextBatchId,
-            Batches = _batches.Select(b => new PersistedBatch
-            {
-                Id = b.Id,
-                Name = b.Name,
-                TemplateName = b.TemplateName,
-                NicType = b.NicType,
-                HesTemplateId = b.HesTemplateId,
-                StartIndex = b.StartIndex,
-                Count = b.Count,
-                Status = b.Status,
-                BrokerKey = b.BrokerKey,
-                PushTargetKey = b.PushTargetKey,
-                CreatedAtUtc = b.CreatedAtUtc,
-            }).ToList(),
-        };
-
-        _store.Save(snapshot);
+            return BuildSnapshot();
+        }
     }
+
+    /// <summary>
+    /// Replaces every batch and both cursors with an imported snapshot. Wholesale, not a merge:
+    /// merging two independently-allocated index spaces is exactly how a batch would reissue an
+    /// address the HES already knows, which is the collision this store exists to prevent. The
+    /// caller confirms first (it discards the current fleet) and clears live sessions after.
+    /// </summary>
+    public void ImportSnapshot(BatchStoreSnapshot snapshot)
+    {
+        lock (_lock)
+        {
+            _batches.Clear();
+            foreach (PersistedBatch pb in snapshot.Batches)
+            {
+                _batches.Add(new MeterBatch
+                {
+                    Id = pb.Id,
+                    Name = pb.Name,
+                    TemplateName = pb.TemplateName,
+                    NicType = pb.NicType,
+                    HesTemplateId = pb.HesTemplateId,
+                    StartIndex = pb.StartIndex,
+                    Count = pb.Count,
+                    Status = pb.Status,
+                    BrokerKey = pb.BrokerKey,
+                    PushTargetKey = pb.PushTargetKey,
+                    CreatedAtUtc = pb.CreatedAtUtc,
+                });
+            }
+
+            // A hand-written cursor below the max batch id/index would reissue ids; trust the
+            // batches over the snapshot's own cursor fields, which a hand-edit could leave stale.
+            _nextIndex = Math.Max(snapshot.NextIndex, _batches.Count == 0 ? 1 : _batches.Max(b => b.EndIndex) + 1);
+            _nextBatchId = Math.Max(snapshot.NextBatchId, _batches.Count == 0 ? 1 : _batches.Max(b => b.Id) + 1);
+            // Imported files are already in the current schema; do not re-run the legacy migration.
+            _storeVersion = BatchStoreSnapshot.CurrentVersion;
+            Persist();
+        }
+
+        Changed?.Invoke();
+    }
+
+    /// <summary>Writes the current state to the store. Must be called while holding <see cref="_lock"/>.</summary>
+    private void Persist() => _store.Save(BuildSnapshot());
+
+    /// <summary>Builds a snapshot of current state. Caller must hold <see cref="_lock"/>.</summary>
+    private BatchStoreSnapshot BuildSnapshot() => new()
+    {
+        Version = _storeVersion,
+        NextIndex = _nextIndex,
+        NextBatchId = _nextBatchId,
+        Batches = _batches.Select(b => new PersistedBatch
+        {
+            Id = b.Id,
+            Name = b.Name,
+            TemplateName = b.TemplateName,
+            NicType = b.NicType,
+            HesTemplateId = b.HesTemplateId,
+            StartIndex = b.StartIndex,
+            Count = b.Count,
+            Status = b.Status,
+            BrokerKey = b.BrokerKey,
+            PushTargetKey = b.PushTargetKey,
+            CreatedAtUtc = b.CreatedAtUtc,
+        }).ToList(),
+    };
 
     /// <summary>
     /// Collapses "", whitespace and null into null, so unbound is ONE state rather than three that
