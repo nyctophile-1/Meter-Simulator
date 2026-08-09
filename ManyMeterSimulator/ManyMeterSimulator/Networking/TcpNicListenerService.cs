@@ -4,6 +4,7 @@ using System.IO.Pipelines;
 using System.Net;
 using System.Net.Sockets;
 using Microsoft.Extensions.Options;
+using ManyMeterSimulator.BadComm;
 using ManyMeterSimulator.Diagnostics;
 using ManyMeterSimulator.Framing;
 using ManyMeterSimulator.MqttBridge;
@@ -28,6 +29,11 @@ public class TcpNicListenerService : BackgroundService
     private readonly MeterAdmission _admission;
     private readonly IMeterSimBridge _bridge;
     private readonly SimulatorMetrics _metrics;
+    // The meter/template registries are gone from here: admission moved to MeterAdmission
+    // (virtual_nics.md Phase B-1). These two stay because they are consulted on the exchange
+    // path itself, not at admission time.
+    private readonly NetworkDelaySettings _networkDelay;
+    private readonly BadCommSettings _badComm;
     private readonly IHostApplicationLifetime _appLifetime;
 
     // Deliberately NOT the same token ExecuteAsync receives: that one is cancelled the instant
@@ -47,6 +53,8 @@ public class TcpNicListenerService : BackgroundService
         MeterAdmission admission,
         IMeterSimBridge bridge,
         SimulatorMetrics metrics,
+        NetworkDelaySettings networkDelay,
+        BadCommSettings badComm,
         IHostApplicationLifetime appLifetime)
     {
         _logger = logger;
@@ -55,6 +63,8 @@ public class TcpNicListenerService : BackgroundService
         _admission = admission;
         _bridge = bridge;
         _metrics = metrics;
+        _networkDelay = networkDelay;
+        _badComm = badComm;
         _appLifetime = appLifetime;
     }
 
@@ -192,6 +202,58 @@ public class TcpNicListenerService : BackgroundService
                     _logger.LogDebug(
                         "Meter {MeterId}: received frame (srcWPort={Src}, dstWPort={Dst}, {Length} payload bytes)",
                         state.MeterAddress, frame.SourceWPort, frame.DestinationWPort, frame.Payload.Length);
+
+                    // Re-resolve if the operator changed the BadComm config since this connection
+                    // was classified, so a change is retroactive for open sessions too.
+                    MeterClassifier classifier = _badComm.Classifier;
+                    if (state.ImpairmentGeneration != classifier.Generation)
+                    {
+                        // The meter index is carried directly now, so this no longer has to decode
+                        // it back out of an IPv6 address (virtual_nics.md §4).
+                        state.SetImpairment(
+                            classifier.Classify(state.Meter.Index),
+                            classifier.Generation);
+                    }
+
+                    MeterImpairment impairment = state.Impairment;
+
+                    // Non-comm: swallow the request. No reply, no close - the HES waits out its
+                    // own timeout and retries, which is what makes the command consume the full
+                    // SLA budget. Closing here instead would fast-fail and understate the cost.
+                    if (impairment.Class == CommClass.NonComm)
+                    {
+                        _metrics.RecordNonCommDrop();
+                        _logger.LogDebug("Meter {Meter}: non-comm, request swallowed", state.Meter);
+                        continue;
+                    }
+
+                    // Simulated wire time so the fleet doesn't answer implausibly fast. Applied
+                    // here — NIC has the request, brain has not seen it yet — and deliberately
+                    // OUTSIDE the stopwatch below, so bridge latency stays a true measure of the
+                    // brain. The delay is reported separately as network latency.
+                    int delayMs = NetworkDelaySettings.ApplyImpairment(
+                        _networkDelay.NextDelayMs(), impairment.Multiplier);
+
+                    if (delayMs > 0)
+                    {
+                        await Task.Delay(delayMs, sessionToken);
+                    }
+                    _metrics.RecordNetworkDelay(TimeSpan.FromMilliseconds(delayMs));
+
+                    // Bad-comm packet loss, drawn per exchange. A command needs ~10 exchanges, so
+                    // a 5% drop here fails roughly 40% of commands - the HES must retry.
+                    if (impairment.Class == CommClass.BadComm)
+                    {
+                        _metrics.RecordBadCommDelay(TimeSpan.FromMilliseconds(delayMs));
+
+                        if (impairment.FailureRatePercent > 0 &&
+                            Random.Shared.NextDouble() * 100 < impairment.FailureRatePercent)
+                        {
+                            _metrics.RecordBadCommDrop();
+                            _logger.LogDebug("Meter {Meter}: bad-comm dropped this exchange", state.Meter);
+                            continue;
+                        }
+                    }
 
                     var bridgeStopwatch = Stopwatch.StartNew();
                     // Hand the brain the COMPLETE frame; it returns a complete wrapper reply

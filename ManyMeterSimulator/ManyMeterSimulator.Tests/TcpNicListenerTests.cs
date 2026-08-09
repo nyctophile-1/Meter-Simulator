@@ -1,11 +1,13 @@
 using System.Net;
 using System.Net.Sockets;
+using ManyMeterSimulator.BadComm;
 using ManyMeterSimulator.Diagnostics;
 using ManyMeterSimulator.Framing;
 using ManyMeterSimulator.MqttBridge;
 using ManyMeterSimulator.Networking;
 using ManyMeterSimulator.Networking.Nic;
 using ManyMeterSimulator.Provisioning;
+using ManyMeterSimulator.Settings;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -110,6 +112,10 @@ public class TcpNicListenerTests
             Metrics = new SimulatorMetrics();
             var sessions = new SessionRegistry();
 
+            // Delay and impairment stay at their defaults (off), so this remains a test of
+            // admission → framing → bridge rather than of the BadComm feature.
+            var runtimeConfig = new InMemoryRuntimeConfigStore();
+
             _service = new TcpNicListenerService(
                 NullLogger<TcpNicListenerService>.Instance,
                 Options.Create(new TcpOptions { ListenPort = Port, ShutdownDrainSeconds = 1 }),
@@ -117,6 +123,8 @@ public class TcpNicListenerTests
                 new MeterAdmission(registry, templates, sessions, Metrics),
                 new SimulatedMeterSimBridge(Options.Create(new SimulatedBridgeOptions { RoundTripDelayMs = 0 })),
                 Metrics,
+                new NetworkDelaySettings(Options.Create(new NetworkDelayOptions()), runtimeConfig),
+                new BadCommSettings(runtimeConfig),
                 new TestLifetime());
         }
 
@@ -150,6 +158,17 @@ public class TcpNicListenerTests
         public string ApplicationName { get; set; } = "Tests";
         public string ContentRootPath { get; set; } = AppContext.BaseDirectory;
         public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
+    }
+
+    /// <summary>
+    /// Runtime config that never touches disk. The real store writes a JSON file next to the batch
+    /// store, which would make these socket tests share mutable state across runs.
+    /// </summary>
+    private sealed class InMemoryRuntimeConfigStore : IRuntimeConfigStore
+    {
+        public MayaRuntimeConfig Current { get; } = new();
+
+        public void Update(Action<MayaRuntimeConfig> mutate) => mutate(Current);
     }
 
     private sealed class TestLifetime : IHostApplicationLifetime

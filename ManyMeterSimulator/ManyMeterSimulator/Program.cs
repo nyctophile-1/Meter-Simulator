@@ -1,4 +1,5 @@
 using ManyMeterSimulator.Auth;
+using ManyMeterSimulator.BadComm;
 using ManyMeterSimulator.Brain;
 using ManyMeterSimulator.Components;
 using ManyMeterSimulator.Diagnostics;
@@ -8,6 +9,7 @@ using ManyMeterSimulator.Networking.Mqtt;
 using ManyMeterSimulator.Networking.Mqtt.Codecs;
 using ManyMeterSimulator.Networking.Nic;
 using ManyMeterSimulator.Provisioning;
+using ManyMeterSimulator.Settings;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using MudBlazor.Services;
 using Serilog;
@@ -64,6 +66,7 @@ builder.Services.Configure<AuthOptions>(builder.Configuration.GetSection(AuthOpt
 builder.Services.Configure<TemplateOptions>(builder.Configuration.GetSection(TemplateOptions.SectionName));
 builder.Services.Configure<BrainOptions>(builder.Configuration.GetSection(BrainOptions.SectionName));
 builder.Services.Configure<PersistenceOptions>(builder.Configuration.GetSection(PersistenceOptions.SectionName));
+builder.Services.Configure<NetworkDelayOptions>(builder.Configuration.GetSection(NetworkDelayOptions.SectionName));
 
 // The meter IP prefix is a per-deployment infrastructure value — it must match the IPv6 /64 routed
 // to THIS host. Validate it early so a misconfigured/typo'd/missing prefix fails fast with a clear
@@ -87,10 +90,23 @@ builder.Services.Configure<HostOptions>(o => o.ShutdownTimeout = TimeSpan.FromSe
 builder.Services.AddSingleton<SessionRegistry>();
 builder.Services.AddSingleton<SimulatorMetrics>();
 builder.Services.AddSingleton<MeterAdmission>();
+
+// Operator-set runtime knobs (network delay today, more later), persisted alongside — but
+// deliberately not inside — the batch store. Registered before NetworkDelaySettings, which
+// rehydrates from it on construction.
+builder.Services.AddSingleton<IRuntimeConfigStore, JsonRuntimeConfigStore>();
+// Singleton so the Setup page and the listener share one instance — that shared reference is
+// what makes a delay change take effect on the next exchange without a restart.
+builder.Services.AddSingleton<NetworkDelaySettings>();
+// Field-impairment simulation. Also persisted, and also read from the listener's hot path, so it
+// must be the same instance the BadComm page mutates.
+builder.Services.AddSingleton<BadCommSettings>();
 // Durable batch store first — MeterRegistry rehydrates from it on construction, so batches,
 // their status, and the allocation cursor survive restarts/reboots/redeployments.
 builder.Services.AddSingleton<IBatchStore, JsonBatchStore>();
 builder.Services.AddSingleton<MeterRegistry>();
+// Depends on both MeterRegistry and BadCommSettings, so it is registered after the batch store.
+builder.Services.AddSingleton<FleetCompositionCache>();
 builder.Services.AddSingleton<TemplateRegistry>();
 builder.Services.AddSingleton<MeterSessionManager>();
 

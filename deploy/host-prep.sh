@@ -12,7 +12,7 @@ set -euo pipefail
 # The prefix AWS delegated to this instance's ENI (EC2 > Network Interfaces > Details >
 # IPv6 Prefix Delegation). Delegated prefixes are /80. Must match Tcp:AddressPrefix in
 # appsettings.Production.json, or meters are computed outside the routed range.
-METER_PREFIX="2406:da1a:1c29:500:bc96::/80"
+METER_PREFIX="2406:da1a:261:6903:882d::/80"
 # Sim-root holds three siblings: app/ is replaced on every deploy; data/ and logs/ persist
 # across deploys/reboots. The app writes them as ../data and ../logs relative to app/.
 SIM_ROOT="/opt/maya-sim"
@@ -119,6 +119,41 @@ ExecStop=/sbin/ip -6 route del local ${METER_PREFIX} dev ${IFACE}
 WantedBy=multi-user.target
 EOF
 
+# ── 5b. Route watchdog ────────────────────────────────────────────────────────
+# The local route is NOT owned by netplan/networkd, so anything that reconfigures the
+# interface (DHCPv6 lease renewal, netplan apply, networkd restart, link flap) silently
+# flushes it. maya-meter-route is Type=oneshot RemainAfterExit=yes, so systemd still
+# believes it is active and never re-runs it: the app keeps serving the UI on :80 while
+# every meter address becomes unroutable. From outside that looks like a dead listener,
+# but it is a CONNECTION TIMEOUT (packet never lands) rather than the connection-refused
+# a dead socket would give.
+#
+# `ip -6 route replace` is idempotent and atomic - no delete/add gap where packets could
+# drop - so simply re-asserting it every minute makes the failure self-healing.
+echo "==> Installing meter route watchdog (re-asserts the route every 60s)"
+cat > /etc/systemd/system/maya-meter-route-check.service <<EOF
+[Unit]
+Description=Re-assert the local meter route if something flushed it
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/sbin/ip -6 route replace local ${METER_PREFIX} dev ${IFACE}
+EOF
+
+cat > /etc/systemd/system/maya-meter-route-check.timer <<'EOF'
+[Unit]
+Description=Periodically re-assert the local meter route
+
+[Timer]
+OnBootSec=60s
+OnUnitActiveSec=60s
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target
+EOF
+
 # ── 6. Application service ────────────────────────────────────────────────────
 # Type=simple, NOT notify: readiness notification needs builder.Host.UseSystemd()
 # in Program.cs, which does not exist. With notify and no sd_notify, start times out.
@@ -158,6 +193,7 @@ EOF
 
 systemctl daemon-reload
 systemctl enable --now maya-meter-route.service
+systemctl enable --now maya-meter-route-check.timer
 systemctl enable maya-sim.service >/dev/null 2>&1 || true
 
 # ── 7. Verify ─────────────────────────────────────────────────────────────────

@@ -1,0 +1,586 @@
+@page "/badcomm"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using ManyMeterSimulator.Auth
+@using ManyMeterSimulator.BadComm
+@inject NetworkDelaySettings NetworkDelay
+@inject BadCommSettings BadComm
+@inject FleetCompositionCache Composition
+@inject MeterRegistry MeterRegistry
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>MAYA - BadComm</PageTitle>
+
+<MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
+    Field communication impairment. Everything here is global, applies to every batch, and takes
+    effect on the next exchange &mdash; including sessions already open. Settings survive restarts.
+</MudText>
+
+@* ══════════ Network delay ══════════ *@
+<MudPaper Elevation="1" Class="pa-4 mb-6">
+    <div class="d-flex align-center justify-space-between flex-wrap" style="gap:12px;">
+        <div>
+            <MudText Typo="Typo.h6">Network delay</MudText>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                Round-trip wire time applied to every meter before its request reaches the brain.
+            </MudText>
+        </div>
+        <div class="d-flex align-center" style="gap:12px;">
+            <code>@NetworkDelay.Current.LowerMs&ndash;@NetworkDelay.Current.UpperMs ms</code>
+            @if (IsAdmin)
+            {
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small"
+                           StartIcon="@Icons.Material.Filled.Timer" OnClick="OpenDelayDialog">Configure</MudButton>
+            }
+        </div>
+    </div>
+</MudPaper>
+
+@* ══════════ Fleet composition ══════════ *@
+<MudPaper Elevation="1" Class="pa-4 mb-6">
+    <div class="d-flex align-center justify-space-between flex-wrap mb-3" style="gap:12px;">
+        <MudText Typo="Typo.h6">Fleet composition</MudText>
+        <MudText Typo="Typo.caption" Class="mud-text-secondary">
+            @_composition.Total.ToString("N0") provisioned meters
+        </MudText>
+    </div>
+
+    @if (_composition.Total == 0)
+    {
+        <MudText Typo="Typo.body2" Class="mud-text-secondary">No batches provisioned yet.</MudText>
+    }
+    else
+    {
+        <div class="batch-bar">
+            <div class="batch-seg" style="width:@F(_composition.PercentOf(_composition.Healthy))%;background:#4ec9b0;"></div>
+            <div class="batch-seg" style="width:@F(_composition.PercentOf(_composition.BadComm))%;background:#e0a458;"></div>
+            <div class="batch-seg" style="width:@F(_composition.PercentOf(_composition.NonComm))%;background:#f48771;"></div>
+        </div>
+        <div class="batch-legend mt-3">
+            @foreach (var seg in CompositionSegments)
+            {
+                <div class="batch-legend-row">
+                    <span class="legend-dot" style="background:@seg.Color;"></span>
+                    <span class="batch-legend-label">@seg.Label</span>
+                    <span class="batch-legend-count">@seg.Count.ToString("N0")</span>
+                    <span class="batch-legend-meters">@F(_composition.PercentOf(seg.Count))%</span>
+                </div>
+            }
+        </div>
+    }
+</MudPaper>
+
+@if (!IsAdmin)
+{
+    <MudAlert Severity="Severity.Info" Dense="true" Variant="Variant.Outlined">
+        Impairment settings are admin-only. Values above are read-only for your role.
+    </MudAlert>
+}
+else
+{
+    @* ══════════ Auto allocation ══════════ *@
+    <MudPaper Elevation="1" Class="pa-4 mb-6">
+        <div class="d-flex align-center justify-space-between flex-wrap mb-2" style="gap:12px;">
+            <MudText Typo="Typo.h6">Auto allocation</MudText>
+            <MudSwitch T="bool" @bind-Value="_draft.Enabled" Color="Color.Primary" Label="Impairment enabled" />
+        </div>
+        <MudText Typo="Typo.caption" Class="mud-text-secondary">
+            Which meters are affected is derived from the meter number, so the same meters stay
+            affected across restarts. Raising a percentage only ever adds meters.
+        </MudText>
+
+        <MudGrid Class="mt-2">
+            <MudItem xs="12" sm="6" md="3">
+                <MudNumericField T="double" @bind-Value="_draft.Auto.NonCommPercent" Immediate="true"
+                                 Label="Non-comm %" Min="0" Max="100" Step="0.1"
+                                 Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <MudNumericField T="double" @bind-Value="_draft.Auto.BadCommPercent" Immediate="true"
+                                 Label="Bad-comm %" Min="0" Max="100" Step="0.5"
+                                 Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <MudNumericField T="double" @bind-Value="_draft.Defaults.FailureRatePercent" Immediate="true"
+                                 Label="Failure rate % (per exchange)" Min="0" Max="100" Step="1"
+                                 Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <MudNumericField T="int" @bind-Value="_draft.Seed" Immediate="true"
+                                 Label="Seed (reshuffles who is affected)" Min="0"
+                                 Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <MudNumericField T="int" @bind-Value="_draft.Defaults.MultiplierMin" Immediate="true"
+                                 Label="Multiplier min" Min="1" Max="@DelayLimits.MaxMultiplier"
+                                 Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <MudNumericField T="int" @bind-Value="_draft.Defaults.MultiplierMax" Immediate="true"
+                                 Label="Multiplier max" Min="1" Max="@DelayLimits.MaxMultiplier"
+                                 Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </MudItem>
+        </MudGrid>
+
+        @* Saturation warning — a saturated setup silently throws the multiplier away. *@
+        @{
+            var sat = Saturation;
+        }
+        <MudAlert Severity="@sat.Severity" Dense="true" Variant="Variant.Outlined" Class="mt-3">
+            @sat.Message
+        </MudAlert>
+
+        @if (DraftError is not null)
+        {
+            <MudAlert Severity="Severity.Error" Dense="true" Class="mt-3">@DraftError</MudAlert>
+        }
+
+        <div class="d-flex align-center mt-4" style="gap:12px;">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Check"
+                       Disabled="@(DraftError is not null)" OnClick="ApplyDraft">Apply</MudButton>
+            <MudButton Variant="Variant.Text" OnClick="ResetDraft">Discard changes</MudButton>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                Preview: @_preview.NonComm.ToString("N0") non-comm &middot;
+                @_preview.BadComm.ToString("N0") bad-comm &middot;
+                @_preview.Healthy.ToString("N0") healthy
+            </MudText>
+        </div>
+    </MudPaper>
+
+    @* ══════════ Manual rules ══════════ *@
+    <MudPaper Elevation="1" Class="pa-4 mb-6">
+        <div class="d-flex align-center justify-space-between mb-2" style="gap:12px;">
+            <div>
+                <MudText Typo="Typo.h6">Manual rules</MudText>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                    Evaluated before auto allocation, lowest order first, first match wins.
+                    Use a <em>Healthy</em> rule to exempt a known-good meter from an auto band.
+                </MudText>
+            </div>
+            <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add" OnClick="AddRule">Add rule</MudButton>
+        </div>
+
+        @if (_draft.Rules.Count == 0)
+        {
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">No rules. Auto allocation applies to everything.</MudText>
+        }
+        else
+        {
+            <MudSimpleTable Hover="true" Dense="true" Bordered="false" Class="batch-table">
+                <thead>
+                    <tr>
+                        <th style="width:1%"></th>
+                        <th>Order</th><th>Name</th><th>Matches</th><th>Effect</th>
+                        <th>Failure %</th><th>Multiplier</th><th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (BadCommRule rule in _draft.Rules.OrderBy(r => r.Order).ToList())
+                    {
+                        <tr>
+                            <td><MudSwitch T="bool" @bind-Value="rule.Enabled" Color="Color.Primary" /></td>
+                            <td style="width:70px">
+                                <MudNumericField T="int" @bind-Value="rule.Order" Min="0" Margin="Margin.Dense"
+                                                 Variant="Variant.Outlined" />
+                            </td>
+                            <td><MudTextField T="string" @bind-Value="rule.Name" Margin="Margin.Dense" Variant="Variant.Outlined" /></td>
+                            <td>
+                                <div class="d-flex align-center" style="gap:6px;">
+                                    <MudSelect T="MatchKind" @bind-Value="rule.Match" Margin="Margin.Dense" Variant="Variant.Outlined" Style="min-width:110px">
+                                        @foreach (MatchKind k in Enum.GetValues<MatchKind>())
+                                        {
+                                            <MudSelectItem Value="@k">@k</MudSelectItem>
+                                        }
+                                    </MudSelect>
+                                    @switch (rule.Match)
+                                    {
+                                        case MatchKind.Range:
+                                            <MudNumericField T="long" @bind-Value="rule.From" Label="from" Margin="Margin.Dense" Variant="Variant.Outlined" Style="width:110px" />
+                                            <MudNumericField T="long" @bind-Value="rule.To" Label="to" Margin="Margin.Dense" Variant="Variant.Outlined" Style="width:110px" />
+                                            break;
+                                        case MatchKind.Modulo:
+                                            <MudNumericField T="long" @bind-Value="rule.Modulus" Label="every" Min="1" Margin="Margin.Dense" Variant="Variant.Outlined" Style="width:90px" />
+                                            <MudNumericField T="long" @bind-Value="rule.Remainder" Label="offset" Min="0" Margin="Margin.Dense" Variant="Variant.Outlined" Style="width:90px" />
+                                            break;
+                                        case MatchKind.List:
+                                            <MudTextField T="string" Value="@JoinIndices(rule)" ValueChanged="@(v => ParseIndices(rule, v))"
+                                                          Label="indices (comma separated)" Margin="Margin.Dense" Variant="Variant.Outlined" Style="min-width:180px" />
+                                            break;
+                                    }
+                                </div>
+                            </td>
+                            <td>
+                                <MudSelect T="CommClass" @bind-Value="rule.Effect" Margin="Margin.Dense" Variant="Variant.Outlined" Style="min-width:110px">
+                                    @foreach (CommClass c in Enum.GetValues<CommClass>())
+                                    {
+                                        <MudSelectItem Value="@c">@c</MudSelectItem>
+                                    }
+                                </MudSelect>
+                            </td>
+                            <td style="width:90px">
+                                @if (rule.Effect == CommClass.BadComm)
+                                {
+                                    <MudNumericField T="double" @bind-Value="rule.FailureRatePercent" Min="0" Max="100" Margin="Margin.Dense" Variant="Variant.Outlined" />
+                                }
+                            </td>
+                            <td style="width:150px">
+                                @if (rule.Effect == CommClass.BadComm)
+                                {
+                                    <div class="d-flex align-center" style="gap:4px;">
+                                        <MudNumericField T="int" @bind-Value="rule.MultiplierMin" Min="1" Max="@DelayLimits.MaxMultiplier" Margin="Margin.Dense" Variant="Variant.Outlined" />
+                                        <MudNumericField T="int" @bind-Value="rule.MultiplierMax" Min="1" Max="@DelayLimits.MaxMultiplier" Margin="Margin.Dense" Variant="Variant.Outlined" />
+                                    </div>
+                                }
+                            </td>
+                            <td>
+                                <MudIconButton Size="Size.Small" Icon="@Icons.Material.Filled.Delete" Color="Color.Error"
+                                               OnClick="@(() => _draft.Rules.Remove(rule))" />
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        }
+    </MudPaper>
+}
+
+@* ══════════ Explain a meter ══════════ *@
+<MudPaper Elevation="1" Class="pa-4 mb-6">
+    <MudText Typo="Typo.h6" GutterBottom="true">Explain a meter</MudText>
+    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+        Checks against the <strong>live</strong> settings, not unapplied edits.
+    </MudText>
+    <div class="d-flex align-center flex-wrap mt-2" style="gap:12px;">
+        <MudTextField T="string" @bind-Value="_explainInput" Immediate="true" Label="Meter number or index"
+                      Placeholder="MY000000216 or 216" Variant="Variant.Outlined" Margin="Margin.Dense"
+                      Style="min-width:260px" />
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="Explain">Explain</MudButton>
+    </div>
+    @if (_explainResult is not null)
+    {
+        <MudAlert Severity="@_explainSeverity" Dense="true" Variant="Variant.Outlined" Class="mt-3">
+            @_explainResult
+        </MudAlert>
+    }
+</MudPaper>
+
+@* ---------- Network delay dialog ---------- *@
+<MudDialog @bind-Visible="_delayDialogOpen" Options="_delayDialogOptions">
+    <TitleContent><MudText Typo="Typo.h6">Network delay</MudText></TitleContent>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
+            Applies to <strong>all</strong> meters. Bad-comm meters multiply this value. Maximum
+            @DelayLimits.MaxNetworkDelayMs ms; set both to 0 to disable.
+        </MudText>
+        <MudGrid>
+            <MudItem xs="6">
+                <MudNumericField T="int" @bind-Value="_delayLower" Label="Lower limit (ms)" Min="0"
+                                 Max="@DelayLimits.MaxNetworkDelayMs" Variant="Variant.Outlined" Immediate="true" />
+            </MudItem>
+            <MudItem xs="6">
+                <MudNumericField T="int" @bind-Value="_delayUpper" Label="Upper limit (ms)" Min="0"
+                                 Max="@DelayLimits.MaxNetworkDelayMs" Variant="Variant.Outlined" Immediate="true" />
+            </MudItem>
+        </MudGrid>
+        @if (DelayError is not null)
+        {
+            <MudAlert Severity="Severity.Error" Dense="true" Variant="Variant.Outlined" Class="mt-3">@DelayError</MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => _delayDialogOpen = false)">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(DelayError is not null)"
+                   OnClick="SaveDelay">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthStateTask { get; set; }
+
+    private bool IsAdmin { get; set; }
+
+    private BadCommConfig _draft = new();
+    private FleetComposition _composition;
+    private FleetComposition _preview;
+
+    private string _explainInput = "";
+    private string? _explainResult;
+    private Severity _explainSeverity = Severity.Info;
+
+    private bool _delayDialogOpen;
+    private int _delayLower;
+    private int _delayUpper;
+    private readonly DialogOptions _delayDialogOptions = new() { MaxWidth = MaxWidth.Small, FullWidth = true };
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthStateTask is not null)
+        {
+            AuthenticationState authState = await AuthStateTask;
+            IsAdmin = authState.User.IsInRole(AppRoles.Admin);
+        }
+
+        ResetDraft();
+    }
+
+    protected override void OnParametersSet() => Refresh();
+
+    private void Refresh()
+    {
+        _composition = Composition.Current();
+        _preview = DraftError is null ? Composition.Preview(_draft) : _composition;
+    }
+
+    private void ResetDraft()
+    {
+        _draft = BadComm.Snapshot();
+        Refresh();
+    }
+
+    // ---------- Auto allocation ----------
+
+    private string? DraftError
+    {
+        get
+        {
+            if (_draft.Auto.NonCommPercent < 0 || _draft.Auto.BadCommPercent < 0)
+            {
+                return "Percentages cannot be negative.";
+            }
+
+            if (_draft.Auto.NonCommPercent + _draft.Auto.BadCommPercent > 100)
+            {
+                return "Non-comm and bad-comm together cannot exceed 100%.";
+            }
+
+            if (_draft.Defaults.FailureRatePercent is < 0 or > 100)
+            {
+                return "Failure rate must be between 0 and 100%.";
+            }
+
+            if (_draft.Defaults.MultiplierMin < 1 ||
+                _draft.Defaults.MultiplierMax > DelayLimits.MaxMultiplier ||
+                _draft.Defaults.MultiplierMax < _draft.Defaults.MultiplierMin)
+            {
+                return $"Multiplier must be 1-{DelayLimits.MaxMultiplier}, and max cannot be below min.";
+            }
+
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// A saturated configuration silently discards the multiplier, so the operator is told before
+    /// applying rather than after staring at a flat latency histogram.
+    /// </summary>
+    private (Severity Severity, string Message) Saturation
+    {
+        get
+        {
+            int ndLo = NetworkDelay.Current.LowerMs;
+            int ndHi = NetworkDelay.Current.UpperMs;
+            int mLo = Math.Max(1, _draft.Defaults.MultiplierMin);
+            int mHi = Math.Max(mLo, _draft.Defaults.MultiplierMax);
+
+            long worst = (long)Math.Max(1, ndHi) * mHi;
+            long best = (long)Math.Max(1, ndLo) * mLo;
+            int threshold = DelayLimits.SaturationThresholdMs;
+
+            if (best >= threshold)
+            {
+                return (Severity.Warning,
+                    $"Every bad-comm exchange saturates: {Fmt(best)} exceeds the {Fmt(threshold)} ceiling, " +
+                    $"so all delays land in {Fmt(DelayLimits.SaturationLowerMs)}-{Fmt(DelayLimits.SaturationUpperMs)} " +
+                    "and the multiplier has no effect. Lower the network delay or the multiplier to see variation.");
+            }
+
+            if (worst > threshold)
+            {
+                return (Severity.Warning,
+                    $"Some exchanges saturate: the range is {Fmt(best)}-{Fmt(worst)}, and anything above " +
+                    $"{Fmt(threshold)} is redrawn into {Fmt(DelayLimits.SaturationLowerMs)}-{Fmt(DelayLimits.SaturationUpperMs)}.");
+            }
+
+            return (Severity.Info, $"Effective bad-comm delay {Fmt(best)}-{Fmt(worst)} (network delay {ndLo}-{ndHi} ms).");
+        }
+    }
+
+    private async Task ApplyDraft()
+    {
+        if (!IsAdmin || DraftError is not null)
+        {
+            return;
+        }
+
+        FleetComposition after = Composition.Preview(_draft);
+        bool? confirmed = await DialogService.ShowMessageBoxAsync(
+            "Apply impairment settings?",
+            $"{after.NonComm:N0} meters will stop responding entirely and {after.BadComm:N0} will become " +
+            "slow and lossy. This takes effect on the next exchange for every connected meter and " +
+            "persists across restarts.",
+            yesText: "Apply", cancelText: "Cancel");
+
+        if (confirmed != true)
+        {
+            return;
+        }
+
+        if (!BadComm.TryUpdate(_draft, out string? error))
+        {
+            Snackbar.Add(error ?? "Could not apply those settings.", Severity.Error);
+            return;
+        }
+
+        ResetDraft();
+        Snackbar.Add("Impairment settings applied.", Severity.Success);
+    }
+
+    // ---------- Rules ----------
+
+    private void AddRule()
+    {
+        int nextId = _draft.Rules.Count == 0 ? 1 : _draft.Rules.Max(r => r.Id) + 1;
+        int nextOrder = _draft.Rules.Count == 0 ? 1 : _draft.Rules.Max(r => r.Order) + 1;
+
+        _draft.Rules.Add(new BadCommRule
+        {
+            Id = nextId,
+            Name = $"rule-{nextId}",
+            Order = nextOrder,
+            Match = MatchKind.Range,
+            From = 1,
+            To = 100,
+            Effect = CommClass.BadComm,
+            FailureRatePercent = _draft.Defaults.FailureRatePercent,
+            MultiplierMin = _draft.Defaults.MultiplierMin,
+            MultiplierMax = _draft.Defaults.MultiplierMax,
+        });
+    }
+
+    private static string JoinIndices(BadCommRule rule) => string.Join(",", rule.Indices);
+
+    private static void ParseIndices(BadCommRule rule, string? raw)
+    {
+        rule.Indices = (raw ?? "")
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(s => long.TryParse(s, out long v) ? v : (long?)null)
+            .Where(v => v.HasValue)
+            .Select(v => v!.Value)
+            .ToList();
+    }
+
+    // ---------- Explain ----------
+
+    private void Explain()
+    {
+        string raw = (_explainInput ?? "").Trim();
+        if (raw.Length == 0)
+        {
+            _explainResult = null;
+            return;
+        }
+
+        // Accept either the serial (MY000000216) or the bare index - they are the same number.
+        string digits = new(raw.Where(char.IsDigit).ToArray());
+        if (!long.TryParse(digits, out long index) || index <= 0)
+        {
+            _explainSeverity = Severity.Error;
+            _explainResult = $"'{raw}' is not a meter number or index.";
+            return;
+        }
+
+        MeterImpairment result = BadComm.Classifier.Classify(index);
+        string serial = MeterRegistry.FormatSerial(index);
+
+        _explainSeverity = result.Class switch
+        {
+            CommClass.NonComm => Severity.Error,
+            CommClass.BadComm => Severity.Warning,
+            _ => Severity.Success,
+        };
+
+        _explainResult = result.Class switch
+        {
+            CommClass.NonComm =>
+                $"{serial} (index {index:N0}) is NON-COMM — it will never respond. Reason: {result.Reason}.",
+            CommClass.BadComm =>
+                $"{serial} (index {index:N0}) is BAD-COMM — {result.Multiplier}x latency, " +
+                $"{result.FailureRatePercent:0.##}% of exchanges dropped. Reason: {result.Reason}.",
+            _ =>
+                $"{serial} (index {index:N0}) is HEALTHY — normal network delay only. Reason: {result.Reason}.",
+        };
+    }
+
+    // ---------- Network delay dialog ----------
+
+    private string? DelayError =>
+        _delayLower < 0 || _delayUpper < 0 ? "Delays cannot be negative."
+        : _delayUpper < _delayLower ? "Upper limit cannot be smaller than the lower limit."
+        : _delayUpper > DelayLimits.MaxNetworkDelayMs || _delayLower > DelayLimits.MaxNetworkDelayMs
+            ? $"Maximum is {DelayLimits.MaxNetworkDelayMs} ms."
+        : null;
+
+    private void OpenDelayDialog()
+    {
+        if (!IsAdmin)
+        {
+            return;
+        }
+
+        _delayLower = NetworkDelay.Current.LowerMs;
+        _delayUpper = NetworkDelay.Current.UpperMs;
+        _delayDialogOpen = true;
+    }
+
+    private async Task SaveDelay()
+    {
+        if (!IsAdmin || DelayError is not null)
+        {
+            return;
+        }
+
+        string range = _delayLower == 0 && _delayUpper == 0
+            ? "no delay (meters answer immediately)"
+            : $"a random {_delayLower}-{_delayUpper} ms pause before every request reaches the brain";
+
+        bool? confirmed = await DialogService.ShowMessageBoxAsync(
+            "Apply network delay?",
+            $"All batches will use {range}. Bad-comm meters multiply this value. Takes effect on the " +
+            "next exchange, including sessions already open.",
+            yesText: "Apply", cancelText: "Cancel");
+
+        if (confirmed != true)
+        {
+            return;
+        }
+
+        if (!NetworkDelay.TryUpdate(_delayLower, _delayUpper))
+        {
+            Snackbar.Add("Could not apply those limits.", Severity.Error);
+            return;
+        }
+
+        _delayDialogOpen = false;
+        Snackbar.Add($"Network delay set to {_delayLower}-{_delayUpper} ms.", Severity.Success);
+    }
+
+    // ---------- Helpers ----------
+
+    private IEnumerable<(string Label, string Color, long Count)> CompositionSegments => new[]
+    {
+        ("Healthy", "#4ec9b0", _composition.Healthy),
+        ("Bad-comm", "#e0a458", _composition.BadComm),
+        ("Non-comm", "#f48771", _composition.NonComm),
+    };
+
+    private static string F(double v) => v.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string Fmt(long ms) =>
+        ms >= 1000 ? $"{ms / 1000.0:0.##} s" : $"{ms} ms";
+}

@@ -20,4 +20,11 @@ public sealed class PersistenceOptions
 
     /// <summary>File name of the JSON batch store within <see cref="Folder"/>.</summary>
     public string FileName { get; set; } = "batches.json";
+
+    /// <summary>
+    /// File name of the operator-set runtime config within <see cref="Folder"/> (network delay
+    /// and any future knobs). A separate file from the batch store so the two never share a
+    /// failure: a corrupt config file falls back to defaults, a corrupt batch store is fatal.
+    /// </summary>
+    public string RuntimeConfigFileName { get; set; } = "maya-runtime-config.json";
 }

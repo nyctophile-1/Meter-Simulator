@@ -1,4 +1,5 @@
 using System.Net;
+using ManyMeterSimulator.BadComm;
 using ManyMeterSimulator.Networking.Nic;
 
 namespace ManyMeterSimulator.Diagnostics;
@@ -9,7 +10,29 @@ public sealed class ConnectionState
     private long _exchangeCount;
 
     /// <summary>Which meter this session belongs to — NIC-agnostic, and the registry's key.</summary>
+    ///
+    /// <remarks>
+    /// This replaces the <c>IPAddress MeterId</c> the TCP-only branch carried. Every NIC needs an
+    /// identity and only TCP has an IP, so the index is the identity and the address is derived
+    /// from it — see virtual_nics.md §4.
+    /// </remarks>
     public required MeterRef Meter { get; init; }
+
+    /// <summary>
+    /// Impairment resolved once for this meter, so rule evaluation stays off the per-exchange
+    /// path. <see cref="ImpairmentGeneration"/> is the classifier generation it was resolved
+    /// against; when the live classifier moves past it, the session re-resolves. That is what
+    /// makes a BadComm config change apply to ALREADY-OPEN connections rather than only new ones.
+    /// </summary>
+    public MeterImpairment Impairment { get; private set; } = MeterImpairment.Healthy;
+
+    public int ImpairmentGeneration { get; private set; } = -1;
+
+    public void SetImpairment(MeterImpairment impairment, int generation)
+    {
+        Impairment = impairment;
+        ImpairmentGeneration = generation;
+    }
 
     /// <summary>
     /// TCP only: the meter's own IPv6 (the socket's local address) and the HES endpoint that dialled

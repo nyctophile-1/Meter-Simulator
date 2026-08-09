@@ -13,6 +13,27 @@ public sealed class SimulatorMetrics
 {
     private static readonly NicType[] AllNics = Enum.GetValues<NicType>();
 
+    // Admission/exchange counters are per NIC (see NicCounters). The ones below are deliberately
+    // FLEET-WIDE: network delay and bad-comm impairment are properties of the simulated link, not
+    // of a NIC variant, and today only the TCP listener applies them.
+
+    // The simulated wire time (NetworkDelaySettings), tracked separately from bridge latency so
+    // "how long the brain took" and "how long we pretended the network took" stay distinguishable.
+    private long _networkLatencyTicksSum;
+    private long _networkLatencyMaxTicks;
+
+    // Counted rather than reusing the exchange total, so the average stays well-defined whichever
+    // snapshot asks for it — a per-NIC snapshot would otherwise divide a fleet-wide sum by one
+    // NIC's exchange count and report a delay nobody experienced.
+    private long _networkLatencySamples;
+
+    // Bad-comm latency is tracked apart from the network-latency average: a 25x outlier would
+    // otherwise drag that figure away from what a healthy meter actually experiences.
+    private long _badCommDelayTicksSum;
+    private long _badCommDelayCount;
+    private long _totalNonCommDrops;
+    private long _totalBadCommDrops;
+
     private readonly NicCounters[] _byNic;
 
     public SimulatorMetrics()
@@ -64,6 +85,31 @@ public sealed class SimulatorMetrics
         Interlocked.Increment(ref c.TotalExchanges);
         Interlocked.Add(ref c.BridgeLatencyTicksSum, bridgeLatency.Ticks);
         InterlockedMax(ref c.BridgeLatencyMaxTicks, bridgeLatency.Ticks);
+    }
+
+    /// <summary>
+    /// The simulated network delay actually applied to one exchange. Recorded even when zero, so
+    /// the average is over every exchange rather than only the delayed ones - otherwise turning
+    /// the delay off would leave a stale average sitting on the dashboard.
+    /// </summary>
+    public void RecordNetworkDelay(TimeSpan networkLatency)
+    {
+        Interlocked.Add(ref _networkLatencyTicksSum, networkLatency.Ticks);
+        Interlocked.Increment(ref _networkLatencySamples);
+        InterlockedMax(ref _networkLatencyMaxTicks, networkLatency.Ticks);
+    }
+
+    /// <summary>A request swallowed because the meter is non-comm.</summary>
+    public void RecordNonCommDrop() => Interlocked.Increment(ref _totalNonCommDrops);
+
+    /// <summary>An exchange lost to bad-comm packet loss.</summary>
+    public void RecordBadCommDrop() => Interlocked.Increment(ref _totalBadCommDrops);
+
+    /// <summary>The (multiplied) delay applied to one bad-comm exchange.</summary>
+    public void RecordBadCommDelay(TimeSpan delay)
+    {
+        Interlocked.Add(ref _badCommDelayTicksSum, delay.Ticks);
+        Interlocked.Increment(ref _badCommDelayCount);
     }
 
     /// <summary>Fleet-wide totals across every NIC.</summary>
@@ -136,17 +182,37 @@ public sealed class SimulatorMetrics
         }
     }
 
-    private static SimulatorMetricsSnapshot Build(
+    // Instance rather than static now: the admission/exchange figures are passed in (per NIC or
+    // summed), while the network-delay and bad-comm figures are read from fleet-wide state here.
+    private SimulatorMetricsSnapshot Build(
         int activeConnections, long accepted, long collision, long maxConn, long notRunning,
         long noTemplate, long idle, long exchanges, long ticksSum, long ticksMax,
         long mailboxFull, long malformed, long fragmentTimeouts, long ignored)
     {
         TimeSpan avgLatency = exchanges == 0 ? TimeSpan.Zero : TimeSpan.FromTicks(ticksSum / exchanges);
 
+        // Divided by its own sample count, not by `exchanges`, so a per-NIC snapshot cannot divide
+        // a fleet-wide sum by one NIC's exchanges and invent a delay nobody saw.
+        long netSamples = Interlocked.Read(ref _networkLatencySamples);
+        TimeSpan avgNetworkLatency = netSamples == 0
+            ? TimeSpan.Zero
+            : TimeSpan.FromTicks(Interlocked.Read(ref _networkLatencyTicksSum) / netSamples);
+
+        // Averaged over bad-comm exchanges only, not all exchanges - otherwise the figure would
+        // shrink as the healthy population grows and would stop describing a bad meter at all.
+        long badCommCount = Interlocked.Read(ref _badCommDelayCount);
+        TimeSpan avgBadCommDelay = badCommCount == 0
+            ? TimeSpan.Zero
+            : TimeSpan.FromTicks(Interlocked.Read(ref _badCommDelayTicksSum) / badCommCount);
+
         return new SimulatorMetricsSnapshot(
             activeConnections, accepted, collision, maxConn, notRunning, noTemplate,
             idle, exchanges, avgLatency, TimeSpan.FromTicks(ticksMax),
-            mailboxFull, malformed, fragmentTimeouts, ignored);
+            mailboxFull, malformed, fragmentTimeouts, ignored,
+            avgNetworkLatency, TimeSpan.FromTicks(Interlocked.Read(ref _networkLatencyMaxTicks)),
+            Interlocked.Read(ref _totalNonCommDrops),
+            Interlocked.Read(ref _totalBadCommDrops),
+            avgBadCommDelay);
     }
 
     private NicCounters For(NicType nic) => _byNic[(int)nic];
@@ -199,7 +265,13 @@ public readonly record struct SimulatorMetricsSnapshot(
     long TotalDroppedMailboxFull,
     long TotalMalformedPackets,
     long TotalFragmentTimeouts,
-    long TotalIgnoredPackets)
+    long TotalIgnoredPackets,
+    // Fleet-wide regardless of which NIC this snapshot describes — see SimulatorMetrics.
+    TimeSpan AvgNetworkLatency,
+    TimeSpan MaxNetworkLatency,
+    long TotalNonCommDrops,
+    long TotalBadCommDrops,
+    TimeSpan AvgBadCommDelay)
 {
     /// <summary>
     /// Exchanges per admitted session. This is the number that says whether callers got PAST the

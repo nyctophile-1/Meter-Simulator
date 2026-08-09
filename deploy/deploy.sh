@@ -46,6 +46,15 @@ chmod +x "$APP_DIR/ManyMeterSimulator"
 mkdir -p "$APP_DIR/Templates" "$SIM_ROOT/data" "$SIM_ROOT/logs"
 chown -R "$SVC_USER:$SVC_USER" "$SIM_ROOT"
 
+# Re-assert the local meter route before starting the app. The route unit is oneshot +
+# RemainAfterExit, so systemd will not re-run it on its own even when the kernel route has
+# been flushed - which leaves the app serving the UI while every meter address is
+# unroutable. `replace` is idempotent, so this is a no-op when the route is already right.
+echo "==> Re-asserting meter route"
+systemctl start maya-meter-route-check.service 2>/dev/null \
+  || systemctl restart maya-meter-route.service 2>/dev/null \
+  || true
+
 echo "==> Starting service"
 systemctl start maya-sim
 sleep 4
@@ -60,6 +69,18 @@ echo
 echo "==> Listening sockets"
 ss -6 -lntp 2>/dev/null | grep 4059 || echo "  WARNING: nothing listening on 4059"
 ss -lntp   2>/dev/null | grep ':80 ' || echo "  WARNING: nothing listening on 80"
+
+# A bound socket is only half the story: without the local route the meter addresses are
+# unroutable and connections time out, even though everything above looks healthy.
+echo
+echo "==> Meter route"
+FIRST_METER="$(awk -F'"' '/"AddressPrefix"/ {print $4}' "$APP_DIR/appsettings.Production.json" 2>/dev/null | sed 's#/[0-9]*$##')1"
+if [ -n "$FIRST_METER" ] && ip -6 route get "$FIRST_METER" 2>/dev/null | grep -q local; then
+  echo "  OK: $FIRST_METER resolves as local"
+else
+  echo "  WARNING: $FIRST_METER is NOT local - meters will time out. Run:"
+  echo "           sudo systemctl restart maya-meter-route maya-sim"
+fi
 echo
 echo "Check the log above for: 'TCP NIC listener bound to [::]:4059' and that the"
 echo "logged address prefix is the real meter /64, not the fd00: dev default."

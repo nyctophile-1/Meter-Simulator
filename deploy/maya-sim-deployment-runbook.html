@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>AWS Deployment Runbook — Maya Sim</title>
+<style>
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 32px 24px 60px;
+    color: #1d2129;
+    line-height: 1.6;
+    background: #ffffff;
+    font-size: 15px;
+  }
+  h1 {
+    font-size: 26px;
+    border-bottom: 3px solid #2563eb;
+    padding-bottom: 10px;
+    margin-bottom: 6px;
+  }
+  .subtitle {
+    color: #555;
+    margin-bottom: 30px;
+    font-size: 14px;
+  }
+  h2 {
+    font-size: 19px;
+    color: #1d4ed8;
+    margin-top: 42px;
+    border-bottom: 1px solid #e2e8f0;
+    padding-bottom: 6px;
+  }
+  h3 {
+    font-size: 15px;
+    margin-top: 22px;
+    color: #333;
+  }
+  ol, ul { padding-left: 22px; }
+  li { margin-bottom: 6px; }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 14px 0 20px;
+    font-size: 14px;
+  }
+  th, td {
+    border: 1px solid #d0d7de;
+    padding: 7px 10px;
+    text-align: left;
+    vertical-align: top;
+  }
+  th { background: #f0f4f8; font-weight: 600; }
+  code {
+    background: #eef1f5;
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-family: Consolas, Monaco, "Courier New", monospace;
+    font-size: 13px;
+  }
+  pre {
+    background: #1e2530;
+    color: #e6edf3;
+    padding: 12px 14px;
+    border-radius: 6px;
+    overflow-x: auto;
+    font-size: 13px;
+    margin: 10px 0 16px;
+  }
+  pre code { background: none; padding: 0; color: inherit; }
+  .warn {
+    background: #fff7e6;
+    border-left: 4px solid #f0a500;
+    padding: 10px 14px;
+    margin: 12px 0;
+    border-radius: 4px;
+    font-size: 14px;
+  }
+  .warn ul { margin: 8px 0; }
+  .note {
+    background: #eef5ff;
+    border-left: 4px solid #2563eb;
+    padding: 10px 14px;
+    margin: 12px 0;
+    border-radius: 4px;
+    font-size: 14px;
+  }
+  .warn-inline { color: #b8860b; font-weight: 700; }
+  .expect { margin: 4px 0 16px 2px; font-size: 14px; color: #333; }
+  .expect strong { color: #0a7d32; }
+  hr { border: none; border-top: 1px solid #e2e8f0; margin: 34px 0; }
+</style>
+</head>
+<body>
+
+<h1>AWS Deployment Runbook — Maya Sim (Meter Simulator)</h1>
+<p class="subtitle">Click-by-click deployment guide. Every field is named; anything not listed = leave default. Steps marked ⚠️ will silently fail later if skipped or done incorrectly.</p>
+
+<h2>Stage 0 — Sign In</h2>
+<ol>
+  <li>Sign in to the org AWS account.</li>
+  <li>Top-right region dropdown → pick your region (e.g. <code>Asia Pacific (Mumbai) ap-south-1</code>).</li>
+  <li><span class="warn-inline">⚠️</span> Stay in this region for every stage. If a resource "disappears," you switched region.</li>
+</ol>
+
+<h2>Stage 1 — Create the VPC</h2>
+<ol>
+  <li>Search bar (top) → type <code>VPC</code> → click <strong>VPC</strong>.</li>
+  <li>Left sidebar → <strong>Your VPCs</strong>.</li>
+  <li>Orange button <strong>Create VPC</strong> (top-right).</li>
+  <li>At the top, under <strong>Resources to create</strong>, click the <strong>VPC and more</strong> tile (not "VPC only").</li>
+  <li>Fill in:</li>
+</ol>
+<table>
+  <thead><tr><th>Field</th><th>Value</th></tr></thead>
+  <tbody>
+    <tr><td>Name tag auto-generation</td><td>✅ ticked, type <code>maya</code></td></tr>
+    <tr><td>IPv4 CIDR block</td><td><code>10.0.0.0/16</code></td></tr>
+    <tr><td>IPv6 CIDR block</td><td><span class="warn-inline">⚠️</span> click the radio <strong>Amazon-provided IPv6 CIDR block</strong> (default is "No IPv6 CIDR block")</td></tr>
+    <tr><td>Tenancy</td><td>Default</td></tr>
+    <tr><td>Number of Availability Zones (AZs)</td><td><strong>1</strong></td></tr>
+    <tr><td>Number of public subnets</td><td><strong>1</strong></td></tr>
+    <tr><td>Number of private subnets</td><td><strong>0</strong></td></tr>
+    <tr><td>NAT gateways</td><td><strong>None</strong></td></tr>
+    <tr><td>VPC endpoints</td><td><strong>None</strong></td></tr>
+    <tr><td>DNS options</td><td>leave both ticked</td></tr>
+  </tbody>
+</table>
+<ol start="6">
+  <li>Bottom-right → <strong>Create VPC</strong>.</li>
+  <li>Wait for all green ticks → <strong>View VPC</strong>.</li>
+</ol>
+
+<h2>Stage 2 — Turn on Auto-Assign on the Subnet</h2>
+<ol>
+  <li>Left sidebar → <strong>Subnets</strong>.</li>
+  <li>Tick the row named <code>maya-subnet-public1-...</code>.</li>
+  <li>Top-right <strong>Actions</strong> → <strong>Edit subnet settings</strong>.</li>
+  <li>Tick both:
+    <ul>
+      <li>✅ Enable auto-assign public IPv4 address</li>
+      <li>✅ Enable auto-assign IPv6 address</li>
+    </ul>
+  </li>
+  <li><strong>Save</strong>.</li>
+</ol>
+
+<h2>Stage 3 — Check the Route Table</h2>
+<ol>
+  <li>Left sidebar → <strong>Route tables</strong>.</li>
+  <li>Click the one named <code>maya-rtb-public1-...</code>.</li>
+  <li>Bottom panel → <strong>Routes</strong> tab. You must see:</li>
+</ol>
+<table>
+  <thead><tr><th>Destination</th><th>Target</th></tr></thead>
+  <tbody>
+    <tr><td><code>10.0.0.0/16</code></td><td>local</td></tr>
+    <tr><td><code>0.0.0.0/0</code></td><td>igw-…</td></tr>
+    <tr><td><code>::/0</code></td><td>igw-…</td></tr>
+  </tbody>
+</table>
+<ol start="4">
+  <li>If <code>::/0</code> is missing: <strong>Edit routes</strong> → <strong>Add route</strong> → Destination <code>::/0</code> → Target dropdown <strong>Internet Gateway</strong> → pick <code>maya-igw</code> → <strong>Save changes</strong>.</li>
+</ol>
+
+<h2>Stage 4 — Security Group</h2>
+<ol>
+  <li>Search bar → <code>EC2</code> → left sidebar → <strong>Network &amp; Security</strong> → <strong>Security Groups</strong>.</li>
+  <li><strong>Create security group</strong>.</li>
+  <li>Name: <code>maya-sim-sg</code> · Description: <code>maya sim</code> · <strong>VPC</strong>: <span class="warn-inline">⚠️</span> change from default to <strong>maya-vpc</strong>.</li>
+  <li>Under <strong>Inbound rules</strong>, click <strong>Add rule</strong> six times:</li>
+</ol>
+<table>
+  <thead><tr><th>#</th><th>Type</th><th>Port</th><th>Source type</th><th>Source</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>SSH</td><td>22</td><td>Anywhere-IPv4</td><td><code>0.0.0.0/0</code></td></tr>
+    <tr><td>2</td><td>SSH</td><td>22</td><td>Anywhere-IPv6</td><td><code>::/0</code></td></tr>
+    <tr><td>3</td><td>HTTP</td><td>80</td><td>Anywhere-IPv4</td><td><code>0.0.0.0/0</code></td></tr>
+    <tr><td>4</td><td>HTTP</td><td>80</td><td>Anywhere-IPv6</td><td><code>::/0</code></td></tr>
+    <tr><td>5</td><td><strong>Custom TCP</strong></td><td><strong>4059</strong></td><td>Anywhere-IPv6</td><td><code>::/0</code></td></tr>
+    <tr><td>6</td><td><strong>All ICMP - IPv6</strong></td><td>—</td><td>Anywhere-IPv6</td><td><code>::/0</code></td></tr>
+  </tbody>
+</table>
+<ol start="5">
+  <li>Outbound rules: leave as-is.</li>
+  <li><strong>Create security group</strong>.</li>
+</ol>
+
+<h2>Stage 5 — Key Pair</h2>
+<ol>
+  <li>Left sidebar → <strong>Network &amp; Security</strong> → <strong>Key pairs</strong>.</li>
+  <li><strong>Create key pair</strong>.</li>
+  <li>Name <code>maya-key</code> · Type <strong>RSA</strong> · Format <strong>.pem</strong>.</li>
+  <li><strong>Create key pair</strong> → the file downloads (usually <code>C:\Users\ayush\Downloads\maya-key.pem</code>).</li>
+  <li>Move it somewhere permanent, e.g. <code>C:\keys\maya-key.pem</code>. <span class="warn-inline">⚠️</span> It cannot be re-downloaded.</li>
+</ol>
+
+<h2>Stage 6 — Launch the Instance</h2>
+<ol>
+  <li>Left sidebar → <strong>Instances</strong> → orange <strong>Launch instances</strong>.</li>
+  <li><strong>Name</strong>: <code>maya-sim</code></li>
+  <li><strong>Application and OS Images</strong>: click <strong>Ubuntu</strong> tile → in the AMI dropdown pick <strong>Ubuntu Server 24.04 LTS (HVM), SSD Volume Type</strong> → <span class="warn-inline">⚠️</span> Architecture must read <strong>64-bit (x86)</strong>, not Arm.</li>
+  <li><strong>Instance type</strong>: click the dropdown → choose <strong>r7i.xlarge</strong> (32 GB RAM) or <strong>r7i.2xlarge</strong> (64 GB).</li>
+  <li><strong>Key pair (login)</strong>: select <code>maya-key</code>.</li>
+  <li><strong>Network settings</strong> → click <strong>Edit</strong> (top-right of that box). Now set:</li>
+</ol>
+<table>
+  <thead><tr><th>Field</th><th>Value</th></tr></thead>
+  <tbody>
+    <tr><td>VPC</td><td><code>maya-vpc</code></td></tr>
+    <tr><td>Subnet</td><td><code>maya-subnet-public1-...</code></td></tr>
+    <tr><td>Auto-assign public IP</td><td><strong>Enable</strong></td></tr>
+    <tr><td>Auto-assign IPv6 IP</td><td><strong>Enable</strong></td></tr>
+    <tr><td>Firewall</td><td><strong>Select existing security group</strong></td></tr>
+    <tr><td>Common security groups</td><td><code>maya-sim-sg</code></td></tr>
+  </tbody>
+</table>
+<div class="warn">
+  <strong>⚠️ Critical step:</strong> Scroll down inside Network settings → click ▸ <strong>Advanced network configuration</strong> to expand it. Inside the <strong>Network interface 1</strong> block find <strong>IPv6 prefixes</strong>:
+  <ul>
+    <li>Set it to <strong>Auto-assign</strong></li>
+    <li><strong>Number of IPv6 prefixes</strong>: <code>1</code></li>
+  </ul>
+  This is the single step the whole deployment depends on. It exists only here — there is no way to add it from the console after launch.
+</div>
+<ol start="8">
+  <li><strong>Configure storage</strong>: change <code>8</code> to <strong>30</strong> GiB, type <strong>gp3</strong>.</li>
+  <li>Right panel → <strong>Launch instance</strong>.</li>
+  <li><strong>View all instances</strong> → wait for <strong>Instance state: Running</strong> and <strong>Status check: 2/2 checks passed</strong>.</li>
+</ol>
+
+<h2>Stage 7 — Collect 3 Values</h2>
+<ol>
+  <li><strong>Instances</strong> → click your instance → <strong>Networking</strong> tab. Write down:
+    <ul>
+      <li><strong>Public IPv4 address</strong> → call it <code>PUBIP</code></li>
+      <li><strong>IPv6 address</strong> → call it <code>INSTIP</code></li>
+    </ul>
+  </li>
+  <li>Same tab → scroll to <strong>Network interfaces</strong> → click the <strong>Interface ID</strong> link (<code>eni-…</code>).</li>
+  <li>On the ENI page → <strong>Details</strong> tab → find <strong>IPv6 delegated prefixes</strong> (or "IPv6 Prefix Delegation").</li>
+  <li>Copy it exactly, e.g. <code>2406:da1a:1c29:500:bc96::/80</code> → call it <code>NEWPREFIX</code>.
+    <div class="warn">⚠️ If this field is empty, step 6.7 didn't take. Fix without relaunching:
+      <pre><code>aws ec2 assign-ipv6-addresses --network-interface-id eni-XXXXXXXX --ipv6-prefix-count 1</code></pre>
+    </div>
+  </li>
+  <li><code>NEWPREFIX</code> minus the <code>/80</code>, plus <code>1</code> = your first meter address. Example: prefix <code>2406:da1a:1c29:500:bc96::/80</code> → first meter <code>2406:da1a:1c29:500:bc96::1</code>. Call it <code>METER1</code>.</li>
+</ol>
+
+<h2>Stage 8 — Edit 3 Files on Your Windows Machine</h2>
+<p>Open the repo. Change the old prefix to <code>NEWPREFIX</code> in all three:</p>
+<table>
+  <thead><tr><th>File</th><th>Line</th><th>Change to</th></tr></thead>
+  <tbody>
+    <tr><td><code>deploy/appsettings.Production.json</code></td><td>5</td><td><code>"AddressPrefix": "&lt;NEWPREFIX&gt;",</code></td></tr>
+    <tr><td><code>deploy/host-prep.sh</code></td><td>15</td><td><code>METER_PREFIX="&lt;NEWPREFIX&gt;"</code></td></tr>
+    <tr><td><code>deploy/build.ps1</code></td><td>20</td><td>the <code>$ExpectedPrefix</code> default (or pass it in Stage 9)</td></tr>
+  </tbody>
+</table>
+<div class="warn">⚠️ Character-for-character, including the <code>/80</code>.</div>
+
+<h2>Stage 9 — Build</h2>
+<p>Open PowerShell, then:</p>
+<pre><code>cd "C:\Users\ayush\OneDrive\Documents\Development\Sinhal Repos\Meter-Simulator"</code></pre>
+<p>If Stage 8 updated the <code>$ExpectedPrefix</code> default in <code>build.ps1</code>, just run:</p>
+<pre><code>.\deploy\build.ps1</code></pre>
+<p>Otherwise pass it explicitly:</p>
+<pre><code>.\deploy\build.ps1 -ExpectedPrefix '&lt;NEWPREFIX&gt;'</code></pre>
+<p class="expect">Expect: <strong>Passed! Failed: 0, Passed: 50</strong> → <code>prefix OK: &lt;NEWPREFIX&gt;</code> → <code>Built …\publish\maya-sim.tar.gz (≈50 MB, 4 templates)</code>, then the scp/ssh commands printed with the correct host.</p>
+<div class="warn">⚠️ The build <strong>aborts</strong> if <code>appsettings.Production.json</code> and <code>-ExpectedPrefix</code> disagree. That guard only compares those two — if <em>both</em> still hold an old prefix it passes happily and produces a build whose meters are unreachable. Stage 8 must change all three files.</div>
+<p class="expect">Add <code>-SkipTests</code> only if you are in a hurry; it skips the 50-test gate.</p>
+
+<h2>Stage 10 — Lock the Key File</h2>
+<pre><code>icacls "C:\keys\maya-key.pem" /inheritance:r /grant:r "$($env:USERNAME):(R)"</code></pre>
+<div class="warn">⚠️ Point this at the <code>.pem</code> file, never a folder.</div>
+
+<h2>Stage 11 — Upload</h2>
+<pre><code>scp -i "C:\keys\maya-key.pem" publish\maya-sim.tar.gz deploy\host-prep.sh deploy\deploy.sh ubuntu@&lt;PUBIP&gt;:/tmp/</code></pre>
+<p class="expect">Type <code>yes</code> if asked about authenticity. Three progress bars reach 100%.</p>
+
+<h2>Stage 12 — Connect</h2>
+<pre><code>ssh -i "C:\keys\maya-key.pem" ubuntu@&lt;PUBIP&gt;</code></pre>
+<p class="expect">Prompt becomes <code>ubuntu@ip-10-0-…:~$</code>. Everything below runs there.</p>
+
+<h2>Stage 13 — Prepare the Host</h2>
+<p>Installs libicu, the service user, <code>/opt/maya-sim</code>, swap, kernel tuning, the <code>local</code> meter route, the route watchdog, and both systemd units. It is <strong>idempotent</strong> — safe to re-run on a live host, and it does not touch the app or your data.</p>
+<pre><code>sudo bash /tmp/host-prep.sh</code></pre>
+<div class="warn">⚠️ Last line must be <code>OK: the kernel owns the meter prefix.</code><br>If it says <strong>FAIL</strong> → Stage 8 line 15 is wrong. Fix, re-upload, re-run.</div>
+
+<h3>Run it once — then only when one of these is true</h3>
+<table>
+  <thead><tr><th>Situation</th><th>Re-run Stage 13?</th></tr></thead>
+  <tbody>
+    <tr><td>Ordinary redeploy (new app build)</td><td><strong>No</strong> — Stage 14 alone</td></tr>
+    <tr><td><code>host-prep.sh</code> itself changed in the repo</td><td><strong>Yes</strong>, once</td></tr>
+    <tr><td>The meter prefix changed (new instance / new ENI)</td><td><strong>Yes</strong> — the route unit hardcodes it</td></tr>
+    <tr><td>Rebuilt the box from scratch</td><td><strong>Yes</strong></td></tr>
+  </tbody>
+</table>
+
+<div class="warn"><strong>⚠️ One mandatory re-run right now.</strong> <code>host-prep.sh</code> gained a <strong>route watchdog</strong> that does not exist on hosts prepared before it was added. Until you re-run Stage 13 once, the box is still exposed to the failure described below.</div>
+
+<h3>Confirm the watchdog is armed</h3>
+<pre><code>systemctl list-timers maya-meter-route-check --no-pager</code></pre>
+<p class="expect">→ a <strong>NEXT</strong> time within 60 seconds. If the timer is missing, the watchdog did not install — re-run Stage 13.</p>
+
+<div class="note">
+  <strong>Why the watchdog exists.</strong> The <code>local</code> meter route is not owned by netplan/networkd, so anything that reconfigures the interface (DHCPv6 renewal, netplan apply, networkd restart, link flap) silently flushes it. <code>maya-meter-route</code> is <code>Type=oneshot RemainAfterExit=yes</code>, so systemd still reports it <em>active</em> and never re-runs it.<br><br>
+  The symptom is distinctive: <strong>the UI on port 80 keeps working while every meter times out</strong> — and it is a <em>timeout</em>, not "connection refused". A refused connection means the app is down; a timeout with no response means the address is not local, i.e. the route is gone. The watchdog re-asserts it every 60s with <code>ip -6 route replace</code>, which is idempotent and atomic, so recovery is automatic and needs no restart.
+</div>
+
+<h2>Stage 14 — Deploy</h2>
+<pre><code>sudo bash /tmp/deploy.sh /tmp/maya-sim.tar.gz</code></pre>
+<p class="expect">Expect, in order: <code>Re-asserting meter route</code> → <code>active</code> → a log block → listeners on <strong>4059</strong> and <strong>80</strong> → <code>OK: &lt;METER1&gt; resolves as local</code>.</p>
+<div class="warn">⚠️ If the last line reads <code>WARNING: … is NOT local</code>, meters will time out even though the service is <code>active</code> and the UI works. Fix without redeploying:
+  <pre><code>sudo systemctl restart maya-meter-route maya-sim</code></pre>
+</div>
+<div class="note"><strong>Your data survives a redeploy.</strong> <code>deploy.sh</code> replaces only <code>/opt/maya-sim/app/</code>. The siblings <code>data/</code> and <code>logs/</code> are never touched, so <strong>batches</strong> (<code>data/batches.json</code>) and <strong>runtime config</strong> such as the network delay (<code>data/maya-runtime-config.json</code>) both persist. The previous release is kept at <code>app.prev</code> for rollback.</div>
+
+<h2>Stage 15 — Change the Passwords</h2>
+<pre><code>sudo mkdir -p /etc/maya-sim && sudo nano /etc/maya-sim/secrets.env</code></pre>
+<p>Type these three lines (letters/numbers only — no quotes or symbols):</p>
+<pre><code>Auth__AdminPassword=&lt;yourAdminPw&gt;
+Auth__UtilityPassword=&lt;yourUtilityPw&gt;
+Auth__ViewerPassword=&lt;yourViewerPw&gt;</code></pre>
+<p>Save in nano: <code>Ctrl+O</code> → <code>Enter</code> → <code>Ctrl+X</code>.</p>
+<pre><code>sudo chown root:root /etc/maya-sim/secrets.env && sudo chmod 600 /etc/maya-sim/secrets.env && sudo systemctl restart maya-sim</code></pre>
+
+<h2>Stage 16 — Verify in Order</h2>
+<h3>On the instance</h3>
+<pre><code>systemctl is-active maya-sim</code></pre>
+<p class="expect">→ <strong>active</strong></p>
+<pre><code>journalctl -u maya-sim -n 40 --no-pager | grep -i "prefix\|bound"</code></pre>
+<p class="expect">→ shows <code>[::]:4059</code> and your <strong>NEWPREFIX</strong> — <span class="warn-inline">⚠️</span> if it shows <code>fd00:</code> the config didn't ship</p>
+<pre><code>ip -6 route get &lt;METER1&gt;</code></pre>
+<p class="expect">→ the output contains the word <strong>local</strong></p>
+<pre><code>curl -sv --max-time 5 "http://[&lt;METER1&gt;]:4059" 2>&1 | head -5</code></pre>
+<p class="expect">→ <strong>Connected to</strong> (an HTTP error after it is normal — that port speaks DLMS)</p>
+
+<h3>On your laptop (new PowerShell window — this is the test that proves AWS)</h3>
+<pre><code>Test-NetConnection &lt;METER1&gt; -Port 4059</code></pre>
+<p class="expect">→ <strong>TcpTestSucceeded : True</strong></p>
+<p>Then browse to <code>http://&lt;PUBIP&gt;/</code> and log in with your new admin password.</p>
+
+<div class="note"><strong>Reading a failure:</strong> instance checks pass but laptop fails ⇒ the fault is AWS (Stage 6.7 prefix or Stage 4 rule 5), never the app.</div>
+
+<h2>Stage 17 — Create Meters</h2>
+<ol>
+  <li>UI → <strong>Setup</strong> → fill Batch name, Number of meters, DLMS template → <strong>Add batch</strong>.</li>
+  <li><span class="warn-inline">⚠️</span> Click <strong>Start</strong> on the batch row. Meters in a non-started batch are refused.</li>
+  <li>Check the previewed addresses begin with your <strong>NEWPREFIX</strong>.</li>
+  <li>Click the ⬇ download icon on the row for the HES registration CSV.</li>
+</ol>
+<h3>HES / Gurux settings</h3>
+<table>
+  <thead><tr><th>Setting</th><th>Value</th></tr></thead>
+  <tbody>
+    <tr><td>DLMS mode</td><td>WRAPPER over TCP/IP (not HDLC)</td></tr>
+    <tr><td>Port</td><td>4059</td></tr>
+    <tr><td>Server address</td><td>1</td></tr>
+    <tr><td>Max PDU</td><td>65535</td></tr>
+    <tr><td>Auth</td><td>High (HLS)</td></tr>
+    <tr><td>Security</td><td>Authenticated + encrypted, Suite 0</td></tr>
+    <tr><td>System title</td><td><code>53 49 4D 00 00 00 00 01</code></td></tr>
+    <tr><td>GUEK / GAK / HLS</td><td><code>AAAAAAAAAAAAAAAA</code></td></tr>
+    <tr><td>LLS</td><td><code>12345678</code></td></tr>
+  </tbody>
+</table>
+<p class="expect">Confirm the working client address on <strong>one</strong> meter first.</p>
+
+<hr>
+
+<h2>Later Redeploys</h2>
+<p>Only Stages <strong>9 → 11 → 12 → 14</strong>.</p>
+<p>Skip Stage 13 <em>unless</em> <code>host-prep.sh</code> changed in the repo, the meter prefix changed, or the box was rebuilt — see the table in Stage 13. Stage 11 already uploads <code>host-prep.sh</code> alongside the tarball, so re-running it is just one extra command when you do need it.</p>
+<p class="expect">After any redeploy, the 5-second check that the whole chain is live:</p>
+<pre><code>curl -sv --max-time 5 "http://[&lt;METER1&gt;]:4059" 2>&1 | grep -i connected</code></pre>
+<p class="expect">→ <strong>Connected to</strong> means route + socket are both good. Silence means the route is missing (see Stage 13).</p>
+
+<h2>Troubleshooting: UI works but meters time out</h2>
+<p>The most common failure on this deployment. Work down the list — each step rules out a layer.</p>
+<table>
+  <thead><tr><th>Symptom</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td>Connection <strong>refused</strong> (fast)</td><td>App is down or not listening → <code>systemctl status maya-sim</code></td></tr>
+    <tr><td>Connection <strong>times out</strong> (slow, no reply)</td><td>Packet never reached a socket → the <code>local</code> route is gone, or an AWS-side problem</td></tr>
+  </tbody>
+</table>
+<pre><code>ip -6 route show table local | grep 2406</code></pre>
+<p class="expect">→ must list your <code>&lt;NEWPREFIX&gt;</code>. If it does not, that is the fault:</p>
+<pre><code>sudo systemctl restart maya-meter-route maya-sim</code></pre>
+<p>If the route <em>is</em> present and it still times out from your laptop, the fault is AWS, not the host — check the ENI still holds the delegated prefix and that security-group rule 5 (TCP 4059 from <code>::/0</code>) is intact.</p>
+
+<h2>Do NOT Do These</h2>
+<p>Tried in the previous deployment, none delivered traffic:</p>
+<ul>
+  <li>Route-table entry for the meter range</li>
+  <li>IGW edge association</li>
+  <li>A separate subnet for meters</li>
+  <li>Disabling the ENI source/dest check</li>
+</ul>
+<p>Other gotchas:</p>
+<ul>
+  <li>Template filenames are case-sensitive on Linux</li>
+  <li>Stop/start changes <code>PUBIP</code> (prefix and IPv6 survive)</li>
+  <li>"Launch more like this" silently drops the auto-assign settings</li>
+</ul>
+
+<div class="note">Console labels can shift slightly between AWS UI revisions — if a label doesn't match exactly, use the closest equivalent option.</div>
+
+</body>
+</html>

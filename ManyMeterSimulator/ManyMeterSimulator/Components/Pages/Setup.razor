@@ -13,15 +13,25 @@
 @inject MeterSessionManager Sessions
 @inject IOptions<TcpOptions> TcpOptionsAccessor
 @inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject NetworkDelaySettings NetworkDelay
 @inject IJSRuntime JS
 
 <PageTitle>MAYA - Setup</PageTitle>
 
-<MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
-    TCP address prefix: <code>@AddressPrefix</code> &middot; max supported meters:
-    <code>@MeterRegistry.MaxIndex.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</code>
-    &middot; every meter has a node id whatever its NIC; only 4G TCP meters also get an IP
-</MudText>
+<div class="d-flex align-center justify-space-between flex-wrap mb-4" style="gap:12px;">
+    <MudText Typo="Typo.body2" Class="mud-text-secondary">
+        TCP address prefix: <code>@AddressPrefix</code> &middot; max supported meters:
+        <code>@MeterRegistry.MaxIndex.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</code>
+        &middot; every meter has a node id whatever its NIC; only 4G TCP meters also get an IP
+    </MudText>
+
+    @* Network delay lives on the BadComm page now, alongside the other field-condition knobs. *@
+    <MudText Typo="Typo.body2" Class="mud-text-secondary">
+        Network delay: <code>@NetworkDelay.Current.LowerMs&ndash;@NetworkDelay.Current.UpperMs ms</code>
+        <MudLink Href="badcomm" Class="ml-2">Configure</MudLink>
+    </MudText>
+</div>
 
 @if (IsAdmin)
 {
