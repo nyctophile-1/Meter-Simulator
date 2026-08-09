@@ -7,8 +7,12 @@
 @using ManyMeterSimulator.Auth
 @using ManyMeterSimulator.Brain
 @using ManyMeterSimulator.Networking.Nic
+@using ManyMeterSimulator.Networking.Registry
 @using Microsoft.AspNetCore.Components.Forms
 @inject MeterRegistry MeterRegistry
+@inject NetworkRegistry Network
+@inject NetworkBindingValidator Bindings
+@inject NetworkHealthMonitor Health
 @inject TemplateRegistry TemplateRegistry
 @inject MeterSessionManager Sessions
 @inject IOptions<TcpOptions> TcpOptionsAccessor
@@ -17,7 +21,7 @@
 @inject NetworkDelaySettings NetworkDelay
 @inject IJSRuntime JS
 
-<PageTitle>MAYA - Setup</PageTitle>
+<PageTitle>MAYA - Batch Setup</PageTitle>
 
 @* Network delay is deliberately absent here — it lives on the BadComm page with the other
    field-condition knobs, so there is only one place to read or change it. *@
@@ -90,6 +94,38 @@
                                      ? "Optional — needed only for the custom channel"
                                      : "Wirepas only")"
                                  Variant="Variant.Outlined" Margin="Margin.Normal" />
+            </MudItem>
+            @* Both selects are always rendered and disabled when the NIC does not use them — the
+               same reason the HES-template-id field above is: rendering them conditionally reflowed
+               the whole row the moment the NIC changed. "(none)" is a real choice, not a blank
+               default: a batch bound to nothing is a legal, deliberate state. *@
+            <MudItem xs="12" sm="6" md="3">
+                <MudSelect T="string" @bind-Value="SelectedBroker" Label="MQTT broker"
+                           Disabled="@(!NicTypes.IsMqtt(SelectedNic))"
+                           HelperText="@(NicTypes.IsMqtt(SelectedNic)
+                               ? "Unbound meters are never reached"
+                               : "TCP is broker-agnostic")"
+                           Variant="Variant.Outlined" Margin="Margin.Normal">
+                    <MudSelectItem T="string" Value="@UnboundOption">(none — unbound)</MudSelectItem>
+                    @foreach (BrokerEndpoint b in Network.Brokers)
+                    {
+                        <MudSelectItem T="string" Value="@b.Key">@b.Key@(b.Enabled ? "" : " (disabled)")</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <MudSelect T="string" @bind-Value="SelectedPushTarget" Label="HES push target"
+                           Disabled="@(SelectedNic != NicType.Tcp4G)"
+                           HelperText="@(SelectedNic == NicType.Tcp4G
+                               ? "Only needed for push; pulls work regardless"
+                               : "4G TCP only")"
+                           Variant="Variant.Outlined" Margin="Margin.Normal">
+                    <MudSelectItem T="string" Value="@UnboundOption">(none — unbound)</MudSelectItem>
+                    @foreach (PushTargetEndpoint t in Network.PushTargets)
+                    {
+                        <MudSelectItem T="string" Value="@t.Key">@t.Key@(t.Enabled ? "" : " (disabled)")</MudSelectItem>
+                    }
+                </MudSelect>
             </MudItem>
         </MudGrid>
 
@@ -170,6 +206,9 @@ else
                 @* Absorbs all the slack, so the remaining columns stay grouped instead of
                    drifting apart into voids on a wide screen. *@
                 <th class="col-flex">Name</th>
+                @* Where this batch talks, and whether that endpoint is up — the two questions the
+                   detail panel used to hide one click away. *@
+                <th>Comm</th>
                 <th style="text-align:right">Count</th>
                 <th>Status</th>
                 @if (CanOperate)
@@ -195,7 +234,27 @@ else
                             <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">tpl @hesId</MudText>
                         }
                     </td>
-                    <td class="col-flex">@batch.Name</td>
+                    <td class="col-flex">
+                        @batch.Name
+                        @if (NetworkBindingValidator.IsUnreachable(batch))
+                        {
+                            @* Running and bound to nothing: it answers no one, and silence is the
+                               only other symptom. *@
+                            <MudTooltip Text="Running but bound to no broker — its meters are never reached.">
+                                <MudChip T="string" Size="Size.Small" Variant="Variant.Filled" Color="Color.Warning"
+                                         Class="ml-2">unreachable</MudChip>
+                            </MudTooltip>
+                        }
+                    </td>
+                    <td>
+                        @{
+                            (string commLabel, string commColor, string commTitle) = Comm(batch);
+                        }
+                        @* Label wrapped so it can ellipsize — a bare text node cannot. *@
+                        <span class="batch-comm" title="@commTitle">
+                            <span class="legend-dot" style="background:@commColor;"></span><span>@commLabel</span>
+                        </span>
+                    </td>
                     <td style="text-align:right">@batch.Count.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</td>
                     <td>
                         <MudChip T="string" Size="Size.Small" Variant="Variant.Filled" Color="@StatusColor(batch.Status)">
@@ -219,24 +278,33 @@ else
                 </tr>
                 @if (expanded)
                 {
-                    <tr class="batch-detail-row @StatusRowClass(batch.Status)">
-                        <td colspan="@(CanOperate ? 5 : 4)" class="pa-0">
-                            <div class="pa-4">
-                                <MudGrid Spacing="3">
-                                    <MudItem xs="12" sm="6" md="3">
-                                        <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">Meter model</MudText>
+                    @* The panel is part of the same hit target as the row above it: clicking
+                       anywhere in it closes the batch again, so the open state has one obvious way
+                       out instead of forcing a trip back to the header row. Controls inside stop
+                       propagation. *@
+                    <tr class="batch-detail-row @StatusRowClass(batch.Status)"
+                        @onclick="() => ToggleDetails(batch.Id)">
+                        <td colspan="@(CanOperate ? 6 : 5)" class="pa-0">
+                            <div class="batch-detail">
+                                @* One CSS grid for every field, so the label/value rhythm is identical
+                                   across them and the panel does not need per-item margins. Replaced
+                                   MudGrid, whose 12-column items reflowed into a ragged block once a
+                                   fifth field was added. *@
+                                <div class="batch-detail-grid">
+                                    <div class="batch-detail-field">
+                                        <span class="batch-detail-label">Meter model</span>
                                         <code>@batch.TemplateName</code>
-                                    </MudItem>
-                                    <MudItem xs="12" sm="6" md="3">
-                                        <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">Node id range</MudText>
+                                    </div>
+                                    <div class="batch-detail-field">
+                                        <span class="batch-detail-label">Node id range</span>
                                         <code>@firstNode &ndash; @lastNode</code>
-                                    </MudItem>
-                                    <MudItem xs="12" sm="6" md="3">
-                                        <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">Meter# range</MudText>
+                                    </div>
+                                    <div class="batch-detail-field">
+                                        <span class="batch-detail-label">Meter# range</span>
                                         <code>@MeterRegistry.FormatSerial(batch.StartIndex) &ndash; @MeterRegistry.FormatSerial(batch.EndIndex)</code>
-                                    </MudItem>
-                                    <MudItem xs="12" sm="6" md="3">
-                                        <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">IP range</MudText>
+                                    </div>
+                                    <div class="batch-detail-field">
+                                        <span class="batch-detail-label">IP range</span>
                                         @if (batch.NicType == NicType.Tcp4G)
                                         {
                                             (IPAddress firstAddr, IPAddress lastAddr) = MeterRegistry.GetAddressRange(batch, AddressPrefix);
@@ -247,17 +315,34 @@ else
                                             @* Only 4G TCP meters get an IP; the rest are reached by node id. *@
                                             <span class="mud-text-secondary">&mdash; not applicable on @NicLabel(batch.NicType)</span>
                                         }
-                                    </MudItem>
-                                </MudGrid>
+                                    </div>
+                                    @* The binding NAME is on the row above now, so this shows the part
+                                       the row cannot: where that endpoint actually points. *@
+                                    <div class="batch-detail-field">
+                                        <span class="batch-detail-label">Network binding</span>
+                                        <code>@BindingDetail(batch)</code>
+                                    </div>
+                                </div>
 
-                                @* Lives here rather than on the row: it belongs with the
-                                   registration detail it exports. No stopPropagation needed —
-                                   the toggle handler is on .batch-row, not on this detail row. *@
-                                <MudButton Size="Size.Small" Variant="Variant.Outlined" Class="mt-4"
-                                           StartIcon="@Icons.Material.Filled.Download"
-                                           OnClick="() => DownloadCsv(batch.Id)">
-                                    Download meter list (CSV)
-                                </MudButton>
+                                @* Buttons stop propagation: the panel itself collapses on click, and
+                                   an action inside it must not do both. *@
+                                <div class="batch-detail-actions" @onclick:stopPropagation="true">
+                                    <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                                               StartIcon="@Icons.Material.Filled.Download"
+                                               OnClick="() => DownloadCsv(batch.Id)">
+                                        Download meter list (CSV)
+                                    </MudButton>
+                                    @if (IsAdmin)
+                                    {
+                                        @* Admin-only: rebinding redirects live traffic for every meter
+                                           in the batch, so it sits with provisioning, not operation. *@
+                                        <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                                                   StartIcon="@Icons.Material.Filled.Hub"
+                                                   OnClick="() => OpenRebind(batch)">
+                                            Change network binding
+                                        </MudButton>
+                                    }
+                                </div>
                             </div>
                         </td>
                     </tr>
@@ -266,6 +351,46 @@ else
         </tbody>
     </MudSimpleTable>
 }
+
+@* ---------- Rebind dialog (admin only) ---------- *@
+<MudDialog @bind-Visible="_rebindOpen" Options="_rebindOptions">
+    <TitleContent><MudText Typo="Typo.h6">Network binding &mdash; @_rebindBatch?.Name</MudText></TitleContent>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
+            Takes effect immediately: an MQTT batch's traffic moves to the new broker on the next
+            reconcile, with no restart. Choose <em>(none)</em> to leave it connected to nothing.
+        </MudText>
+        @if (_rebindBatch is not null && NicTypes.IsMqtt(_rebindBatch.NicType))
+        {
+            <MudSelect T="string" @bind-Value="_rebindBroker" Label="MQTT broker" Variant="Variant.Outlined">
+                <MudSelectItem T="string" Value="@UnboundOption">(none — unbound)</MudSelectItem>
+                @foreach (BrokerEndpoint b in Network.Brokers)
+                {
+                    <MudSelectItem T="string" Value="@b.Key">@b.Key@(b.Enabled ? "" : " (disabled)")</MudSelectItem>
+                }
+            </MudSelect>
+        }
+        else
+        {
+            <MudSelect T="string" @bind-Value="_rebindPushTarget" Label="HES push target" Variant="Variant.Outlined">
+                <MudSelectItem T="string" Value="@UnboundOption">(none — unbound)</MudSelectItem>
+                @foreach (PushTargetEndpoint t in Network.PushTargets)
+                {
+                    <MudSelectItem T="string" Value="@t.Key">@t.Key@(t.Enabled ? "" : " (disabled)")</MudSelectItem>
+                }
+            </MudSelect>
+        }
+
+        @if (_rebindError is not null)
+        {
+            <MudAlert Severity="Severity.Error" Dense="true" Variant="Variant.Outlined" Class="mt-3">@_rebindError</MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => _rebindOpen = false)">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveRebind">Save</MudButton>
+    </DialogActions>
+</MudDialog>
 
 @code {
     [CascadingParameter]
@@ -280,6 +405,120 @@ else
     private int? HesTemplateId { get; set; }
     private string? ErrorMessage;
     private string? UploadMessage;
+
+    /// <summary>
+    /// The "(none)" select value. Empty string rather than null because MudSelect cannot bind a null
+    /// item; <see cref="MeterRegistry"/> normalizes it straight back to null on the way in.
+    /// </summary>
+    private const string UnboundOption = "";
+
+    private string SelectedBroker { get; set; } = UnboundOption;
+    private string SelectedPushTarget { get; set; } = UnboundOption;
+
+    // ── Rebind dialog ──
+    private readonly DialogOptions _rebindOptions = new() { MaxWidth = MaxWidth.Small, FullWidth = true };
+    private bool _rebindOpen;
+    private MeterBatch? _rebindBatch;
+    private string _rebindBroker = UnboundOption;
+    private string _rebindPushTarget = UnboundOption;
+    private string? _rebindError;
+
+    private static string BindingLabel(string? key, bool exists) => key switch
+    {
+        null or "" => "— none",
+        _ when !exists => $"{key} (MISSING from the registry)",
+        _ => key,
+    };
+
+    /// <summary>
+    /// The row's comm cell: which endpoint this batch talks through, and whether it is up.
+    ///
+    /// <para>
+    /// The dot answers "is that endpoint connected right now" from the health monitor, so the two
+    /// questions asked most often about a batch are both on the collapsed row. Grey is used for
+    /// both unbound and not-yet-checked — neither is a failure, and colouring them red would cry
+    /// wolf on a batch that was provisioned thirty seconds ago.
+    /// </para>
+    /// </summary>
+    private (string Label, string Color, string Title) Comm(MeterBatch batch)
+    {
+        const string Green = "#4ec9b0";
+        const string Red = "#f48771";
+        const string Grey = "#8a8f98";
+
+        bool isMqtt = NicTypes.IsMqtt(batch.NicType);
+        string? key = isMqtt ? batch.BrokerKey : batch.PushTargetKey;
+
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return isMqtt
+                ? ("unbound", Grey, "No broker bound — this batch's meters are never reached.")
+                : ("—", Grey, "No push target bound. Pulls work regardless; only push needs one.");
+        }
+
+        bool exists = isMqtt ? Network.Broker(key) is not null : Network.PushTarget(key) is not null;
+        if (!exists)
+        {
+            return (key, Red, $"'{key}' is not in the network registry.");
+        }
+
+        return Health.For(key).Ok switch
+        {
+            true => (key, Green, $"{key} — connected."),
+            false => (key, Red, $"{key} — {Health.For(key).Error ?? "unreachable"}"),
+            null => (key, Grey, $"{key} — not checked yet."),
+        };
+    }
+
+    /// <summary>Where the bound endpoint actually points — the part the row cannot show.</summary>
+    private string BindingDetail(MeterBatch batch)
+    {
+        if (NicTypes.IsMqtt(batch.NicType))
+        {
+            return Network.Broker(batch.BrokerKey) is { } broker
+                ? $"broker {broker.Describe()}"
+                : $"broker: {BindingLabel(batch.BrokerKey, exists: false)}";
+        }
+
+        return Network.PushTarget(batch.PushTargetKey) is { } target
+            ? $"push target {target.Describe()}"
+            : $"push target: {BindingLabel(batch.PushTargetKey, exists: false)}";
+    }
+
+    private void OpenRebind(MeterBatch batch)
+    {
+        if (!IsAdmin)
+        {
+            return;
+        }
+
+        _rebindBatch = batch;
+        _rebindBroker = batch.BrokerKey ?? UnboundOption;
+        _rebindPushTarget = batch.PushTargetKey ?? UnboundOption;
+        _rebindError = null;
+        _rebindOpen = true;
+    }
+
+    private void SaveRebind()
+    {
+        if (!IsAdmin || _rebindBatch is null)
+        {
+            return;   // defense in depth — the button is admin-gated too
+        }
+
+        string? broker = string.IsNullOrWhiteSpace(_rebindBroker) ? null : _rebindBroker;
+        string? push = string.IsNullOrWhiteSpace(_rebindPushTarget) ? null : _rebindPushTarget;
+
+        if (!Bindings.Validate(_rebindBatch.NicType, broker, push, out string error))
+        {
+            _rebindError = error;
+            return;
+        }
+
+        MeterRegistry.SetNetworkBinding(_rebindBatch.Id, broker, push);
+        _rebindOpen = false;
+        Snackbar.Add($"'{_rebindBatch.Name}' rebound.", Severity.Success);
+    }
 
     private static readonly NicType[] AllNics = Enum.GetValues<NicType>();
 
@@ -366,11 +605,25 @@ else
 
         ErrorMessage = null;
 
+        // Keys only apply to the NIC that uses them — a stale selection left over from switching
+        // the NIC dropdown must not be stored on a batch that can never use it.
+        string? broker = NicTypes.IsMqtt(SelectedNic) && !string.IsNullOrWhiteSpace(SelectedBroker)
+            ? SelectedBroker : null;
+        string? pushTarget = SelectedNic == NicType.Tcp4G && !string.IsNullOrWhiteSpace(SelectedPushTarget)
+            ? SelectedPushTarget : null;
+
+        if (!Bindings.Validate(SelectedNic, broker, pushTarget, out string bindingError))
+        {
+            ErrorMessage = bindingError;
+            return;
+        }
+
         try
         {
             MeterRegistry.AddBatch(
                 BatchName, SelectedTemplate, MeterCount, SelectedNic,
-                NeedsHesTemplateId(SelectedNic) ? HesTemplateId : null);
+                NeedsHesTemplateId(SelectedNic) ? HesTemplateId : null,
+                broker, pushTarget);
             BatchName = "";
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)

@@ -23,6 +23,17 @@ public interface IBatchStore
 /// </summary>
 public sealed record BatchStoreSnapshot
 {
+    /// <summary>
+    /// Schema version of the persisted document. A file written before the network registry existed
+    /// has no such property and therefore deserializes to 0, which is the signal
+    /// <see cref="MeterRegistry.MigrateLegacyBindings"/> uses to bind pre-registry MQTT batches to
+    /// the seeded default broker exactly once (network_registry.md §3.2).
+    /// </summary>
+    public const int CurrentVersion = 1;
+
+    /// <summary>0 means "written before the network registry"; see <see cref="CurrentVersion"/>.</summary>
+    public int Version { get; init; }
+
     public long NextIndex { get; init; } = 1;
 
     public int NextBatchId { get; init; } = 1;
@@ -53,6 +64,15 @@ public sealed record PersistedBatch
     public long Count { get; init; }
 
     public BatchStatus Status { get; init; }
+
+    /// <summary>
+    /// Network registry keys this batch is bound to. Null means unbound — see
+    /// <see cref="MeterBatch.BrokerKey"/>. Absent in a pre-registry file, which deserializes to
+    /// null and is then resolved by the one-time migration rather than left ambiguous.
+    /// </summary>
+    public string? BrokerKey { get; init; }
+
+    public string? PushTargetKey { get; init; }
 
     public DateTimeOffset CreatedAtUtc { get; init; }
 }

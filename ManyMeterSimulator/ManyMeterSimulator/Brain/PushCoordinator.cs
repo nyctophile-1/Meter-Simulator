@@ -1,4 +1,5 @@
 using ManyMeterSimulator.Networking.Nic;
+using ManyMeterSimulator.Networking.Registry;
 using ManyMeterSimulator.Provisioning;
 using MeterSimulator.DLMS;
 using Microsoft.Extensions.Options;
@@ -15,17 +16,20 @@ public sealed class PushCoordinator
 {
     private readonly MeterRegistry _registry;
     private readonly MeterSessionManager _sessions;
+    private readonly NetworkRegistry _network;
     private readonly PushOptions _options;
     private readonly ILogger<PushCoordinator> _logger;
 
     public PushCoordinator(
         MeterRegistry registry,
         MeterSessionManager sessions,
+        NetworkRegistry network,
         IOptions<PushOptions> options,
         ILogger<PushCoordinator> logger)
     {
         _registry = registry;
         _sessions = sessions;
+        _network = network;
         _options = options.Value;
         _logger = logger;
     }
@@ -34,18 +38,26 @@ public sealed class PushCoordinator
     public PushOptions Options => _options;
 
     /// <summary>
-    /// Pushes every meter in a batch to <paramref name="destination"/> ("ip", "ip:port", or
-    /// "[ipv6]:port"). Meters are materialized first so a never-polled batch can still push. Sends run
-    /// concurrently up to <see cref="PushOptions.MaxConcurrency"/>; each meter's push is serialized
-    /// against its own session lock so it can't collide with an in-flight HES pull.
+    /// Pushes every meter in a batch. The destination is the batch's bound push target from the
+    /// network registry; <paramref name="destination"/> overrides it when supplied ("ip", "ip:port",
+    /// or "[ipv6]:port").
+    ///
+    /// <para>
+    /// The override exists because the dashboard box is the bring-up tool — type an address, prove
+    /// the path, then bind it properly — and that button is expected to be hidden once push is
+    /// scheduled. The binding is what a scheduled push will read, so it is the default, not the
+    /// afterthought.
+    /// </para>
+    ///
+    /// <para>
+    /// Meters are materialized first so a never-polled batch can still push. Sends run concurrently
+    /// up to <see cref="PushOptions.MaxConcurrency"/>; each meter's push is serialized against its
+    /// own session lock so it can't collide with an in-flight HES pull.
+    /// </para>
     /// </summary>
-    public async Task<PushBatchResult> PushBatchAsync(int batchId, string destination, CancellationToken cancellationToken = default)
+    public async Task<PushBatchResult> PushBatchAsync(
+        int batchId, string? destination = null, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(destination))
-        {
-            return PushBatchResult.ForError("Enter a push destination IP first.");
-        }
-
         MeterBatch? batch = _registry.Batches.FirstOrDefault(b => b.Id == batchId);
         if (batch is null)
         {
@@ -58,6 +70,13 @@ public sealed class PushCoordinator
             // source identity for the receiver to correlate on.
             return PushBatchResult.ForError($"Push is only supported for 4G TCP batches (batch is {batch.NicType}).");
         }
+
+        if (!TryResolveDestination(batch, destination, out string resolved, out string error))
+        {
+            return PushBatchResult.ForError(error);
+        }
+
+        destination = resolved;
 
         IReadOnlyList<(MeterRef Meter, DLMSServerSession Session)> meters = _sessions.MaterializeBatch(batch);
 
@@ -113,6 +132,69 @@ public sealed class PushCoordinator
 
         return new PushBatchResult(true, meters.Count, metersSent, metersFailed, null);
     }
+
+    /// <summary>
+    /// Where this batch's push goes: the typed override if there is one, otherwise its bound
+    /// registry target.
+    ///
+    /// <para>
+    /// A disabled target is refused rather than silently used. Disabling is the operator saying
+    /// "stop talking to this", and honouring it only for MQTT while push ignored it would make the
+    /// toggle mean two different things on one page.
+    /// </para>
+    /// </summary>
+    private bool TryResolveDestination(MeterBatch batch, string? typed, out string destination, out string error)
+    {
+        error = string.Empty;
+
+        if (!string.IsNullOrWhiteSpace(typed))
+        {
+            destination = typed.Trim();
+            return true;
+        }
+
+        destination = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(batch.PushTargetKey))
+        {
+            error = $"Batch '{batch.Name}' has no push target bound. Bind one on the Network page, " +
+                    "or type a destination.";
+            return false;
+        }
+
+        PushTargetEndpoint? target = _network.PushTarget(batch.PushTargetKey);
+        if (target is null)
+        {
+            error = $"Batch '{batch.Name}' is bound to push target '{batch.PushTargetKey}', which is " +
+                    "not in the network registry.";
+            return false;
+        }
+
+        if (!target.Enabled)
+        {
+            error = $"Push target '{target.Key}' is disabled.";
+            return false;
+        }
+
+        destination = target.Destination;
+        return true;
+    }
+}
+
+/// <summary>
+/// Seam for the scheduled push that replaces the dashboard button (network_registry.md §6).
+///
+/// <para>
+/// Deliberately empty of scheduling logic: it exists now so the eventual timer has an obvious home
+/// and does not reopen <see cref="PushCoordinator"/>, whose job is one batch, once, on demand.
+/// A batch's <see cref="MeterBatch.PushTargetKey"/> is what an implementation will read — the typed
+/// override has no meaning without an operator at the keyboard.
+/// </para>
+/// </summary>
+public interface IPushScheduler
+{
+    /// <summary>Batches that a scheduled push would currently cover: 4G TCP, Running, and bound.</summary>
+    IReadOnlyList<MeterBatch> ScheduledBatches();
 }
 
 /// <summary>Outcome of a "Send Push" click over a whole batch.</summary>

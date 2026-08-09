@@ -20,4 +20,12 @@ public static class NicTypes
     /// </summary>
     public static bool CanServe(NicType transport, NicType provisioned) =>
         TransportFor(provisioned) == TransportFor(transport);
+
+    /// <summary>
+    /// True for the NICs reached through an MQTT broker — the ones that bind to a broker in the
+    /// network registry. Written as "not TCP" rather than a list of four so a NIC added later is
+    /// MQTT by default, which is the safer way to be wrong: a new MQTT NIC that is missed here
+    /// would silently bind to nothing.
+    /// </summary>
+    public static bool IsMqtt(NicType nic) => nic != NicType.Tcp4G;
 }

@@ -25,6 +25,12 @@ public sealed class MeterRegistry
     private int _nextBatchId = 1;
 
     /// <summary>
+    /// Schema version of the store as loaded. 0 means it predates the network registry and still
+    /// needs <see cref="MigrateLegacyBindings"/>.
+    /// </summary>
+    private int _storeVersion;
+
+    /// <summary>
     /// The store is optional so the parameterless-friendly path (unit tests) needs no persistence
     /// wiring; production supplies a <see cref="JsonBatchStore"/> via DI. On construction the
     /// registry rehydrates from the store, so batches, their status, and the allocation cursor
@@ -35,6 +41,19 @@ public sealed class MeterRegistry
         _store = store ?? NullBatchStore.Instance;
         LoadFromStore();
     }
+
+    /// <summary>
+    /// Raised after any mutation that can change which broker clients should exist — a batch added,
+    /// started, stopped, rebound or deleted. The MQTT listener subscribes and reconciles, so a
+    /// Start click takes effect immediately instead of waiting for the next sweep.
+    ///
+    /// <para>
+    /// Always raised OUTSIDE <see cref="_lock"/>: a handler that called back into the registry
+    /// while the lock was held would deadlock, and the listener's handler does exactly that when it
+    /// reads <see cref="Batches"/>.
+    /// </para>
+    /// </summary>
+    public event Action? Changed;
 
     public IReadOnlyList<MeterBatch> Batches
     {
@@ -72,7 +91,23 @@ public sealed class MeterRegistry
     /// Indices are allocated globally and sequentially across ALL batches regardless of NIC, so
     /// node id ranges can never overlap between batches or between NIC types.
     /// </summary>
-    public MeterBatch AddBatch(string name, string templateName, long count, NicType nicType = NicType.Tcp4G, int? hesTemplateId = null)
+    /// <param name="brokerKey">
+    /// Network registry key of the MQTT broker this batch talks through, or null for unbound.
+    /// Stored as an opaque string: this registry deliberately does not depend on
+    /// <see cref="ManyMeterSimulator.Networking.Registry.NetworkRegistry"/> — exactly as it does not
+    /// depend on <see cref="TemplateRegistry"/> for <paramref name="templateName"/> — which is what
+    /// keeps the two registries acyclic. Existence and NIC-kind are checked by
+    /// <c>NetworkBindingValidator</c> at the call site.
+    /// </param>
+    /// <param name="pushTargetKey">Registry key of the HES push listener, or null for unbound.</param>
+    public MeterBatch AddBatch(
+        string name,
+        string templateName,
+        long count,
+        NicType nicType = NicType.Tcp4G,
+        int? hesTemplateId = null,
+        string? brokerKey = null,
+        string? pushTargetKey = null)
     {
         if (count <= 0)
         {
@@ -84,6 +119,7 @@ public sealed class MeterRegistry
             throw new ArgumentException("A batch must be bound to a template.", nameof(templateName));
         }
 
+        MeterBatch added;
         lock (_lock)
         {
             if (_nextIndex + count - 1 > MaxIndex)
@@ -101,12 +137,127 @@ public sealed class MeterRegistry
                 NicType = nicType,
                 HesTemplateId = hesTemplateId,
                 StartIndex = _nextIndex,
-                Count = count
+                Count = count,
+                // Normalized to null so "", "  " and null are one state — unbound — rather than
+                // three that compare differently against a registry key.
+                BrokerKey = Normalize(brokerKey),
+                PushTargetKey = Normalize(pushTargetKey),
             };
             _batches.Add(batch);
             _nextIndex += count;
             Persist();
-            return batch;
+            added = batch;
+        }
+
+        Changed?.Invoke();
+        return added;
+    }
+
+    /// <summary>
+    /// Rebinds a batch to different network endpoints (admin-only at the call site — rebinding
+    /// redirects live traffic for every meter in the batch, so it sits with provisioning rather
+    /// than with operation). Either key may be null, meaning unbound.
+    ///
+    /// <para>
+    /// Returns true if anything actually changed, so the caller can skip a needless reconcile.
+    /// </para>
+    /// </summary>
+    public bool SetNetworkBinding(int batchId, string? brokerKey, string? pushTargetKey)
+    {
+        lock (_lock)
+        {
+            MeterBatch? batch = _batches.FirstOrDefault(b => b.Id == batchId);
+            if (batch is null)
+            {
+                return false;
+            }
+
+            string? broker = Normalize(brokerKey);
+            string? push = Normalize(pushTargetKey);
+
+            if (string.Equals(batch.BrokerKey, broker, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(batch.PushTargetKey, push, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            batch.BrokerKey = broker;
+            batch.PushTargetKey = push;
+            Persist();
+        }
+
+        // Outside the lock: the listener's handler reads Batches, which takes it.
+        Changed?.Invoke();
+        return true;
+    }
+
+    /// <summary>
+    /// One-time migration for a store written before the network registry existed: every MQTT batch
+    /// in it was, by definition, talking to the single configured broker, so it is bound to the
+    /// seeded default entry rather than silently becoming unbound (network_registry.md §3.2).
+    ///
+    /// <para>
+    /// Called once at startup from Program.cs, where both registries exist — that is what lets this
+    /// registry stay independent of the network one. The schema version is bumped whether or not
+    /// anything was bound, so this decision is made exactly once: without that, an operator who
+    /// later created a deliberately-unbound batch and then added a broker named "default" would
+    /// find it silently bound on the next restart.
+    /// </para>
+    /// </summary>
+    /// <param name="defaultBrokerKey">
+    /// The seeded broker to bind to, or null when none exists (nothing is bound, but the store is
+    /// still marked migrated).
+    /// </param>
+    /// <returns>How many batches were bound.</returns>
+    public int MigrateLegacyBindings(string? defaultBrokerKey)
+    {
+        lock (_lock)
+        {
+            if (_storeVersion >= BatchStoreSnapshot.CurrentVersion)
+            {
+                return 0;
+            }
+
+            int bound = 0;
+            if (!string.IsNullOrWhiteSpace(defaultBrokerKey))
+            {
+                foreach (MeterBatch batch in _batches)
+                {
+                    if (NicTypes.IsMqtt(batch.NicType) && batch.BrokerKey is null)
+                    {
+                        batch.BrokerKey = defaultBrokerKey;
+                        bound++;
+                    }
+                }
+            }
+
+            _storeVersion = BatchStoreSnapshot.CurrentVersion;
+            Persist();
+            return bound;
+        }
+    }
+
+    /// <summary>Names of the batches bound to a broker key — used to refuse deleting one in use.</summary>
+    public IReadOnlyList<string> BatchesUsingBroker(string key)
+    {
+        lock (_lock)
+        {
+            return _batches
+                .Where(b => string.Equals(b.BrokerKey, key, StringComparison.OrdinalIgnoreCase))
+                .Select(b => b.Name)
+                .ToArray();
+        }
+    }
+
+    /// <summary>Names of the batches bound to a push target key.</summary>
+    public IReadOnlyList<string> BatchesUsingPushTarget(string key)
+    {
+        lock (_lock)
+        {
+            return _batches
+                .Where(b => string.Equals(b.PushTargetKey, key, StringComparison.OrdinalIgnoreCase))
+                .Select(b => b.Name)
+                .ToArray();
         }
     }
 
@@ -116,18 +267,24 @@ public sealed class MeterRegistry
 
     public bool Delete(int batchId)
     {
+        bool removed;
         lock (_lock)
         {
-            bool removed = _batches.RemoveAll(b => b.Id == batchId) > 0;
+            removed = _batches.RemoveAll(b => b.Id == batchId) > 0;
             if (removed)
             {
                 // Note: _nextIndex is intentionally NOT rolled back — the deleted range is retired,
                 // not reclaimed, so a future batch never reissues those addresses.
                 Persist();
             }
-
-            return removed;
         }
+
+        if (removed)
+        {
+            Changed?.Invoke();
+        }
+
+        return removed;
     }
 
     /// <summary>
@@ -144,6 +301,8 @@ public sealed class MeterRegistry
             _nextBatchId = 1;
             Persist();
         }
+
+        Changed?.Invoke();
     }
 
     /// <summary>The IP address, meter serial for every index in a batch. Lazy - caller controls how many are enumerated/rendered.</summary>
@@ -216,8 +375,12 @@ public sealed class MeterRegistry
 
             batch.Status = status;
             Persist();
-            return true;
         }
+
+        // Start/Stop changes which broker clients should exist, so the listener reconciles now
+        // rather than on its next sweep.
+        Changed?.Invoke();
+        return true;
     }
 
     /// <summary>Rebuilds the in-memory state from the store. Called once, from the constructor.</summary>
@@ -240,12 +403,15 @@ public sealed class MeterRegistry
                     StartIndex = pb.StartIndex,
                     Count = pb.Count,
                     Status = pb.Status,
+                    BrokerKey = pb.BrokerKey,
+                    PushTargetKey = pb.PushTargetKey,
                     CreatedAtUtc = pb.CreatedAtUtc,
                 });
             }
 
             _nextIndex = snapshot.NextIndex;
             _nextBatchId = snapshot.NextBatchId;
+            _storeVersion = snapshot.Version;
         }
     }
 
@@ -254,6 +420,7 @@ public sealed class MeterRegistry
     {
         var snapshot = new BatchStoreSnapshot
         {
+            Version = _storeVersion,
             NextIndex = _nextIndex,
             NextBatchId = _nextBatchId,
             Batches = _batches.Select(b => new PersistedBatch
@@ -266,12 +433,21 @@ public sealed class MeterRegistry
                 StartIndex = b.StartIndex,
                 Count = b.Count,
                 Status = b.Status,
+                BrokerKey = b.BrokerKey,
+                PushTargetKey = b.PushTargetKey,
                 CreatedAtUtc = b.CreatedAtUtc,
             }).ToList(),
         };
 
         _store.Save(snapshot);
     }
+
+    /// <summary>
+    /// Collapses "", whitespace and null into null, so unbound is ONE state rather than three that
+    /// compare differently against a registry key.
+    /// </summary>
+    private static string? Normalize(string? key) =>
+        string.IsNullOrWhiteSpace(key) ? null : key.Trim();
 
     public static string FormatSerial(long index) => $"MY{index:D9}";
 }

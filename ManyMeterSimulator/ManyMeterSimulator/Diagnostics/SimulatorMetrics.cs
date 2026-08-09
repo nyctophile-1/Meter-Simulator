@@ -79,6 +79,14 @@ public sealed class SimulatorMetrics
     /// <summary>A fragment set abandoned because the rest never arrived.</summary>
     public void RecordFragmentTimeout(NicType nic) => Interlocked.Increment(ref For(nic).TotalFragmentTimeouts);
 
+    /// <summary>
+    /// A request that arrived on a different broker than the meter's batch is bound to. It is still
+    /// answered — on the broker it came from, which is what real hardware does — so this is not an
+    /// error counter but the evidence that a binding is wrong. Without it a persistent misbinding is
+    /// merely survivable and permanently invisible (network_registry.md §5.3).
+    /// </summary>
+    public void RecordCrossBrokerMessage(NicType nic) => Interlocked.Increment(ref For(nic).TotalCrossBrokerMessages);
+
     public void RecordExchange(NicType nic, TimeSpan bridgeLatency)
     {
         NicCounters c = For(nic);
@@ -117,7 +125,7 @@ public sealed class SimulatorMetrics
     {
         long accepted = 0, collision = 0, maxConn = 0, notRunning = 0, noTemplate = 0;
         long idle = 0, exchanges = 0, ticksSum = 0, ticksMax = 0;
-        long mailboxFull = 0, malformed = 0, fragTimeouts = 0, ignored = 0;
+        long mailboxFull = 0, malformed = 0, fragTimeouts = 0, ignored = 0, crossBroker = 0;
 
         foreach (NicCounters c in _byNic)
         {
@@ -134,10 +142,11 @@ public sealed class SimulatorMetrics
             malformed += Interlocked.Read(ref c.TotalMalformedPackets);
             fragTimeouts += Interlocked.Read(ref c.TotalFragmentTimeouts);
             ignored += Interlocked.Read(ref c.TotalIgnoredPackets);
+            crossBroker += Interlocked.Read(ref c.TotalCrossBrokerMessages);
         }
 
         return Build(activeConnections, accepted, collision, maxConn, notRunning, noTemplate, idle,
-            exchanges, ticksSum, ticksMax, mailboxFull, malformed, fragTimeouts, ignored);
+            exchanges, ticksSum, ticksMax, mailboxFull, malformed, fragTimeouts, ignored, crossBroker);
     }
 
     /// <summary>Totals for a single NIC. <paramref name="activeConnections"/> is the caller's own count.</summary>
@@ -158,7 +167,8 @@ public sealed class SimulatorMetrics
             Interlocked.Read(ref c.TotalDroppedMailboxFull),
             Interlocked.Read(ref c.TotalMalformedPackets),
             Interlocked.Read(ref c.TotalFragmentTimeouts),
-            Interlocked.Read(ref c.TotalIgnoredPackets));
+            Interlocked.Read(ref c.TotalIgnoredPackets),
+            Interlocked.Read(ref c.TotalCrossBrokerMessages));
     }
 
     /// <summary>Every NIC that has seen any traffic at all — what the periodic summary iterates.</summary>
@@ -187,7 +197,7 @@ public sealed class SimulatorMetrics
     private SimulatorMetricsSnapshot Build(
         int activeConnections, long accepted, long collision, long maxConn, long notRunning,
         long noTemplate, long idle, long exchanges, long ticksSum, long ticksMax,
-        long mailboxFull, long malformed, long fragmentTimeouts, long ignored)
+        long mailboxFull, long malformed, long fragmentTimeouts, long ignored, long crossBroker)
     {
         TimeSpan avgLatency = exchanges == 0 ? TimeSpan.Zero : TimeSpan.FromTicks(ticksSum / exchanges);
 
@@ -208,7 +218,7 @@ public sealed class SimulatorMetrics
         return new SimulatorMetricsSnapshot(
             activeConnections, accepted, collision, maxConn, notRunning, noTemplate,
             idle, exchanges, avgLatency, TimeSpan.FromTicks(ticksMax),
-            mailboxFull, malformed, fragmentTimeouts, ignored,
+            mailboxFull, malformed, fragmentTimeouts, ignored, crossBroker,
             avgNetworkLatency, TimeSpan.FromTicks(Interlocked.Read(ref _networkLatencyMaxTicks)),
             Interlocked.Read(ref _totalNonCommDrops),
             Interlocked.Read(ref _totalBadCommDrops),
@@ -248,6 +258,7 @@ public sealed class SimulatorMetrics
         public long TotalMalformedPackets;
         public long TotalIgnoredPackets;
         public long TotalFragmentTimeouts;
+        public long TotalCrossBrokerMessages;
     }
 }
 
@@ -266,6 +277,8 @@ public readonly record struct SimulatorMetricsSnapshot(
     long TotalMalformedPackets,
     long TotalFragmentTimeouts,
     long TotalIgnoredPackets,
+    /// <summary>Requests answered on a broker other than the one the meter's batch is bound to.</summary>
+    long TotalCrossBrokerMessages,
     // Fleet-wide regardless of which NIC this snapshot describes — see SimulatorMetrics.
     TimeSpan AvgNetworkLatency,
     TimeSpan MaxNetworkLatency,

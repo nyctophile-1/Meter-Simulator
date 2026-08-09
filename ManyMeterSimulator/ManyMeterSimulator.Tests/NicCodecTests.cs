@@ -1,6 +1,7 @@
 using ManyMeterSimulator.Networking.Mqtt;
 using ManyMeterSimulator.Networking.Mqtt.Codecs;
 using ManyMeterSimulator.Networking.Nic;
+using ManyMeterSimulator.Networking.Registry;
 using Xunit;
 
 namespace ManyMeterSimulator.Tests;
@@ -127,35 +128,59 @@ public class NicsOptionsTests
         Assert.Equal(NicType.MqttKmesh, NicsOptions.TransportFor(NicType.MqttKmesh));
     }
 
+    /// <summary>
+    /// Where a NIC connects now comes from the network registry, not config: the endpoint supplies
+    /// identity and credentials, config supplies the timing knobs that are the same whichever
+    /// broker is dialled (network_registry.md §5.6).
+    /// </summary>
     [Fact]
-    public void EnabledTransports_ListsOnlyTheSwitchedOnOnes_AndNeverAnImgEntry()
+    public void ConnectionFor_TakesIdentityFromTheEndpointAndTuningFromConfig()
     {
         var options = new NicsOptions
         {
-            Mqtt4G = new MqttNicOptions { Enabled = true },
-            MqttWirepas = new MqttNicOptions { Enabled = false },
-            MqttKmesh = new MqttNicOptions { Enabled = true },
+            Shared = new SharedNicOptions
+            {
+                Broker = new MqttBrokerOptions
+                {
+                    Host = "seed-only",
+                    ClientIdPrefix = "nicsim",
+                    ReconnectDelaySeconds = 7,
+                    ConnectTimeoutSeconds = 11,
+                },
+            },
         };
 
-        NicType[] enabled = options.EnabledTransports().ToArray();
+        MqttBrokerOptions connection = options.ConnectionFor(new BrokerEndpoint
+        {
+            Key = "pune",
+            Host = "10.9.9.9",
+            Port = 8883,
+            UseTls = true,
+            Username = "meter",
+            Password = "s3cret",
+        });
 
-        Assert.Equal(new[] { NicType.Mqtt4G, NicType.MqttKmesh }, enabled);
-        Assert.DoesNotContain(NicType.Mqtt4GImg, enabled);
+        Assert.Equal("10.9.9.9", connection.Host);
+        Assert.Equal(8883, connection.Port);
+        Assert.True(connection.UseTls);
+        Assert.Equal(7, connection.ReconnectDelaySeconds);
+        Assert.Equal(11, connection.ConnectTimeoutSeconds);
+
+        MqttCredential credential = Assert.Single(connection.Credentials);
+        Assert.Equal("meter", credential.Username);
+        // Labelled with the endpoint key, so the client's "connected as X" line names the registry
+        // row an operator can actually go and edit.
+        Assert.Equal("pune", credential.Name);
     }
 
     [Fact]
-    public void AVariantWithoutItsOwnBrokerUsesTheSharedOne()
+    public void ConnectionFor_AnonymousEndpoint_SendsNoCredentials()
     {
-        var options = new NicsOptions
-        {
-            Shared = new SharedNicOptions { Broker = new MqttBrokerOptions { Host = "shared-host" } },
-            Mqtt4G = new MqttNicOptions { Enabled = true },
-            MqttKmesh = new MqttNicOptions { Enabled = true, Broker = new MqttBrokerOptions { Host = "kmesh-host" } },
-        };
+        var options = new NicsOptions();
 
-        Assert.Equal("shared-host", options.BrokerFor(NicType.Mqtt4G).Host);
-        Assert.Equal("shared-host", options.BrokerFor(NicType.Mqtt4GImg).Host);
-        Assert.Equal("kmesh-host", options.BrokerFor(NicType.MqttKmesh).Host);
+        MqttBrokerOptions connection = options.ConnectionFor(new BrokerEndpoint { Key = "open", Host = "10.0.0.1" });
+
+        Assert.Empty(connection.Credentials);
     }
 }
 

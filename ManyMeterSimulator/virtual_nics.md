@@ -943,12 +943,21 @@ All four funnel into the same logic, so one `FragmentReassembler` serves all of 
 
 ### 14.5 Broker topology — one broker, two credentials
 
+> **Superseded for the simulator — see `network_registry.md`.** The "one broker" finding below is
+> still an accurate reading of THIS HES deployment's config, but it is not a property of the field:
+> RF gateways hold their own broker details and 4G meters carry theirs in OBIS objects, so a real
+> fleet is served by several. The simulator therefore keeps a registry of named brokers and each
+> batch binds to one; `Nics:Shared:Broker` survives only as the seed for the `default` entry and as
+> connection tuning. The two-credential note below is unchanged and still load-bearing — it is why
+> a seeded endpoint keeps the configured credential list as fallbacks.
+
 From `MQTTClientHelper.Connect` (`vayu-common/CrystalHES.Common/MQTTHelper/MQTTClientHelper.cs`) and
 `GenericHelpers.cs` around the `SetMQTTBrokerDetails` command:
 
-- **One broker for all four NIC variants.** `MQTTClientHelper` reads `CrystalHES.Broker*` with an
-  optional key suffix, and the only suffix in use is `_SyncRTCV2` — an unrelated RTC-sync broker.
-  Every pull client (Wirepas, direct-DLMS, TCP, firmware) uses the same unsuffixed settings.
+- **One broker for all four NIC variants** *in this deployment's HES config*. `MQTTClientHelper`
+  reads `CrystalHES.Broker*` with an optional key suffix, and the only suffix in use is
+  `_SyncRTCV2` — an unrelated RTC-sync broker. Every pull client (Wirepas, direct-DLMS, TCP,
+  firmware) uses the same unsuffixed settings.
 - **No TLS.** `CrystalHES.SecureBroker = false` → plaintext on port 1883.
 - **No client-id constraint.** `clientId = Guid.NewGuid().ToString()` with `CleanSession = true`, so
   ids are disposable and there is no duplicate-eviction hazard for our own connections.

@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
+using ManyMeterSimulator.Networking.Mqtt;
+using Microsoft.Extensions.Options;
 using MQTTnet;
 
 namespace ManyMeterSimulator.Networking.Registry;
@@ -18,8 +20,13 @@ namespace ManyMeterSimulator.Networking.Registry;
 public sealed class EndpointProber
 {
     private readonly ILogger<EndpointProber> _logger;
+    private readonly NicsOptions _nics;
 
-    public EndpointProber(ILogger<EndpointProber> logger) => _logger = logger;
+    public EndpointProber(ILogger<EndpointProber> logger, IOptions<NicsOptions> nics)
+    {
+        _logger = logger;
+        _nics = nics.Value;
+    }
 
     /// <summary>
     /// Connects to the broker with the supplied credentials and disconnects again.
@@ -33,18 +40,52 @@ public sealed class EndpointProber
     public async Task<ProbeResult> TestBrokerAsync(
         BrokerEndpoint broker, int timeoutSeconds = 10, CancellationToken cancellationToken = default)
     {
-        MqttClientOptionsBuilder builder = new MqttClientOptionsBuilder()
-            .WithClientId($"nicsim-probe-{Guid.NewGuid():N}")
-            .WithTcpServer(broker.Host, broker.Port)
-            .WithCleanSession(true)
-            .WithTlsOptions(o => o.UseTls(broker.UseTls));
+        // Built through the same mapper the live client uses, so the probe tries EXACTLY the
+        // credentials a real connection would. Anything narrower and the page could report an
+        // endpoint red that the fleet is happily talking to.
+        MqttBrokerOptions connection = _nics.ConnectionFor(broker);
 
-        if (!string.IsNullOrEmpty(broker.Username))
-        {
-            builder = builder.WithCredentials(broker.Username, broker.Password);
-        }
+        List<MqttCredential> candidates = connection.Credentials.Count > 0
+            ? connection.Credentials
+            : new List<MqttCredential> { new() { Name = "anonymous" } };
 
         var stopwatch = Stopwatch.StartNew();
+        string? lastError = null;
+
+        foreach (MqttCredential credential in candidates)
+        {
+            ProbeResult attempt = await TryConnectAsync(broker, connection, credential, timeoutSeconds, cancellationToken);
+            if (attempt.Ok)
+            {
+                stopwatch.Stop();
+                return ProbeResult.Success(stopwatch.Elapsed);
+            }
+
+            lastError = attempt.Error;
+        }
+
+        stopwatch.Stop();
+        return ProbeResult.Fail(lastError ?? "No credentials configured.", stopwatch.Elapsed);
+    }
+
+    private async Task<ProbeResult> TryConnectAsync(
+        BrokerEndpoint broker,
+        MqttBrokerOptions connection,
+        MqttCredential credential,
+        int timeoutSeconds,
+        CancellationToken cancellationToken)
+    {
+        MqttClientOptionsBuilder builder = new MqttClientOptionsBuilder()
+            .WithClientId($"{connection.ClientIdPrefix}-probe-{Guid.NewGuid():N}")
+            .WithTcpServer(connection.Host, connection.Port)
+            .WithCleanSession(true)
+            .WithTlsOptions(o => o.UseTls(connection.UseTls));
+
+        if (!string.IsNullOrEmpty(credential.Username))
+        {
+            builder = builder.WithCredentials(credential.Username, credential.Password);
+        }
+
         using IMqttClient client = new MqttClientFactory().CreateMqttClient();
 
         try
@@ -53,11 +94,10 @@ public sealed class EndpointProber
             timeout.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
 
             MqttClientConnectResult result = await client.ConnectAsync(builder.Build(), timeout.Token);
-            stopwatch.Stop();
 
             if (result.ResultCode != MqttClientConnectResultCode.Success)
             {
-                return ProbeResult.Fail($"Broker refused the connection: {result.ResultCode}", stopwatch.Elapsed);
+                return ProbeResult.Fail($"Broker refused the connection: {result.ResultCode}", TimeSpan.Zero);
             }
 
             // Best-effort tidy disconnect; a broker that took the CONNECT has already answered the
@@ -71,7 +111,7 @@ public sealed class EndpointProber
                 _logger.LogDebug(ex, "Probe of {Broker} could not disconnect cleanly.", broker.Describe());
             }
 
-            return ProbeResult.Success(stopwatch.Elapsed);
+            return ProbeResult.Success(TimeSpan.Zero);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -79,15 +119,13 @@ public sealed class EndpointProber
         }
         catch (OperationCanceledException)
         {
-            stopwatch.Stop();
-            return ProbeResult.Fail($"Timed out after {timeoutSeconds}s.", stopwatch.Elapsed);
+            return ProbeResult.Fail($"Timed out after {timeoutSeconds}s.", TimeSpan.Zero);
         }
         catch (Exception ex)
         {
-            stopwatch.Stop();
             // The real message, not a generic "could not connect" — a wrong password and an
             // unroutable host are the two most common causes and they need different fixes.
-            return ProbeResult.Fail(ex.Message, stopwatch.Elapsed);
+            return ProbeResult.Fail(ex.Message, TimeSpan.Zero);
         }
     }
 

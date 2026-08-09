@@ -70,6 +70,7 @@ builder.Services.Configure<BrainOptions>(builder.Configuration.GetSection(BrainO
 builder.Services.Configure<PushOptions>(builder.Configuration.GetSection(PushOptions.SectionName));
 builder.Services.Configure<PersistenceOptions>(builder.Configuration.GetSection(PersistenceOptions.SectionName));
 builder.Services.Configure<NetworkDelayOptions>(builder.Configuration.GetSection(NetworkDelayOptions.SectionName));
+builder.Services.Configure<NetworkHealthOptions>(builder.Configuration.GetSection(NetworkHealthOptions.SectionName));
 
 // The meter IP prefix is a per-deployment infrastructure value — it must match the IPv6 /64 routed
 // to THIS host. Validate it early so a misconfigured/typo'd/missing prefix fails fast with a clear
@@ -128,6 +129,9 @@ builder.Services.AddSingleton<ISecretProtector, DataProtectionSecretProtector>()
 builder.Services.AddSingleton<INetworkRegistryStore, JsonNetworkRegistryStore>();
 builder.Services.AddSingleton<EndpointProber>();
 builder.Services.AddSingleton<NetworkRegistry>();
+// Registered after MeterRegistry: it is the one place that sees both registries, which is what
+// lets neither of them depend on the other.
+builder.Services.AddSingleton<NetworkBindingValidator>();
 // Depends on both MeterRegistry and BadCommSettings, so it is registered after the batch store.
 builder.Services.AddSingleton<FleetCompositionCache>();
 builder.Services.AddSingleton<TemplateRegistry>();
@@ -154,11 +158,17 @@ builder.Services.AddHostedService<SessionMaintenanceService>();
 // — the difference is meter hardware, not wire protocol). Wirepas/Kmesh carry their node id inside
 // a protobuf payload, so until Phase F/G they can only subscribe and capture, not route.
 builder.Services.AddSingleton<NicCaptureWriter>();
-builder.Services.AddSingleton<INicCodec>(_ => new Mqtt4GCodec(NicType.Mqtt4G));
-builder.Services.AddSingleton<INicCodec, WirepasCodec>();
-builder.Services.AddSingleton<INicCodec, KmeshCodec>();
+// A factory rather than three singletons: each broker binding needs its OWN codec instance, because
+// Wirepas reassembles inbound fragments in per-instance state and two brokers sharing one codec
+// would interleave their fragments into a single buffer (network_registry.md §5.4).
+builder.Services.AddSingleton<NicCodecFactory>();
 builder.Services.AddSingleton<MqttNicListenerService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<MqttNicListenerService>());
+
+// Registered after the listener: for a broker that is IN USE the monitor reports that client's live
+// status rather than probing, since a probe can succeed while the real client is stuck in backoff.
+builder.Services.AddSingleton<NetworkHealthMonitor>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<NetworkHealthMonitor>());
 
 builder.Services
     .AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
@@ -182,6 +192,33 @@ var app = builder.Build();
 // pipeline as everything else, so they obey the level rules and show up in the live-logs UI.
 MeterSimulator.Diagnostics.CoreLog.Configure(
     app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("MeterSimulator.Core"));
+
+// ── Network registry: connect the two registries, then migrate once ──────────────────────────
+// Done here rather than in a constructor because it is the first point at which both exist. The
+// validator is the only object that sees both, so neither registry needs to know about the other.
+{
+    var networkRegistry = app.Services.GetRequiredService<NetworkRegistry>();
+    var meterRegistry = app.Services.GetRequiredService<MeterRegistry>();
+    networkRegistry.SetUsageSource(app.Services.GetRequiredService<NetworkBindingValidator>());
+
+    // A batch store written before the registry existed was, by definition, talking to the single
+    // configured broker — bind those batches to the seeded entry so an upgrade keeps working. The
+    // schema version is bumped either way, so this decision happens exactly once and a later
+    // deliberately-unbound batch is never silently bound (network_registry.md §3.2).
+    string? defaultKey = networkRegistry.Broker(NetworkRegistry.DefaultBrokerKey) is null
+        ? null
+        : NetworkRegistry.DefaultBrokerKey;
+
+    int migrated = meterRegistry.MigrateLegacyBindings(defaultKey);
+    if (migrated > 0)
+    {
+        app.Services.GetRequiredService<ILoggerFactory>()
+            .CreateLogger("ManyMeterSimulator.Networking.Registry")
+            .LogInformation(
+                "Bound {Count} pre-registry MQTT batch(es) to broker '{Broker}'. Change them on the Network page.",
+                migrated, defaultKey);
+    }
+}
 
 if (!app.Environment.IsDevelopment())
 {

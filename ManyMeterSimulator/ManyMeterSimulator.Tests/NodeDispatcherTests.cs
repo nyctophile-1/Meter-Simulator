@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using ManyMeterSimulator.Networking.Registry;
 using ManyMeterSimulator.Networking.Mqtt;
 using ManyMeterSimulator.Networking.Mqtt.Codecs;
 using ManyMeterSimulator.Networking.Nic;
@@ -16,13 +17,26 @@ public class NodeDispatcherTests
 {
     private static readonly INicCodec Codec = new Mqtt4GCodec(NicType.Mqtt4G);
 
+    /// <summary>
+    /// A work item's source binding — where its reply would be published. Constructing the client
+    /// opens no socket, so this is inert here; the dispatcher only carries the reference through.
+    /// </summary>
+    private static readonly BoundBrokerClient Source = new(
+        new BrokerBinding(NicType.Mqtt4G, "test-broker"),
+        new BrokerEndpoint { Key = "test-broker", Host = "localhost" },
+        new MqttNicClient(NullLogger.Instance, NicType.Mqtt4G, new MqttBrokerOptions(), _ => Task.CompletedTask),
+        Codec,
+        new MqttNicOptions(),
+        new CancellationTokenSource());
+
     private static NicWorkItem Item(long index, string tag) =>
         new(new MeterRef(index, NicType.Mqtt4G),
             NicType.Mqtt4G,
             Codec,
             new MqttNicOptions(),
             new NicEnvelope($"PollRequest/{index}", System.Text.Encoding.UTF8.GetBytes(tag), DateTimeOffset.UtcNow),
-            new NicRoute(index.ToString()));
+            new NicRoute(index.ToString()),
+            Source);
 
     private static NodeDispatcher Dispatcher(
         Func<NicWorkItem, CancellationToken, Task> process,

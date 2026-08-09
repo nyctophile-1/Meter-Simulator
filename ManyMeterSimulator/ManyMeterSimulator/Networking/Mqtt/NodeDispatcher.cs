@@ -162,11 +162,23 @@ public sealed class NodeDispatcher
     }
 }
 
-/// <summary>One unit of work: a routed message, ready for admission and the brain funnel.</summary>
+/// <summary>
+/// One unit of work: a routed message, ready for admission and the brain funnel.
+///
+/// <para>
+/// <paramref name="Source"/> is what makes a multi-broker exchange correct. The reply must go back
+/// on the connection the request arrived on — not on a client looked up by transport, which is
+/// ambiguous the moment two brokers serve one — so the originating client travels with the work
+/// item rather than being re-derived later (network_registry.md §5.2). The codec comes along for
+/// the same reason: it belongs to that binding, and its fragment state must not be shared across
+/// brokers.
+/// </para>
+/// </summary>
 public sealed record NicWorkItem(
     MeterRef Meter,
     NicType Transport,
     INicCodec Codec,
     MqttNicOptions Options,
     NicEnvelope Envelope,
-    NicRoute Route);
+    NicRoute Route,
+    BoundBrokerClient Source);

@@ -603,12 +603,71 @@ code {
     background: rgba(244, 135, 113, 0.028);
 }
 
-/* Open row and its panel read as one block. */
+/* Open row and its panel read as one block: same tint, no rule between them, and the panel is part
+   of the same hit target — clicking anywhere in it closes the batch again. Two different greys with
+   a border across the middle made the panel look like a separate table. */
 .batch-row.is-expanded > td {
     background: rgba(255, 255, 255, 0.045);
+    border-bottom-color: transparent;
 }
 
 .batch-detail-row > td {
-    background: rgba(255, 255, 255, 0.02);
+    background: rgba(255, 255, 255, 0.045);
     border-top: 0;
+}
+
+.batch-table tbody tr.batch-detail-row {
+    cursor: pointer;
+}
+
+/* The panel's own padding. The cells above use 14px 16px; the panel needs more room below than
+   above, because it ends in a row of buttons whose own box already carries some. */
+.batch-detail {
+    padding: 4px 16px 20px 16px;
+}
+
+/* Fields lay out on a fixed track width rather than a 12-column split, so adding a field wraps it
+   onto a new line instead of resizing every other one. */
+.batch-detail-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    gap: 18px 28px;
+}
+
+.batch-detail-field {
+    min-width: 0;
+}
+
+.batch-detail-field code {
+    /* Long IPv6 ranges and template names must wrap inside their own cell rather than widening the
+       grid track and pushing the panel into a horizontal scroll. */
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.batch-detail-label {
+    display: block;
+    font-size: 0.75rem;
+    color: #a8adb5;
+    margin-bottom: 3px;
+}
+
+.batch-detail-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 20px;
+}
+
+/* Endpoint + health dot on the collapsed row. */
+.batch-comm {
+    display: inline-flex;
+    align-items: center;
+    max-width: 200px;
+}
+
+.batch-comm > span:not(.legend-dot) {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }

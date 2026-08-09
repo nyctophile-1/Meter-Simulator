@@ -28,11 +28,13 @@
     <MudPaper Elevation="1" Class="pa-3 mb-2">
         <div class="d-flex align-center flex-wrap" style="gap:16px;">
             <MudText Typo="Typo.caption" Class="mud-text-secondary">MQTT brokers</MudText>
-            @foreach ((NicType nic, MqttConnectionStatus status) in _brokerStatuses)
+            @foreach ((BrokerBinding binding, MqttConnectionStatus status) in _brokerStatuses)
             {
                 <div class="d-flex align-center" style="gap:6px;">
                     <span class="legend-dot" style="background:@(status.IsConnected ? "#4ec9b0" : "#f48771");"></span>
-                    <MudText Typo="Typo.body2">@NicLabel(nic)</MudText>
+                    @* Broker name alongside the NIC — with several brokers per transport, the NIC
+                       alone no longer identifies which connection this row is. *@
+                    <MudText Typo="Typo.body2">@NicLabel(binding.Transport) &middot; @binding.BrokerKey</MudText>
                     <MudText Typo="Typo.caption" Class="mud-text-secondary">
                         @if (status.IsConnected)
                         {
@@ -434,7 +436,10 @@
     private long _provisionedMeters;
     private int _runningBatches, _stoppedBatches, _notStartedBatches, _totalBatches;
     private IReadOnlyList<MeterBatch> _batches = Array.Empty<MeterBatch>();
-    private IReadOnlyList<KeyValuePair<NicType, MqttConnectionStatus>> _brokerStatuses = Array.Empty<KeyValuePair<NicType, MqttConnectionStatus>>();
+    // Keyed by binding, not by NIC: several brokers may serve one transport, so a per-NIC row could
+    // only ever show one of them (network_registry.md §5.1).
+    private IReadOnlyList<KeyValuePair<BrokerBinding, MqttConnectionStatus>> _brokerStatuses =
+        Array.Empty<KeyValuePair<BrokerBinding, MqttConnectionStatus>>();
 
     // Cached by FleetCompositionCache: recomputing this walks every provisioned index, so it must
     // not be recalculated on the 2s sample. The cache returns instantly unless config changed.
@@ -453,16 +458,15 @@
 
     private async Task SendPushAsync(int batchId)
     {
-        if (string.IsNullOrWhiteSpace(_pushDestination))
-        {
-            Snackbar.Add("Enter a TCP push IP first.", Severity.Warning);
-            return;
-        }
+        // An empty box is no longer an error: the batch's bound push target is the default, and the
+        // box is the override. PushCoordinator says which one it used, and complains if there is
+        // neither.
+        string? typed = string.IsNullOrWhiteSpace(_pushDestination) ? null : _pushDestination.Trim();
 
         _pushingBatchIds.Add(batchId);
         try
         {
-            PushBatchResult result = await Push.PushBatchAsync(batchId, _pushDestination.Trim());
+            PushBatchResult result = await Push.PushBatchAsync(batchId, typed);
 
             if (!result.Ok)
             {
@@ -470,7 +474,8 @@
             }
             else if (result.Failed == 0)
             {
-                Snackbar.Add($"Pushed {result.Sent} of {result.Total} meter(s) to {_pushDestination.Trim()}.", Severity.Success);
+                string where = typed ?? "its bound push target";
+                Snackbar.Add($"Pushed {result.Sent} of {result.Total} meter(s) to {where}.", Severity.Success);
             }
             else
             {
@@ -503,7 +508,10 @@
         int active = Connections.ActiveCount;
         _snap = Metrics.Snapshot(active);
         _liveMeters = Sessions.LiveMeterCount;
-        _brokerStatuses = MqttListener.ConnectionStatuses.OrderBy(kv => kv.Key).ToArray();
+        _brokerStatuses = MqttListener.ConnectionStatuses
+            .OrderBy(kv => kv.Key.Transport)
+            .ThenBy(kv => kv.Key.BrokerKey, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
 
         IReadOnlyList<MeterBatch> batches = MeterRegistry.Batches;
         _batches = batches;

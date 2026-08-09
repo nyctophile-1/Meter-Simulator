@@ -48,73 +48,107 @@ once 2 lands.
 > already stores a template name without depending on `TemplateRegistry`, which is what keeps the
 > two registries acyclic. Existence/kind validation moves to the UI/service layer in Phase 2.
 
-## Phase 2 — Batch binding
-- [ ] `MeterBatch.BrokerKey` / `MeterBatch.PushTargetKey` (both `string?`)
-- [ ] Same two fields on `PersistedBatch`, plus the load and `Persist()` paths in `MeterRegistry`
-- [ ] `MeterRegistry.AddBatch` takes the two keys as opaque strings; **both may be null (= unbound)**
-- [ ] `NetworkBindingValidator` (has both registries) — a supplied key must exist, be of the right
-      kind for the NIC (broker → MQTT NICs, push target → `Tcp4G`), and is checked at the UI/service
-      layer; see the Phase 1 deviation note
-- [ ] `MeterRegistry.SetNetworkBinding(batchId, brokerKey, pushTargetKey)` — rebinding an existing
-      batch; same validation, persists, and triggers a reconcile so live traffic follows
-- [ ] `NetworkRegistry.Delete` refuses while a batch references the key, and names the batches
-- [ ] **Store migration**: a `batches.json` with no schema version has its MQTT batches bound to the
-      seeded `default` broker and is rewritten once — after which null means unbound (design §3.2)
-- [ ] Unbound MQTT batch is surfaced, not silent: `LogTopicPlan` line, reconcile log, UI chip
+## Phase 2 — Batch binding — DONE
+- [x] `MeterBatch.BrokerKey` / `MeterBatch.PushTargetKey` (both `string?`, settable — rebinding is
+      an admin action on a live batch)
+- [x] Same two fields on `PersistedBatch`, plus `BatchStoreSnapshot.Version` / `CurrentVersion`
+      and the load and `Persist()` paths in `MeterRegistry`
+- [x] `MeterRegistry.AddBatch` takes the two keys as opaque strings; **both may be null (= unbound)**;
+      blank/whitespace normalizes to null so unbound is one state, not three
+- [x] `NicTypes.IsMqtt` — written as "not TCP", so a NIC added later is MQTT by default
+- [x] `NetworkBindingValidator` — key must exist and match the NIC kind; also implements
+      `IEndpointUsageSource`, so it is the single object that sees both registries
+- [x] `MeterRegistry.SetNetworkBinding(batchId, brokerKey, pushTargetKey)` — returns whether
+      anything actually changed, so the caller can skip a needless reconcile
+- [x] `NetworkRegistry.TryDeleteBroker` / `TryDeletePushTarget` refuse while a batch references the
+      key, and name the batches
+- [x] **Store migration**: `MigrateLegacyBindings`, called once from `Program.cs` where both
+      registries exist. Binds pre-registry MQTT batches to the seeded `default`; bumps the schema
+      version **even when there is no default broker**, so a later "default" cannot retroactively
+      bind batches an operator deliberately unbound
+- [x] `NetworkBindingValidator.IsUnreachable` — the running-but-unbound MQTT predicate the
+      `LogTopicPlan` line (Phase 3) and the UI chip (Phase 5) both render
+- [x] Tests: `BatchNetworkBindingTests` (11) + `NetworkBindingValidatorTests` (8) — **19 passing**,
+      full suite 253/253
 
-## Phase 3 — Multi-broker listener (highest risk)
-- [ ] Introduce the `(transport, brokerKey)` binding type; compute desired bindings from running
-      MQTT batches whose broker is **enabled** (design §5.1, §5.6)
-- [ ] `MqttNicListenerService`: key `_clients` by binding instead of `NicType`
-- [ ] `NicWorkItem` carries the originating `MqttNicClient`; `ProcessAsync` publishes on **that**
-      client, not a transport lookup (design §5.2)
-- [ ] Verify IMG still shares the 4G client per broker — one subscription, not two
-- [ ] Audit codec reassembly state for per-binding isolation: `Mqtt4GCodec`, `WirepasCodec`,
-      `KmeshCodec`, `Rf2Framing` (design §5.4)
-- [ ] Cross-broker mismatch: answer on the arriving broker, log a warning, add a
-      `SimulatorMetrics` counter (design §5.3)
-- [ ] Reconcile loop — bindings follow batch/registry changes with no restart; log every client
-      added and removed (design §5.5)
-- [ ] Replace `ConnectionStatuses` with a per-binding status surface; update the dashboard's
-      consumer
-- [ ] Extend `LogTopicPlan` to print the broker each NIC's batches are bound to — the "nothing is
-      happening" diagnostic has to survive the change
-- [ ] Remove `Nics:<transport>:Enabled`, `NicsOptions.EnabledTransports()` and the per-variant
-      `Broker` override; drop the flags from `appsettings.json`
-- [ ] Disabling an endpoint tears its clients down through the normal reconcile pass — no separate
+## Phase 3 — Multi-broker listener — DONE
+- [x] `BrokerBinding(Transport, BrokerKey)` — the type that replaced `NicType` as the client key
+- [x] `BrokerBindingPlanner` — the desired-client rule, extracted as a **pure function** so it can
+      be tested directly; also reports every Running-but-unreachable batch with its reason
+- [x] `MqttNicListenerService`: `_clients` keyed by binding; `BoundBrokerClient` bundles the client,
+      its own codec, its options and its cancellation
+- [x] `NicWorkItem` carries the originating `BoundBrokerClient`; `ProcessAsync` publishes on
+      `item.Source.Client` — never a transport lookup (design §5.2)
+- [x] IMG still shares the 4G client **per broker** — one subscription, not two; a 4G and an IMG
+      batch on *different* brokers correctly get one client each
+- [x] Codec state audited: only `WirepasCodec` holds reassembly state (`(nodeId, frameId)`).
+      Isolated by giving each binding its **own codec instance** via `NicCodecFactory`, rather than
+      threading a binding key through `INicCodec.Decode` and every implementation
+- [x] Cross-broker mismatch: answered on the arriving broker, warned, and counted via
+      `SimulatorMetrics.RecordCrossBrokerMessage` / `TotalCrossBrokerMessages`
+- [x] Reconcile loop — signalled by `NetworkRegistry.Changed` and the new `MeterRegistry.Changed`
+      (raised outside the lock), with a 30s safety-net sweep. Stops before it starts, so a rebind
+      does not hold both connections open
+- [x] `BoundBrokerClient.Matches` — an EDITED broker (rotated password, moved host) keeps its key,
+      so the binding looks unchanged; without this the edit would never take effect
+- [x] `ConnectionStatuses` re-keyed by binding; dashboard row now reads "4G MQTT · pune"
+- [x] `LogTopicPlan` prints the broker each batch is bound to, and says `NO BROKER` /
+      `MISSING from the registry` / `DISABLED` where applicable
+- [x] Removed `Nics:<transport>:Enabled`, `EnabledTransports()`, `BrokerFor()` and the per-variant
+      `Broker` override; `appsettings.json` updated with a note on what replaced them
+- [x] Disabling an endpoint tears its clients down through the normal reconcile pass — no separate
       shutdown path
+- [x] Tests: `BrokerBindingPlannerTests` (11) + `NicCodecFactoryTests` (4), plus `NicCodecTests`
+      rewritten for `ConnectionFor` — **268/268 passing**
 
-## Phase 4 — Push targets
-- [ ] `PushCoordinator` resolves the destination from `batch.PushTargetKey`; explicit destination
-      argument still wins when supplied
-- [ ] Clear error when a TCP batch has no push target and none was typed
-- [ ] `IPushScheduler` seam — interface + DI registration only, no scheduling logic yet
+> **Not covered by a test**: that a reply is physically published on the originating connection.
+> The routing is structural (the client travels on the work item and `ProcessAsync` has no other
+> client to reach for), but proving it end-to-end needs two live brokers — an integration test, not
+> a unit one. Worth doing against the EQA broker before this ships.
 
-## Phase 5 — UI
-- [ ] **Permissions per design §7.0**: view = any authenticated; add / edit / delete / enable /
+## Phase 4 — Push targets — DONE
+- [x] `PushCoordinator` resolves the destination from `batch.PushTargetKey`; the typed argument
+      still wins when supplied, and is now optional rather than required
+- [x] Clear error when a TCP batch has no push target and none was typed; also when the bound key
+      is missing from the registry, or its endpoint is disabled
+- [x] Dashboard's push button no longer demands a typed IP — an empty box uses the binding
+- [x] `IPushScheduler` seam — interface only, no scheduling logic
+- [x] Tests: `PushDestinationTests` (5) — **273/273 passing**
+
+## Phase 5 — UI — DONE
+- [x] **Permissions per design §7.0**: view = any authenticated; add / edit / delete / enable /
       disable an endpoint = **Admin**; change a batch's binding = **Admin**; *Test now* = Utility+.
       Control hidden **and** handler re-checks the role, as `Setup.razor` already does
-- [ ] `Components/Pages/NetworkRegistry.razor` at `/network`, `[Authorize]`, `InteractiveServer`
-- [ ] Nav entry in `Components/Layout/MainLayout.razor` (icon: `Icons.Material.Filled.Hub`)
-- [ ] *Add broker* dialog — host, port, username, password, TLS toggle, label; tests before saving,
+- [x] `Components/Pages/NetworkRegistryPage.razor` at `/network`, `[Authorize]`, `InteractiveServer`
+- [x] Nav entry in `Components/Layout/MainLayout.razor` (`Icons.Material.Filled.Hub`)
+- [x] *Add broker* dialog — host, port, username, password, TLS toggle, name; tests before saving,
       shows the real failure text, admin-only "save unverified"
-- [ ] *Add push target* dialog — IPv6 address, port, label; same test-then-save flow
-- [ ] Health table — key, kind, endpoint, state chip, last checked, last error, referencing batch
-      count; timer refresh + per-row *Test now*
-- [ ] Per-row *Enable / Disable* toggle, with the effect stated (clients torn down / brought up)
-- [ ] Delete action, blocked and explained when referenced
-- [ ] `Setup.razor`: broker select (MQTT NICs) and push-target select (`Tcp4G`), always rendered,
+- [x] **Edit broker** dialog (not in the original plan, added after live testing): a bound broker
+      cannot be deleted, so without Edit a wrong password on an in-use endpoint was unfixable from
+      the UI. Name is locked; a blank password keeps the stored one and is never rendered back
+- [x] *Add push target* dialog — IPv6 address, port, name; same test-then-save flow
+- [x] Health table — name, endpoint, state chip, last checked, last error, referencing batch count;
+      5s re-render of what the monitor already found + per-row *Test now*
+- [x] Four-state chip — Disabled / Unverified / Connected / Unreachable — rather than one dot that
+      would collapse "switched off", "never reached" and "failing right now"
+- [x] Per-row *Enable / Disable* toggle, with the effect stated
+- [x] Delete action, blocked and explained when referenced
+- [x] `Setup.razor`: broker select (MQTT NICs) and push-target select (`Tcp4G`), always rendered,
       disabled when not applicable, with an explicit **"(none — unbound)"** option
-- [ ] Show the bound broker / push target in the batch detail panel, with an admin-only *Change*
-      action calling `SetNetworkBinding`
-- [ ] Warning chip on an MQTT batch row that is Running but unbound
-- [ ] Styles in `wwwroot/css/site.css` reusing the existing status-accent row classes
+- [x] Batch detail panel shows the binding (and flags a key MISSING from the registry), with an
+      admin-only *Change network binding* dialog calling `SetNetworkBinding`
+- [x] `unreachable` chip on an MQTT batch row that is Running but unbound
+- [x] Reused the existing `batch-table` / `is-running` / `is-stopped` / `is-idle` classes — no new CSS
 
-## Phase 6 — Health monitoring
-- [ ] `NetworkHealthOptions` — probe interval (default 60s), probe timeout
-- [ ] `NetworkHealthMonitor : BackgroundService` — live `MqttNicClient.Status` for in-use brokers,
+## Phase 6 — Health monitoring — DONE
+- [x] `NetworkHealthOptions` — interval (default 60s, floored at 10s), timeout
+- [x] `NetworkHealthMonitor : BackgroundService` — live `MqttNicClient.Status` for in-use brokers,
       `EndpointProber` for idle brokers and all push targets (design §7.1)
-- [ ] Snapshot surface the page reads without triggering probes of its own
+- [x] Disabled endpoints are not probed — reporting a healthy broker the operator switched off is
+      worse than reporting nothing
+- [x] `EndpointHealth.Ok` is **nullable**: "not checked yet" is a third state, and collapsing it
+      into false shows a brand-new endpoint as broken
+- [x] Snapshot surface the page reads without triggering probes of its own
 
 ## Phase 7 — Tests
 - [ ] `JsonNetworkRegistryStore` round-trip; corrupt file throws rather than starting empty
@@ -134,9 +168,12 @@ once 2 lands.
 - [ ] IPv4 push target rejected
 
 ## Phase 8 — Documentation
-- [ ] `appsettings.json` sample updated; note that broker details now live in the registry
-- [ ] `virtual_nics.md` §14.5 updated — the "one broker serves all four variants" statement no
-      longer holds
+- [x] `appsettings.json` sample updated; note that broker details now live in the registry, and
+      what replaced the removed `Enabled` flags
+- [x] `virtual_nics.md` §14.5 updated — the "one broker serves all four variants" statement is now
+      marked as a reading of THIS HES config, not a property of the field. The two-credential note
+      is unchanged and still load-bearing (it is why a seeded endpoint keeps config credentials as
+      fallbacks)
 - [ ] `Components/Pages/Documentation.razor` — how to add a broker / push target and bind a batch
 - [ ] Deployment note: `data/network.json` **and `data/keys/`** join `data/batches.json` as files
       that must survive a redeploy — losing the keys folder makes every stored password
