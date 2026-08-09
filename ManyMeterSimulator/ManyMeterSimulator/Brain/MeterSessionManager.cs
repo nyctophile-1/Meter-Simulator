@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using System.Net;
+using ManyMeterSimulator.Networking;
 using ManyMeterSimulator.Networking.Nic;
 using ManyMeterSimulator.Provisioning;
 using MeterSimulator.DLMS;
@@ -27,6 +29,7 @@ public sealed class MeterSessionManager
     private readonly MeterRegistry _meterRegistry;
     private readonly TemplateRegistry _templates;
     private readonly BrainOptions _options;
+    private readonly TcpOptions _tcpOptions;
     private readonly ILogger<MeterSessionManager> _logger;
 
     // Lazy so each meter's session is constructed exactly once even under concurrent first-touch.
@@ -36,11 +39,13 @@ public sealed class MeterSessionManager
         MeterRegistry meterRegistry,
         TemplateRegistry templates,
         IOptions<BrainOptions> options,
+        IOptions<TcpOptions> tcpOptions,
         ILogger<MeterSessionManager> logger)
     {
         _meterRegistry = meterRegistry;
         _templates = templates;
         _options = options.Value;
+        _tcpOptions = tcpOptions.Value;
         _logger = logger;
     }
 
@@ -87,8 +92,15 @@ public sealed class MeterSessionManager
 
         var meter = new DLMSMeter(meterRef.Index, _options.LogicalName, _options.ClientAddress, _options.ServerAddress);
 
-        // Push is deferred: pushConfig null → no push timer is wired (see merge_task.md #12/#15).
-        var session = new DLMSServerSession(meter, templatePath, pushConfig: null);
+        // For TCP meters the source address of an outbound push MUST be the meter's own IPv6 (the
+        // same address HES pulls from) so the receiver correlates the push by source IP. MQTT meters
+        // have no per-meter IP, so no source binding. The periodic-timer PushConfig stays null —
+        // push is on-demand (the dashboard "Send Push" button drives DLMSServerSession.PushNow).
+        IPAddress? sourceAddress = meterRef.Nic == NicType.Tcp4G
+            ? MeterAddressing.ComputeAddress(_tcpOptions.AddressPrefix, meterRef.Index)
+            : null;
+
+        var session = new DLMSServerSession(meter, templatePath, pushConfig: null, sourceAddress: sourceAddress);
         session.Initialize(true);
 
         _logger.LogDebug(
@@ -98,14 +110,25 @@ public sealed class MeterSessionManager
         return session;
     }
 
-    // ── Push-readiness seam (merge_task.md #15) — intentionally NOT implemented in this phase ──
     /// <summary>
-    /// Eagerly materialize every meter in a batch so they are "live" WITHOUT an inbound HES
-    /// connection — required by the future push scheduler, since a Started batch must push on its
-    /// own schedule regardless of whether HES is polling. Deferred; the seam exists so adding push
-    /// later needs no change to the inbound path.
+    /// Eagerly materializes every meter in a batch so they are "live" WITHOUT an inbound HES
+    /// connection, returning each meter paired with its session. The push path needs this because a
+    /// meter with no prior HES pull has no session yet — there'd be nothing to push from. Building a
+    /// session is the same idempotent first-touch as the inbound path (<see cref="GetOrCreate"/>), so
+    /// calling this for a batch already being polled just returns the existing instances.
     /// </summary>
-    public void MaterializeBatch(int batchId) =>
-        throw new NotImplementedException(
-            "Push-readiness seam: eager batch materialization is deferred (see merge_task.md #15).");
+    public IReadOnlyList<(MeterRef Meter, DLMSServerSession Session)> MaterializeBatch(MeterBatch batch)
+    {
+        var result = new List<(MeterRef, DLMSServerSession)>();
+        for (long index = batch.StartIndex; index <= batch.EndIndex; index++)
+        {
+            var meter = new MeterRef(index, batch.NicType);
+            result.Add((meter, GetOrCreate(meter)));
+        }
+
+        _logger.LogDebug("Materialized {Count} meter session(s) for batch {BatchId} ({BatchName})",
+            result.Count, batch.Id, batch.Name);
+
+        return result;
+    }
 }

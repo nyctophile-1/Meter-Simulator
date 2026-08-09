@@ -65,6 +65,7 @@ builder.Services.Configure<SimulatedBridgeOptions>(builder.Configuration.GetSect
 builder.Services.Configure<AuthOptions>(builder.Configuration.GetSection(AuthOptions.SectionName));
 builder.Services.Configure<TemplateOptions>(builder.Configuration.GetSection(TemplateOptions.SectionName));
 builder.Services.Configure<BrainOptions>(builder.Configuration.GetSection(BrainOptions.SectionName));
+builder.Services.Configure<PushOptions>(builder.Configuration.GetSection(PushOptions.SectionName));
 builder.Services.Configure<PersistenceOptions>(builder.Configuration.GetSection(PersistenceOptions.SectionName));
 builder.Services.Configure<NetworkDelayOptions>(builder.Configuration.GetSection(NetworkDelayOptions.SectionName));
 
@@ -109,6 +110,7 @@ builder.Services.AddSingleton<MeterRegistry>();
 builder.Services.AddSingleton<FleetCompositionCache>();
 builder.Services.AddSingleton<TemplateRegistry>();
 builder.Services.AddSingleton<MeterSessionManager>();
+builder.Services.AddSingleton<PushCoordinator>();
 
 // Bridge selection: the real in-process brain (default) or the echo stand-in (framing only).
 string bridgeMode = builder.Configuration.GetValue("Brain:Mode", "Brain") ?? "Brain";
