@@ -13,6 +13,16 @@ public static class NicTopics
     public const string Direct4GRequestFilter = "PollRequest/#";
     public const string Direct4GResponsePrefix = "PollResponse/";
 
+    /// <summary>
+    /// Direct-4G normal-data PUSH: meter → HES on <c>Normal_Push/{nodeId}</c>. HES subscribes
+    /// <c>Normal_Push/#</c> and reads the node id as <c>topic.Split('/')[1]</c> (vayu-core
+    /// MQTTDataReceiverDirectDLMSClient). Unlike the pull response, the payload is the BARE DLMS
+    /// wrapper DataNotification — HES sets the whole MQTT payload as the reply buffer with no framing
+    /// header to strip. Event push uses <c>Event_push/{nodeId}</c>; only normal push is emitted here.
+    /// </summary>
+    public const string Direct4GNormalPushPrefix = "Normal_Push/";
+    public const string Direct4GEventPushPrefix = "Event_push/";
+
     // ── RF Wirepas (variant a) — node id is inside the protobuf payload ──
     // HES publishes to gw-request/send_data/{gatewayId}/{sinkId}.
     public const string WirepasRequestFilter = "gw-request/send_data/#";

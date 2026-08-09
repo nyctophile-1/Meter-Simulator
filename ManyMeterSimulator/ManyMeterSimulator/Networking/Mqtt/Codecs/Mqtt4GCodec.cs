@@ -129,6 +129,26 @@ public sealed class Mqtt4GCodec : INicCodec
     }
 
     /// <summary>
+    /// Direct-4G push: the BARE DLMS DataNotification on <c>Normal_Push/{nodeId}</c>.
+    ///
+    /// <para>
+    /// No 6-byte framing header, unlike the pull response. HES's push receiver
+    /// (<c>MQTTDataReceiverDirectDLMSClient</c>) sets the ENTIRE MQTT payload as the DLMS reply
+    /// buffer and parses it as a WRAPPER frame — there is nothing to strip. This is the one place the
+    /// push and pull wire formats differ for 4G.
+    /// </para>
+    /// </summary>
+    public IReadOnlyList<NicPublish> EncodePush(string nodeId, ReadOnlyMemory<byte> dlmsPush)
+    {
+        if (dlmsPush.IsEmpty)
+        {
+            return Array.Empty<NicPublish>();
+        }
+
+        return new[] { new NicPublish(NicTopics.Direct4GNormalPushPrefix + nodeId, dlmsPush.ToArray()) };
+    }
+
+    /// <summary>
     /// Builds a single-fragment message: the 6-byte header then the DLMS wrapper frame verbatim.
     ///
     /// Always one fragment. The simulator has no radio to constrain it, and HES's reassembly is
