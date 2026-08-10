@@ -42,14 +42,14 @@ public sealed class ConfigBundleService
     private readonly NetworkRegistry _network;
     private readonly BadCommSettings _badComm;
     private readonly NetworkDelaySettings _networkDelay;
-    private readonly PushScheduleService _pushSchedule;
+    private readonly PushScheduleService? _pushSchedule;
 
     public ConfigBundleService(
         MeterRegistry batches,
         NetworkRegistry network,
         BadCommSettings badComm,
         NetworkDelaySettings networkDelay,
-        PushScheduleService pushSchedule)
+        PushScheduleService? pushSchedule = null)
     {
         _batches = batches;
         _network = network;
@@ -133,7 +133,7 @@ public sealed class ConfigBundleService
     /// </summary>
     public string ExportTesting(string? from = null)
     {
-        PushScheduleState state = _pushSchedule.State;
+        PushScheduleState state = _pushSchedule?.State ?? new PushScheduleState(false, Array.Empty<int>(), PushScheduleService.AllowedIntervalMinutes[0], null, null, null);
         IReadOnlyDictionary<int, string> names = _batches.Batches.ToDictionary(b => b.Id, b => b.Name);
 
         var file = new TestingFile
@@ -180,7 +180,7 @@ public sealed class ConfigBundleService
                 "None of the file's batches exist here. Create or import them first, then re-import the schedule.");
         }
 
-        _pushSchedule.Start(resolved, file.IntervalMinutes);
+        _pushSchedule?.Start(resolved, file.IntervalMinutes);
         return new TestingImportResult(resolved.Count, missing);
     }
 
