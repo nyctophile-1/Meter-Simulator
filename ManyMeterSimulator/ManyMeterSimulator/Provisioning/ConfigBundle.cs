@@ -5,6 +5,7 @@ using ManyMeterSimulator.Brain;
 using ManyMeterSimulator.Networking;
 using ManyMeterSimulator.Networking.Registry;
 using ManyMeterSimulator.Settings;
+using ManyMeterSimulator.Testing;
 
 namespace ManyMeterSimulator.Provisioning;
 
@@ -37,25 +38,29 @@ public sealed class ConfigBundleService
     public const string NetworkKind = "maya.network";
     public const string BadCommKind = "maya.badcomm";
     public const string TestingKind = "maya.testing";
+    public const string TestPlansKind = "maya.testplans";
 
     private readonly MeterRegistry _batches;
     private readonly NetworkRegistry _network;
     private readonly BadCommSettings _badComm;
     private readonly NetworkDelaySettings _networkDelay;
     private readonly PushScheduleService? _pushSchedule;
+    private readonly TestPlanRegistry? _testPlans;
 
     public ConfigBundleService(
         MeterRegistry batches,
         NetworkRegistry network,
         BadCommSettings badComm,
         NetworkDelaySettings networkDelay,
-        PushScheduleService? pushSchedule = null)
+        PushScheduleService? pushSchedule = null,
+        TestPlanRegistry? testPlans = null)
     {
         _batches = batches;
         _network = network;
         _badComm = badComm;
         _networkDelay = networkDelay;
         _pushSchedule = pushSchedule;
+        _testPlans = testPlans;
     }
 
     // ── Batches ────────────────────────────────────────────────────────────────────────────────
@@ -82,7 +87,8 @@ public sealed class ConfigBundleService
     public (int Brokers, int PushTargets) PreviewNetwork(string json)
     {
         NetworkRegistrySnapshot s = Parse<NetworkRegistrySnapshot>(json, NetworkKind);
-        return (s.Brokers.Count, s.PushTargets.Count);
+        int envs = s.Environments.Count > 0 ? s.Environments.Count : s.Brokers.Count + s.PushTargets.Count;
+        return (envs, 0);
     }
 
     public (int Brokers, int PushTargets) ImportNetwork(string json)
@@ -90,7 +96,10 @@ public sealed class ConfigBundleService
         NetworkRegistrySnapshot snapshot = Parse<NetworkRegistrySnapshot>(json, NetworkKind);
         ValidateUniqueEndpointKeys(snapshot);
         _network.ImportSnapshot(snapshot);
-        return (snapshot.Brokers.Count, snapshot.PushTargets.Count);
+        int envs = snapshot.Environments.Count > 0
+            ? snapshot.Environments.Count
+            : snapshot.Brokers.Count + snapshot.PushTargets.Count;
+        return (envs, 0);
     }
 
     // ── BadComm (field-impairment knobs: the bad-comm config plus the network delay) ─────────────
@@ -184,6 +193,79 @@ public sealed class ConfigBundleService
         return new TestingImportResult(resolved.Count, missing);
     }
 
+    // ── Test plans ──────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Exports test plans as portable JSON. Batch IDs (deployment-specific ints) are translated to
+    /// names so the file can be imported on a different deployment.
+    /// </summary>
+    public string ExportTestPlans(string? from = null)
+    {
+        var registry = _testPlans ?? throw new InvalidOperationException("TestPlanRegistry is not registered.");
+        Dictionary<int, string> nameById = _batches.Batches.ToDictionary(b => b.Id, b => b.Name);
+
+        var portable = registry.Plans.Select(p => new PortableTestPlan
+        {
+            Id = p.Id,
+            Name = p.Name,
+            IsBasePlan = p.IsBasePlan,
+            PushIntervalSec = p.PushIntervalSec,
+            CollectionDurationMin = p.CollectionDurationMin,
+            EnvironmentKeys = p.EnvironmentKeys.ToList(),
+            BatchNames = p.BatchIds.Where(nameById.ContainsKey).Select(id => nameById[id]).ToList(),
+            LockedFields = p.LockedFields.ToHashSet(),
+        }).ToList();
+
+        return Serialize(TestPlansKind, from, portable);
+    }
+
+    public int PreviewTestPlans(string json) => Parse<List<PortableTestPlan>>(json, TestPlansKind).Count;
+
+    /// <summary>
+    /// Imports test plans, resolving batch names to IDs on this deployment. Non-base plans that
+    /// have batches not found here still import — they just won't have those batch bindings.
+    /// </summary>
+    public (int Imported, int Missing) ImportTestPlans(string json)
+    {
+        var registry = _testPlans ?? throw new InvalidOperationException("TestPlanRegistry is not registered.");
+        List<PortableTestPlan> portable = Parse<List<PortableTestPlan>>(json, TestPlansKind);
+
+        Dictionary<string, int> idByName = _batches.Batches
+            .ToDictionary(b => b.Name, b => b.Id, StringComparer.OrdinalIgnoreCase);
+
+        int missingTotal = 0;
+        var resolved = portable.Select(p =>
+        {
+            var batchIds = new List<int>();
+            foreach (string name in p.BatchNames)
+            {
+                if (idByName.TryGetValue(name, out int id))
+                {
+                    batchIds.Add(id);
+                }
+                else
+                {
+                    missingTotal++;
+                }
+            }
+
+            return new TestPlan
+            {
+                Id = p.Id,
+                Name = p.Name,
+                IsBasePlan = p.IsBasePlan,
+                PushIntervalSec = p.PushIntervalSec,
+                CollectionDurationMin = p.CollectionDurationMin,
+                EnvironmentKeys = p.EnvironmentKeys,
+                BatchIds = batchIds,
+                LockedFields = p.LockedFields,
+            };
+        }).ToList();
+
+        registry.ImportSnapshot(resolved);
+        return (resolved.Count, missingTotal);
+    }
+
     // ── Shared ───────────────────────────────────────────────────────────────────────────────────
 
     private static string Serialize<T>(string kind, string? from, T payload) =>
@@ -228,6 +310,7 @@ public sealed class ConfigBundleService
         NetworkKind => "Network Setup",
         BadCommKind => "BadComm Setup",
         TestingKind => "Testing",
+        TestPlansKind => "Test Plans",
         _ => kind ?? "unknown",
     };
 
@@ -294,3 +377,19 @@ public sealed record TestingFile
 
 /// <summary>What importing a testing schedule actually applied.</summary>
 public readonly record struct TestingImportResult(int Resolved, IReadOnlyList<string> Missing);
+
+/// <summary>
+/// Portable form of a <see cref="ManyMeterSimulator.Testing.TestPlan"/>: batch IDs replaced with
+/// names so the file is meaningful on a different deployment.
+/// </summary>
+public sealed record PortableTestPlan
+{
+    public string Id { get; init; } = "";
+    public string Name { get; init; } = "";
+    public bool IsBasePlan { get; init; }
+    public int PushIntervalSec { get; init; } = 300;
+    public int CollectionDurationMin { get; init; } = 15;
+    public List<string> EnvironmentKeys { get; init; } = new();
+    public List<string> BatchNames { get; init; } = new();
+    public HashSet<string> LockedFields { get; init; } = new();
+}

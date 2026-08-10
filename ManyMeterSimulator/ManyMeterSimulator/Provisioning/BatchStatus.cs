@@ -5,6 +5,9 @@ public enum BatchStatus
     /// <summary>Reserved (IP + meter-number range allocated) but not yet accepting connections.</summary>
     NotStarted,
 
+    /// <summary>Materializing meter sessions in background before moving to Running.</summary>
+    Starting,
+
     /// <summary>Active - meters in this batch accept connections.</summary>
     Running,
 

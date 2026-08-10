@@ -17,32 +17,28 @@
 @inject ISnackbar Snackbar
 @implements IDisposable
 
-<PageTitle>MAYA - Network Setup</PageTitle>
+<PageTitle>MAYA - Environments</PageTitle>
 
 <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
-    MQTT brokers and HES push listeners the fleet talks to. A batch binds to one of each &mdash; or
-    to neither. An endpoint is only accepted once we have actually connected to it, and a broker
-    client runs when a <strong>Running</strong> batch references an <strong>enabled</strong> broker.
-    Health refreshes every @Health.IntervalSeconds s.
+    HES environments: each combines an MQTT broker and a TCP push listener into one entry that
+    batches bind to. An environment is only accepted once we have connected to at least one of its
+    halves. Health refreshes every @Health.IntervalSeconds s.
 </MudText>
 
 @if (IsAdmin)
 {
     <div class="d-flex align-center flex-wrap mb-4" style="gap:8px;">
         <MudButton Variant="Variant.Filled" Color="Color.Primary"
-                   StartIcon="@Icons.Material.Filled.Hub" OnClick="OpenAddBroker">Add broker</MudButton>
-        <MudButton Variant="Variant.Filled" Color="Color.Primary"
-                   StartIcon="@Icons.Material.Filled.CallReceived" OnClick="OpenAddPushTarget">Add push target</MudButton>
+                   StartIcon="@Icons.Material.Filled.AddCircleOutline" OnClick="OpenAddEnvironment">Add environment</MudButton>
     </div>
 }
 
-@* ══════════ Brokers ══════════ *@
-<MudText Typo="Typo.h6" Class="mb-2">MQTT brokers (@Brokers.Count)</MudText>
+<MudText Typo="Typo.h6" Class="mb-2">Environments (@Environments.Count)</MudText>
 
-@if (Brokers.Count == 0)
+@if (Environments.Count == 0)
 {
     <MudText Typo="Typo.body2" Class="mud-text-secondary mb-6">
-        None yet. MQTT batches cannot be reached until one exists.
+        None yet. Batches cannot reach a network until an environment exists.
     </MudText>
 }
 else
@@ -50,10 +46,11 @@ else
     <MudSimpleTable Hover="true" Dense="true" Bordered="false" Class="batch-table mb-6">
         <thead>
             <tr>
-                <th>Name</th>
-                <th class="col-flex">Endpoint</th>
+                <th>Name / Key</th>
+                <th>TCP push</th>
+                <th>MQTT broker</th>
                 <th>State</th>
-                <th>Last checked</th>
+                <th>Last verified</th>
                 <th style="text-align:right">Used by</th>
                 @if (CanOperate)
                 {
@@ -62,46 +59,66 @@ else
             </tr>
         </thead>
         <tbody>
-            @foreach (BrokerEndpoint broker in Brokers)
+            @foreach (HesEnvironment env in Environments)
             {
-                EndpointHealth health = Health.For(broker.Key);
-                <tr class="batch-row @HealthRowClass(broker.Enabled, health)">
-                    <td><code>@broker.Key</code></td>
-                    <td class="col-flex">
-                        @broker.Host:@broker.Port
-                        @if (broker.UseTls)
+                EndpointHealth health = Health.For(env.Key);
+                <tr class="batch-row @HealthRowClass(env.Enabled, health)">
+                    <td>
+                        <span><strong>@env.DisplayName</strong></span>
+                        @if (!string.IsNullOrWhiteSpace(env.Name))
                         {
-                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Class="ml-2">TLS</MudChip>
-                        }
-                        @if (!string.IsNullOrEmpty(broker.Username))
-                        {
-                            <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">user @broker.Username</MudText>
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary d-block"><code>@env.Key</code></MudText>
                         }
                     </td>
-                    <td>@StateCell(broker.Enabled, broker.Verified, health)</td>
+                    <td>
+                        @if (env.HasTcp)
+                        {
+                            <code style="color:@HalfColor(health)">@env.TcpHost:@env.TcpPort</code>
+                        }
+                        else
+                        {
+                            <span class="mud-text-secondary">&mdash;</span>
+                        }
+                    </td>
+                    <td>
+                        @if (env.HasBroker)
+                        {
+                            <span style="color:@HalfColor(health)">@env.BrokerHost:@env.BrokerPort</span>
+                            @if (env.BrokerUseTls)
+                            {
+                                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Class="ml-1">TLS</MudChip>
+                            }
+                            @if (!string.IsNullOrEmpty(env.BrokerUsername))
+                            {
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">user @env.BrokerUsername</MudText>
+                            }
+                        }
+                        else
+                        {
+                            <span class="mud-text-secondary">&mdash;</span>
+                        }
+                    </td>
+                    <td>@StateCell(env.Enabled, env.Verified, health)</td>
                     <td>
                         <MudText Typo="Typo.caption" Class="mud-text-secondary">@Ago(health.CheckedUtc)</MudText>
                     </td>
-                    <td style="text-align:right">@MeterRegistry.BatchesUsingBroker(broker.Key).Count</td>
+                    <td style="text-align:right">@MeterRegistry.BatchesUsingEnvironment(env.Key).Count</td>
                     @if (CanOperate)
                     {
                         <td style="text-align:right">
                             <MudButton Size="Size.Small" Variant="Variant.Outlined"
-                                       Disabled="@_testing.Contains(broker.Key)"
-                                       OnClick="() => TestBrokerAsync(broker)">Test now</MudButton>
+                                       Disabled="@_testing.Contains(env.Key)"
+                                       OnClick="() => TestEnvironmentAsync(env)">Test</MudButton>
                             @if (IsAdmin)
                             {
-                                @* Edit, not just delete: a bound broker cannot be deleted, so
-                                   without this a wrong password on an in-use endpoint would be
-                                   unfixable from the UI. *@
                                 <MudButton Size="Size.Small" Variant="Variant.Outlined" Class="ml-1"
-                                           OnClick="() => OpenEditBroker(broker)">Edit</MudButton>
+                                           OnClick="() => OpenEditEnvironment(env)">Edit</MudButton>
                                 <MudButton Size="Size.Small" Variant="Variant.Outlined" Class="ml-1"
-                                           OnClick="() => ToggleBroker(broker)">
-                                    @(broker.Enabled ? "Disable" : "Enable")
+                                           OnClick="() => ToggleEnvironment(env)">
+                                    @(env.Enabled ? "Disable" : "Enable")
                                 </MudButton>
                                 <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Error" Class="ml-1"
-                                           OnClick="() => DeleteBrokerAsync(broker)">Delete</MudButton>
+                                           OnClick="() => DeleteEnvironmentAsync(env)">Delete</MudButton>
                             }
                         </td>
                     }
@@ -111,91 +128,55 @@ else
     </MudSimpleTable>
 }
 
-@* ══════════ Push targets ══════════ *@
-<MudText Typo="Typo.h6" Class="mb-2">HES push targets (@PushTargets.Count)</MudText>
-
-@if (PushTargets.Count == 0)
-{
-    <MudText Typo="Typo.body2" Class="mud-text-secondary mb-6">
-        None yet. 4G TCP batches still answer pulls normally &mdash; only push needs a target.
-    </MudText>
-}
-else
-{
-    <MudSimpleTable Hover="true" Dense="true" Bordered="false" Class="batch-table mb-6">
-        <thead>
-            <tr>
-                <th>Name</th>
-                <th class="col-flex">Destination</th>
-                <th>State</th>
-                <th>Last checked</th>
-                <th style="text-align:right">Used by</th>
-                @if (CanOperate)
-                {
-                    <th style="text-align:right">Actions</th>
-                }
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (PushTargetEndpoint target in PushTargets)
-            {
-                EndpointHealth health = Health.For(target.Key);
-                <tr class="batch-row @HealthRowClass(target.Enabled, health)">
-                    <td><code>@target.Key</code></td>
-                    <td class="col-flex"><code>@target.Destination</code></td>
-                    <td>@StateCell(target.Enabled, target.Verified, health)</td>
-                    <td>
-                        <MudText Typo="Typo.caption" Class="mud-text-secondary">@Ago(health.CheckedUtc)</MudText>
-                    </td>
-                    <td style="text-align:right">@MeterRegistry.BatchesUsingPushTarget(target.Key).Count</td>
-                    @if (CanOperate)
-                    {
-                        <td style="text-align:right">
-                            <MudButton Size="Size.Small" Variant="Variant.Outlined"
-                                       Disabled="@_testing.Contains(target.Key)"
-                                       OnClick="() => TestPushTargetAsync(target)">Test now</MudButton>
-                            @if (IsAdmin)
-                            {
-                                <MudButton Size="Size.Small" Variant="Variant.Outlined" Class="ml-1"
-                                           OnClick="() => TogglePushTarget(target)">
-                                    @(target.Enabled ? "Disable" : "Enable")
-                                </MudButton>
-                                <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Error" Class="ml-1"
-                                           OnClick="() => DeletePushTargetAsync(target)">Delete</MudButton>
-                            }
-                        </td>
-                    }
-                </tr>
-            }
-        </tbody>
-    </MudSimpleTable>
-}
-
-@* ---------- Add broker ---------- *@
-<MudDialog @bind-Visible="_brokerDialogOpen" Options="_dialogOptions">
+@* ---------- Add / Edit environment dialog ---------- *@
+<MudDialog @bind-Visible="_envDialogOpen" Options="_dialogOptions">
     <TitleContent>
-        <MudText Typo="Typo.h6">@(_editingBroker ? "Edit MQTT broker" : "Add MQTT broker")</MudText>
+        <MudText Typo="Typo.h6">@(_editingEnv ? "Edit environment" : "Add environment")</MudText>
     </TitleContent>
     <DialogContent>
         <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
-            We connect with these details before saving. The name is what batches bind to and cannot
-            be changed &mdash; renaming would orphan every batch pointing at it.
-            @if (_editingBroker)
+            An environment pairs an MQTT broker and a TCP push listener. Either half may be left
+            blank. We test each configured half before saving; a key cannot be renamed after creation.
+            @if (_editingEnv)
             {
-                <text> The password is never shown back; leave it blank to keep the stored one.</text>
+                <text> Leave the broker password blank to keep the stored one.</text>
             }
         </MudText>
         <MudGrid Spacing="2">
+            <MudItem xs="12" sm="6">
+                <MudTextField T="string" @bind-Value="_envKey" Immediate="true" Label="Key"
+                              Placeholder="e.g. pune-hes" Variant="Variant.Outlined"
+                              Disabled="@_editingEnv"
+                              Error="@(!_editingEnv && _envKey.Length > 0 && !Network.IsKeyAvailable(_envKey))"
+                              ErrorText="That key is already taken." />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudTextField T="string" @bind-Value="_envName" Label="Display name (optional)"
+                              Placeholder="e.g. Pune HES Primary" Variant="Variant.Outlined" />
+            </MudItem>
+
+            @* TCP push section *@
             <MudItem xs="12">
-                <MudTextField T="string" @bind-Value="_brokerKey" Immediate="true" Label="Name"
-                              Placeholder="e.g. pune-gw" Variant="Variant.Outlined"
-                              Disabled="@_editingBroker"
-                              Error="@(!_editingBroker && _brokerKey.Length > 0 && !Network.IsKeyAvailable(_brokerKey))"
-                              ErrorText="That name is already taken." />
+                <MudText Typo="Typo.subtitle2" Class="mb-1">TCP push endpoint</MudText>
+            </MudItem>
+            <MudItem xs="8">
+                <MudTextField T="string" @bind-Value="_tcpHost" Immediate="true" Label="IPv6 address"
+                              Placeholder="fd00::1 (blank = not configured)" Variant="Variant.Outlined"
+                              Error="@(_tcpHost.Length > 0 && !TcpAddressLooksValid)"
+                              ErrorText="@TcpAddressError" />
+            </MudItem>
+            <MudItem xs="4">
+                <MudNumericField T="int" @bind-Value="_tcpPort" Min="1" Max="65535" Label="Port"
+                                 Variant="Variant.Outlined" />
+            </MudItem>
+
+            @* MQTT broker section *@
+            <MudItem xs="12">
+                <MudText Typo="Typo.subtitle2" Class="mb-1">MQTT broker</MudText>
             </MudItem>
             <MudItem xs="8">
                 <MudTextField T="string" @bind-Value="_brokerHost" Immediate="true" Label="Host"
-                              Placeholder="10.0.0.1 or broker.example.com" Variant="Variant.Outlined" />
+                              Placeholder="10.0.0.1 or broker.example.com (blank = not configured)" Variant="Variant.Outlined" />
             </MudItem>
             <MudItem xs="4">
                 <MudNumericField T="int" @bind-Value="_brokerPort" Min="1" Max="65535" Label="Port"
@@ -203,7 +184,7 @@ else
             </MudItem>
             <MudItem xs="6">
                 <MudTextField T="string" @bind-Value="_brokerUser" Label="Username"
-                              HelperText="Leave blank to connect anonymously" Variant="Variant.Outlined" />
+                              HelperText="Leave blank for anonymous" Variant="Variant.Outlined" />
             </MudItem>
             <MudItem xs="6">
                 <MudTextField T="string" @bind-Value="_brokerPassword" Label="Password"
@@ -216,57 +197,8 @@ else
 
         @if (_dialogError is not null)
         {
-            <MudAlert Severity="Severity.Error" Dense="true" Variant="Variant.Outlined" Class="mt-3">
-                @_dialogError
-            </MudAlert>
-            @if (IsAdmin)
-            {
-                @* A broker may genuinely be down at provisioning time. Saving it unverified is a
-                   deliberate, visible state — not the same as one that has connected. *@
-                <MudCheckBox T="bool" @bind-Value="_saveUnverified" Color="Color.Warning" Dense="true"
-                             Label="Save anyway, unverified" Class="mt-1" />
-            }
-        }
-    </DialogContent>
-    <DialogActions>
-        <MudButton OnClick="@(() => _brokerDialogOpen = false)" Disabled="@_saving">Cancel</MudButton>
-        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(_saving || !CanSaveBroker)"
-                   OnClick="SaveBrokerAsync">
-            @(_saving ? "Testing…" : _saveUnverified ? "Save unverified" : "Test and save")
-        </MudButton>
-    </DialogActions>
-</MudDialog>
-
-@* ---------- Add push target ---------- *@
-<MudDialog @bind-Visible="_pushDialogOpen" Options="_dialogOptions">
-    <TitleContent><MudText Typo="Typo.h6">Add HES push target</MudText></TitleContent>
-    <DialogContent>
-        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
-            The IPv6 address and port of the HES TCP listener that 4G TCP meters push to. We open a
-            connection to it before saving, and send nothing.
-        </MudText>
-        <MudGrid Spacing="2">
-            <MudItem xs="12">
-                <MudTextField T="string" @bind-Value="_pushKey" Immediate="true" Label="Name"
-                              Placeholder="e.g. hes-primary" Variant="Variant.Outlined"
-                              Error="@(_pushKey.Length > 0 && !Network.IsKeyAvailable(_pushKey))"
-                              ErrorText="That name is already taken." />
-            </MudItem>
-            <MudItem xs="8">
-                <MudTextField T="string" @bind-Value="_pushAddress" Immediate="true" Label="IPv6 address"
-                              Placeholder="fd00::1" Variant="Variant.Outlined"
-                              Error="@(_pushAddress.Length > 0 && !AddressLooksValid)"
-                              ErrorText="@AddressError" />
-            </MudItem>
-            <MudItem xs="4">
-                <MudNumericField T="int" @bind-Value="_pushPort" Min="1" Max="65535" Label="Port"
-                                 Variant="Variant.Outlined" />
-            </MudItem>
-        </MudGrid>
-
-        @if (_dialogError is not null)
-        {
-            <MudAlert Severity="Severity.Error" Dense="true" Variant="Variant.Outlined" Class="mt-3">
+            <MudAlert Severity="Severity.Error" Dense="true" Variant="Variant.Outlined" Class="mt-3"
+                      Style="word-break:break-word;overflow-wrap:anywhere;">
                 @_dialogError
             </MudAlert>
             @if (IsAdmin)
@@ -277,9 +209,9 @@ else
         }
     </DialogContent>
     <DialogActions>
-        <MudButton OnClick="@(() => _pushDialogOpen = false)" Disabled="@_saving">Cancel</MudButton>
-        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(_saving || !CanSavePushTarget)"
-                   OnClick="SavePushTargetAsync">
+        <MudButton OnClick="@(() => _envDialogOpen = false)" Disabled="@_saving">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(_saving || !CanSaveEnvironment)"
+                   OnClick="SaveEnvironmentAsync">
             @(_saving ? "Testing…" : _saveUnverified ? "Save unverified" : "Test and save")
         </MudButton>
     </DialogActions>
@@ -292,47 +224,40 @@ else
     private ClaimsPrincipal? _user;
     private Timer? _refresh;
 
-    // Admin gates every mutation, here and in each handler. The page itself is open to any
-    // authenticated user, so hiding a control is not on its own enough — same pattern as Setup.
     private bool IsAdmin => _user?.IsInRole(AppRoles.Admin) ?? false;
     private bool CanOperate => _user?.IsInRole(AppRoles.Utility) ?? false;
 
-    private IReadOnlyList<BrokerEndpoint> Brokers => Network.Brokers;
-    private IReadOnlyList<PushTargetEndpoint> PushTargets => Network.PushTargets;
+    private IReadOnlyList<HesEnvironment> Environments => Network.Environments;
 
     private readonly DialogOptions _dialogOptions = new() { MaxWidth = MaxWidth.Small, FullWidth = true };
     private readonly HashSet<string> _testing = new(StringComparer.OrdinalIgnoreCase);
 
-    private bool _brokerDialogOpen, _pushDialogOpen, _saving, _saveUnverified;
-
-    /// <summary>Edit mode reuses the add dialog: same fields, same test-before-save rule.</summary>
-    private bool _editingBroker;
-
+    private bool _envDialogOpen, _saving, _saveUnverified;
+    private bool _editingEnv;
     private string? _dialogError;
 
-    private string _brokerKey = "", _brokerHost = "", _brokerUser = "", _brokerPassword = "";
+    // Form state
+    private string _envKey = "", _envName = "";
+    private string _tcpHost = "";
+    private int _tcpPort = 4059;
+    private string _brokerHost = "", _brokerUser = "", _brokerPassword = "";
     private int _brokerPort = 1883;
     private bool _brokerTls;
 
-    private string _pushKey = "", _pushAddress = "";
-    private int _pushPort = 4059;
+    private bool CanSaveEnvironment =>
+        _envKey.Trim().Length > 0
+        && (_editingEnv || Network.IsKeyAvailable(_envKey.Trim()))
+        && (_tcpHost.Length == 0 || TcpAddressLooksValid)
+        && (_tcpHost.Length > 0 || _brokerHost.Trim().Length > 0);
 
-    private bool CanSaveBroker =>
-        _brokerKey.Trim().Length > 0
-        && _brokerHost.Trim().Length > 0
-        && (_editingBroker || Network.IsKeyAvailable(_brokerKey.Trim()));
+    private bool TcpAddressLooksValid =>
+        PushTargetEndpoint.TryParseAddress(_tcpHost, out _, out _);
 
-    private bool CanSavePushTarget =>
-        _pushKey.Trim().Length > 0 && AddressLooksValid && Network.IsKeyAvailable(_pushKey.Trim());
-
-    private bool AddressLooksValid =>
-        PushTargetEndpoint.TryParseAddress(_pushAddress, out _, out _);
-
-    private string AddressError
+    private string TcpAddressError
     {
         get
         {
-            PushTargetEndpoint.TryParseAddress(_pushAddress, out _, out string error);
+            PushTargetEndpoint.TryParseAddress(_tcpHost, out _, out string error);
             return error;
         }
     }
@@ -345,8 +270,6 @@ else
             _user = state.User;
         }
 
-        // The monitor probes on its own schedule; this only re-renders what it has already found,
-        // so the page never triggers a probe by being open.
         _refresh = new Timer(
             _ => InvokeAsync(StateHasChanged),
             null,
@@ -356,80 +279,56 @@ else
 
     public void Dispose() => _refresh?.Dispose();
 
-    // ── Import / export whole config ───────────────────────────────────────────────────────────
-
-    // ── Add ──────────────────────────────────────────────────────────────────────────────────
-
-    private void OpenAddBroker()
+    private void OpenAddEnvironment()
     {
-        if (!IsAdmin)
-        {
-            return;
-        }
+        if (!IsAdmin) return;
 
-        _editingBroker = false;
-        _brokerKey = _brokerHost = _brokerUser = _brokerPassword = "";
+        _editingEnv = false;
+        _envKey = _envName = _tcpHost = _brokerHost = _brokerUser = _brokerPassword = "";
+        _tcpPort = 4059;
         _brokerPort = 1883;
         _brokerTls = false;
         _dialogError = null;
         _saveUnverified = false;
-        _brokerDialogOpen = true;
+        _envDialogOpen = true;
     }
 
-    private void OpenEditBroker(BrokerEndpoint broker)
+    private void OpenEditEnvironment(HesEnvironment env)
     {
-        if (!IsAdmin)
-        {
-            return;
-        }
+        if (!IsAdmin) return;
 
-        _editingBroker = true;
-        _brokerKey = broker.Key;
-        _brokerHost = broker.Host;
-        _brokerPort = broker.Port;
-        _brokerUser = broker.Username;
-        // Deliberately blank: an edit replaces the password, it never reveals it. Blank on save
-        // means "keep what is stored".
-        _brokerPassword = "";
-        _brokerTls = broker.UseTls;
+        _editingEnv = true;
+        _envKey = env.Key;
+        _envName = env.Name;
+        _tcpHost = env.TcpHost;
+        _tcpPort = env.TcpPort;
+        _brokerHost = env.BrokerHost;
+        _brokerPort = env.BrokerPort;
+        _brokerUser = env.BrokerUsername;
+        _brokerPassword = "";   // never round-trip the password
+        _brokerTls = env.BrokerUseTls;
         _dialogError = null;
         _saveUnverified = false;
-        _brokerDialogOpen = true;
+        _envDialogOpen = true;
     }
 
-    private void OpenAddPushTarget()
+    private async Task SaveEnvironmentAsync()
     {
-        if (!IsAdmin)
+        if (!IsAdmin) return;
+
+        HesEnvironment? existing = _editingEnv ? Network.Environment(_envKey) : null;
+
+        var env = new HesEnvironment
         {
-            return;
-        }
-
-        _pushKey = _pushAddress = "";
-        _pushPort = 4059;
-        _dialogError = null;
-        _saveUnverified = false;
-        _pushDialogOpen = true;
-    }
-
-    private async Task SaveBrokerAsync()
-    {
-        if (!IsAdmin)
-        {
-            return;   // defense in depth — the button is hidden, this should be unreachable
-        }
-
-        BrokerEndpoint? existing = _editingBroker ? Network.Broker(_brokerKey) : null;
-
-        var broker = new BrokerEndpoint
-        {
-            Key = _brokerKey.Trim(),
-            Host = _brokerHost.Trim(),
-            Port = _brokerPort,
-            Username = _brokerUser.Trim(),
-            // Blank on an edit means "keep the stored password" — the field starts empty because
-            // the stored one is never rendered back.
-            Password = _brokerPassword.Length > 0 ? _brokerPassword : existing?.Password ?? "",
-            UseTls = _brokerTls,
+            Key = _envKey.Trim(),
+            Name = _envName.Trim(),
+            TcpHost = _tcpHost.Trim().Trim('[', ']'),
+            TcpPort = _tcpPort,
+            BrokerHost = _brokerHost.Trim(),
+            BrokerPort = _brokerPort,
+            BrokerUsername = _brokerUser.Trim(),
+            BrokerPassword = _brokerPassword.Length > 0 ? _brokerPassword : existing?.BrokerPassword ?? "",
+            BrokerUseTls = _brokerTls,
             CreatedAtUtc = existing?.CreatedAtUtc ?? DateTimeOffset.UtcNow,
         };
 
@@ -440,31 +339,58 @@ else
             bool verified = false;
             if (!_saveUnverified)
             {
-                ProbeResult probe = await Prober.TestBrokerAsync(broker);
-                if (!probe.Ok)
+                // Test whichever halves are configured.
+                if (env.HasBroker)
                 {
-                    // The real failure text: a wrong password and an unroutable host need
-                    // different fixes and must not look alike.
-                    _dialogError = probe.Error;
-                    return;
+                    var brokerEndpoint = new BrokerEndpoint
+                    {
+                        Key = env.Key,
+                        Host = env.BrokerHost,
+                        Port = env.BrokerPort,
+                        Username = env.BrokerUsername,
+                        Password = env.BrokerPassword,
+                        UseTls = env.BrokerUseTls,
+                    };
+                    ProbeResult probe = await Prober.TestBrokerAsync(brokerEndpoint);
+                    if (!probe.Ok)
+                    {
+                        _dialogError = probe.Error;
+                        return;
+                    }
+                    verified = true;
                 }
 
-                verified = true;
+                if (env.HasTcp)
+                {
+                    var pushEndpoint = new PushTargetEndpoint
+                    {
+                        Key = env.Key,
+                        Address = env.TcpHost,
+                        Port = env.TcpPort,
+                    };
+                    ProbeResult probe = await Prober.TestPushTargetAsync(pushEndpoint);
+                    if (!probe.Ok)
+                    {
+                        _dialogError = probe.Error;
+                        return;
+                    }
+                    verified = true;
+                }
             }
 
-            if (_editingBroker)
+            if (_editingEnv)
             {
-                Network.UpdateBroker(broker, verified);
+                Network.UpdateEnvironment(env, verified);
             }
             else
             {
-                Network.AddBroker(broker, verified);
+                Network.AddEnvironment(env, verified);
             }
 
-            Health.Record(broker.Key, verified, verified ? null : "saved without a successful connection");
-            _brokerDialogOpen = false;
+            Health.Record(env.Key, verified, verified ? null : "saved without a successful connection");
+            _envDialogOpen = false;
             Snackbar.Add(
-                verified ? $"Broker '{broker.Key}' connected and saved." : $"Broker '{broker.Key}' saved UNVERIFIED.",
+                verified ? $"Environment '{env.Key}' verified and saved." : $"Environment '{env.Key}' saved UNVERIFIED.",
                 verified ? Severity.Success : Severity.Warning);
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
@@ -477,170 +403,82 @@ else
         }
     }
 
-    private async Task SavePushTargetAsync()
+    private async Task TestEnvironmentAsync(HesEnvironment env)
     {
-        if (!IsAdmin)
-        {
-            return;
-        }
+        if (!CanOperate) return;
 
-        var target = new PushTargetEndpoint
-        {
-            Key = _pushKey.Trim(),
-            Address = _pushAddress.Trim().Trim('[', ']'),
-            Port = _pushPort,
-        };
-
-        _saving = true;
-        _dialogError = null;
+        _testing.Add(env.Key);
         try
         {
-            bool verified = false;
-            if (!_saveUnverified)
+            bool anyOk = false;
+            string? lastError = null;
+
+            if (env.HasBroker)
             {
-                ProbeResult probe = await Prober.TestPushTargetAsync(target);
-                if (!probe.Ok)
+                var brokerEndpoint = new BrokerEndpoint
                 {
-                    _dialogError = probe.Error;
-                    return;
-                }
-
-                verified = true;
+                    Key = env.Key,
+                    Host = env.BrokerHost,
+                    Port = env.BrokerPort,
+                    Username = env.BrokerUsername,
+                    Password = env.BrokerPassword,
+                    UseTls = env.BrokerUseTls,
+                };
+                ProbeResult probe = await Prober.TestBrokerAsync(brokerEndpoint);
+                if (probe.Ok) anyOk = true;
+                else lastError = $"Broker: {probe.Error}";
             }
 
-            Network.AddPushTarget(target, verified);
-            Health.Record(target.Key, verified, verified ? null : "saved without a successful connection");
-            _pushDialogOpen = false;
+            if (env.HasTcp)
+            {
+                var pushEndpoint = new PushTargetEndpoint
+                {
+                    Key = env.Key,
+                    Address = env.TcpHost,
+                    Port = env.TcpPort,
+                };
+                ProbeResult probe = await Prober.TestPushTargetAsync(pushEndpoint);
+                if (probe.Ok) anyOk = true;
+                else lastError = $"TCP: {probe.Error}";
+            }
+
+            Health.Record(env.Key, anyOk, anyOk ? null : lastError);
+            Network.RecordEnvironmentReachable(env.Key);
             Snackbar.Add(
-                verified ? $"Push target '{target.Key}' reachable and saved." : $"Push target '{target.Key}' saved UNVERIFIED.",
-                verified ? Severity.Success : Severity.Warning);
-        }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
-        {
-            _dialogError = ex.Message;
+                anyOk ? $"{env.Key}: reachable." : $"{env.Key}: {lastError}",
+                anyOk ? Severity.Success : Severity.Error);
         }
         finally
         {
-            _saving = false;
+            _testing.Remove(env.Key);
         }
     }
 
-    // ── Row actions ──────────────────────────────────────────────────────────────────────────
-
-    private async Task TestBrokerAsync(BrokerEndpoint broker)
+    private void ToggleEnvironment(HesEnvironment env)
     {
-        if (!CanOperate)
-        {
-            return;
-        }
+        if (!IsAdmin) return;
 
-        _testing.Add(broker.Key);
-        try
-        {
-            ProbeResult probe = await Prober.TestBrokerAsync(broker);
-            Health.Record(broker.Key, probe.Ok, probe.Error);
-            Network.RecordBrokerReachable(broker.Key, probe.Ok);
-            Snackbar.Add(
-                probe.Ok ? $"{broker.Key}: connected in {probe.Elapsed.TotalMilliseconds:F0} ms." : $"{broker.Key}: {probe.Error}",
-                probe.Ok ? Severity.Success : Severity.Error);
-        }
-        finally
-        {
-            _testing.Remove(broker.Key);
-        }
-    }
-
-    private async Task TestPushTargetAsync(PushTargetEndpoint target)
-    {
-        if (!CanOperate)
-        {
-            return;
-        }
-
-        _testing.Add(target.Key);
-        try
-        {
-            ProbeResult probe = await Prober.TestPushTargetAsync(target);
-            Health.Record(target.Key, probe.Ok, probe.Error);
-            Network.RecordPushTargetReachable(target.Key, probe.Ok);
-            Snackbar.Add(
-                probe.Ok ? $"{target.Key}: reachable in {probe.Elapsed.TotalMilliseconds:F0} ms." : $"{target.Key}: {probe.Error}",
-                probe.Ok ? Severity.Success : Severity.Error);
-        }
-        finally
-        {
-            _testing.Remove(target.Key);
-        }
-    }
-
-    private void ToggleBroker(BrokerEndpoint broker)
-    {
-        if (!IsAdmin)
-        {
-            return;
-        }
-
-        Network.SetBrokerEnabled(broker.Key, !broker.Enabled);
+        Network.SetEnvironmentEnabled(env.Key, !env.Enabled);
         Snackbar.Add(
-            broker.Enabled
-                ? $"'{broker.Key}' disabled — its clients are being stopped."
-                : $"'{broker.Key}' enabled — clients start for any Running batch bound to it.",
+            env.Enabled
+                ? $"'{env.Key}' disabled."
+                : $"'{env.Key}' enabled.",
             Severity.Info);
     }
 
-    private void TogglePushTarget(PushTargetEndpoint target)
+    private async Task DeleteEnvironmentAsync(HesEnvironment env)
     {
-        if (!IsAdmin)
-        {
-            return;
-        }
-
-        Network.SetPushTargetEnabled(target.Key, !target.Enabled);
-    }
-
-    private async Task DeleteBrokerAsync(BrokerEndpoint broker)
-    {
-        if (!IsAdmin)
-        {
-            return;
-        }
+        if (!IsAdmin) return;
 
         bool? confirmed = await DialogService.ShowMessageBoxAsync(
-            "Delete broker?",
-            $"Permanently delete \"{broker.Key}\" ({broker.Host}:{broker.Port})? Any batch bound to it " +
-            "must be rebound first. This cannot be undone.",
-            yesText: "Delete", cancelText: "Cancel");
-
-        if (confirmed != true)
-        {
-            return;
-        }
-
-        if (!Network.TryDeleteBroker(broker.Key, out string error))
-        {
-            Snackbar.Add(error, Severity.Error);
-        }
-    }
-
-    private async Task DeletePushTargetAsync(PushTargetEndpoint target)
-    {
-        if (!IsAdmin)
-        {
-            return;
-        }
-
-        bool? confirmed = await DialogService.ShowMessageBoxAsync(
-            "Delete push target?",
-            $"Permanently delete \"{target.Key}\" ({target.Destination})? Any batch bound to it must be " +
+            "Delete environment?",
+            $"Permanently delete \"{env.Key}\" ({env.Describe()})? Any batch bound to it must be " +
             "rebound first. This cannot be undone.",
             yesText: "Delete", cancelText: "Cancel");
 
-        if (confirmed != true)
-        {
-            return;
-        }
+        if (confirmed != true) return;
 
-        if (!Network.TryDeletePushTarget(target.Key, out string error))
+        if (!Network.TryDeleteEnvironment(env.Key, out string error))
         {
             Snackbar.Add(error, Severity.Error);
         }
@@ -648,10 +486,6 @@ else
 
     // ── Presentation ─────────────────────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// The state cell distinguishes four things that a single red/green dot would collapse:
-    /// switched off, never once reached, currently failing, and healthy.
-    /// </summary>
     private RenderFragment StateCell(bool enabled, bool verified, EndpointHealth health) => builder =>
     {
         (string label, Color color) = (enabled, verified, health.Ok) switch
@@ -675,9 +509,17 @@ else
             builder.OpenComponent<MudText>(5);
             builder.AddAttribute(6, "Typo", Typo.caption);
             builder.AddAttribute(7, "Class", "mud-text-secondary d-block");
-            builder.AddAttribute(8, "ChildContent", (RenderFragment)(b => b.AddContent(0, health.Error)));
+            builder.AddAttribute(8, "Style", "word-break:break-all;overflow-wrap:anywhere;max-width:260px;");
+            builder.AddAttribute(9, "ChildContent", (RenderFragment)(b => b.AddContent(0, health.Error)));
             builder.CloseComponent();
         }
+    };
+
+    private static string HalfColor(EndpointHealth health) => health.Ok switch
+    {
+        true => "var(--mud-palette-success)",
+        false => "var(--mud-palette-error)",
+        _ => "inherit",
     };
 
     private static string HealthRowClass(bool enabled, EndpointHealth health) =>
@@ -690,10 +532,7 @@ else
 
     private static string Ago(DateTimeOffset? when)
     {
-        if (when is null)
-        {
-            return "never";
-        }
+        if (when is null) return "never";
 
         TimeSpan since = DateTimeOffset.UtcNow - when.Value;
         return since switch

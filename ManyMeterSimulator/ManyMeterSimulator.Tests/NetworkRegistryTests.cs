@@ -39,26 +39,30 @@ public class NetworkRegistryTests
     }
 
     [Fact]
-    public void AddBroker_DuplicateKey_Rejected()
+    public void AddBroker_DuplicateKey_UpdatesBrokerHalf()
     {
+        // In the unified environment model, calling AddBroker twice with the same key updates
+        // the broker half of the environment rather than throwing.
         NetworkRegistry registry = NewRegistry();
         registry.AddBroker(Broker(), verified: true);
+        registry.AddBroker(Broker(host: "10.0.0.2"), verified: true);
 
-        Assert.Throws<InvalidOperationException>(() => registry.AddBroker(Broker(host: "10.0.0.2"), verified: true));
+        Assert.Equal("10.0.0.2", registry.Broker("eqa")!.Host);
     }
 
-    /// <summary>
-    /// Keys are unique across BOTH kinds — the two share one health table and one set of log lines,
-    /// so a broker and a push target with the same name would be a permanent misreading.
-    /// </summary>
     [Fact]
-    public void AddPushTarget_ReusingABrokerKey_Rejected()
+    public void AddPushTarget_AfterAddBroker_SameKey_MergesIntoOneEnvironment()
     {
+        // An environment is a pair: broker + TCP push. Adding both with the same key
+        // results in one environment that has both halves set.
         NetworkRegistry registry = NewRegistry();
         registry.AddBroker(Broker("shared-name"), verified: true);
+        registry.AddPushTarget(PushTarget("shared-name"), verified: true);
 
-        Assert.Throws<InvalidOperationException>(
-            () => registry.AddPushTarget(PushTarget("shared-name"), verified: true));
+        var env = registry.Environment("shared-name");
+        Assert.NotNull(env);
+        Assert.True(env!.HasBroker);
+        Assert.True(env.HasTcp);
     }
 
     [Fact]
@@ -181,11 +185,9 @@ public class NetworkRegistryTests
             _batch = batch;
         }
 
-        public IReadOnlyList<string> BatchesUsingBroker(string key) =>
+        public IReadOnlyList<string> BatchesUsingEnvironment(string key) =>
             string.Equals(key, _key, StringComparison.OrdinalIgnoreCase)
                 ? new[] { _batch }
                 : Array.Empty<string>();
-
-        public IReadOnlyList<string> BatchesUsingPushTarget(string key) => Array.Empty<string>();
     }
 }

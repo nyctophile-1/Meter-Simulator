@@ -51,21 +51,15 @@ public class NetworkBindingValidatorTests
     }
 
     [Fact]
-    public void BrokerOnATcpBatch_IsRejected()
+    public void AnyBatch_CanBindToAnEnvironmentKey()
     {
-        (NetworkBindingValidator validator, _, _) = NewPair();
+        // In the unified environment model, any NIC type can bind to an environment key;
+        // the coordinator picks the TCP or MQTT half at push/pull time.
+        (NetworkBindingValidator validator, NetworkRegistry network, _) = NewPair();
+        network.AddBroker(new BrokerEndpoint { Key = "eqa", Host = "10.0.0.1" }, verified: true);
 
-        Assert.False(validator.Validate(NicType.Tcp4G, "eqa", null, out string error));
-        Assert.Contains("broker-agnostic", error);
-    }
-
-    [Fact]
-    public void PushTargetOnAnMqttBatch_IsRejected()
-    {
-        (NetworkBindingValidator validator, _, _) = NewPair();
-
-        Assert.False(validator.Validate(NicType.Mqtt4G, null, "hes-1", out string error));
-        Assert.Contains("4G TCP", error);
+        Assert.True(validator.Validate(NicType.Tcp4G, "eqa", null, out _));
+        Assert.True(validator.Validate(NicType.Mqtt4G, "eqa", null, out _));
     }
 
     /// <summary>

@@ -42,8 +42,15 @@ public sealed class TcpPushSender
     /// <summary>
     /// Sends every payload for one meter to <paramref name="destination"/> ("ip", "ip:port" or
     /// "[ipv6]:port"). Returns how many payloads were delivered and how many failed.
+    ///
+    /// <para>
+    /// Fully async: a push is I/O, and the whole point of a fleet push is that thousands are in
+    /// flight at once. The blocking version this replaced parked a thread-pool thread per meter for
+    /// the duration of the connect, so raising push concurrency starved the pull listener and the UI
+    /// rather than sending faster.
+    /// </para>
     /// </summary>
-    public PushDeliveryResult Send(
+    public async Task<PushDeliveryResult> SendAsync(
         string meterNo,
         IPAddress? source,
         string destination,
@@ -57,36 +64,26 @@ public sealed class TcpPushSender
             return new PushDeliveryResult(0, payloads.Count);
         }
 
-        int sent = 0, failed = 0;
-        foreach (byte[] payload in payloads)
+        if (payloads.Count == 0)
         {
-            if (cancellationToken.IsCancellationRequested)
-            {
-                break;
-            }
-
-            if (SendOne(meterNo, source, host, port, payload))
-            {
-                sent++;
-            }
-            else
-            {
-                failed++;
-            }
+            return new PushDeliveryResult(0, 0);
         }
 
-        return new PushDeliveryResult(sent, failed);
-    }
-
-    private bool SendOne(string meterNo, IPAddress? source, string host, int port, byte[] payload)
-    {
-        // The meter's OWN assigned IP is the identity of a TCP push — it is the only thing telling
-        // the HES push server which meter sent the data. Tried once, not per-retry: if that address
-        // cannot reach this destination it never will (it times out, it is not transient).
-        bool canBindSource = CanBindSource(source, host);
-        if (canBindSource && TryConnectAndWrite(meterNo, source, host, port, payload, bindSource: true))
+        // ONE connection for all of this meter's payloads, not one per payload: a real meter opens a
+        // socket, sends what it has and hangs up. Reconnecting per payload multiplied both the
+        // connect cost and the number of sockets a fleet push lands on the HES by the push-object
+        // count — which is exactly the number the HES is being tested on.
+        //
+        // The meter's OWN assigned IP is the identity of a TCP push. Tried once, not per-retry: if
+        // that address cannot reach this destination it never will (it times out, it isn't transient).
+        if (CanBindSource(source, host))
         {
-            return true;
+            PushDeliveryResult? bound = await TryConnectAndWriteAsync(
+                meterNo, source, host, port, payloads, bindSource: true, cancellationToken);
+            if (bound is not null)
+            {
+                return bound.Value;
+            }
         }
 
         // Strict (default): never deliver a push the HES push server would attribute to the wrong
@@ -102,53 +99,116 @@ public sealed class TcpPushSender
                 "the prefix on the HES push server side), or set Push:RequireMeterSourceIp=false to " +
                 "accept unattributable pushes for bring-up.",
                 meterNo, source is null ? "(none assigned)" : source, host, port);
-            return false;
+            return new PushDeliveryResult(0, payloads.Count);
         }
 
         // Opt-in fallback: the sim server's default source. The push lands but carries no meter
         // identity, so it is warned on every meter, every time — this is a bring-up crutch only.
-        if (TryConnectAndWrite(meterNo, source, host, port, payload, bindSource: false))
+        PushDeliveryResult? fallback = await TryConnectAndWriteAsync(
+            meterNo, source, host, port, payloads, bindSource: false, cancellationToken);
+        if (fallback is not null)
         {
             _logger.LogWarning(
                 "Push {Meter}: delivered to {Host}:{Port} from the sim server's default address, NOT " +
                 "the meter's own {Source} — the HES push server cannot tell which meter this is. " +
                 "Push:RequireMeterSourceIp is off.",
                 meterNo, host, port, source is null ? "(none assigned)" : source);
-            return true;
+            return fallback.Value;
         }
 
-        return false;
+        return new PushDeliveryResult(0, payloads.Count);
     }
 
-    private bool TryConnectAndWrite(
-        string meterNo, IPAddress? source, string host, int port, byte[] payload, bool bindSource)
+    /// <summary>
+    /// Opens one socket and writes every payload down it. Returns null when the CONNECT failed (the
+    /// caller may still have a fallback source worth trying); otherwise the per-payload tally, which
+    /// can be partial if the far side died mid-stream.
+    /// </summary>
+    private async Task<PushDeliveryResult?> TryConnectAndWriteAsync(
+        string meterNo, IPAddress? source, string host, int port,
+        IReadOnlyList<byte[]> payloads, bool bindSource, CancellationToken cancellationToken)
     {
+        TcpClient client;
         try
         {
-            using TcpClient client = bindSource
-                ? new TcpClient(new IPEndPoint(source!, 0))
-                : NewDefaultClient(host);
-
-            if (!client.ConnectAsync(host, port).Wait(TimeSpan.FromSeconds(5)))
-            {
-                throw new TimeoutException("connect timeout");
-            }
-
-            using NetworkStream stream = client.GetStream();
-            stream.Write(payload, 0, payload.Length);
-            stream.Flush();
-
-            _logger.LogDebug(
-                "Push {Meter}: sent {Bytes} bytes to {Host}:{Port} {From}",
-                meterNo, payload.Length, host, port, bindSource ? $"from {source}" : "from the host's default source");
-            return true;
+            client = bindSource ? new TcpClient(new IPEndPoint(source!, 0)) : NewDefaultClient(host);
         }
         catch (Exception ex)
         {
             _logger.LogDebug(
-                "Push {Meter}: {Which} attempt to {Host}:{Port} failed: {Message}",
+                "Push {Meter}: could not open a {Which} socket for {Host}:{Port}: {Message}",
                 meterNo, bindSource ? "source-bound" : "default-source", host, port, ex.Message);
-            return false;
+            return null;
+        }
+
+        using (client)
+        {
+            // Socket.SendTimeout governs SYNCHRONOUS sends only — async socket operations are bounded
+            // by their cancellation token and nothing else. So both deadlines are linked CTSs, which
+            // is also what finally makes a caller's cancellation abort an in-flight connect: the old
+            // ConnectAsync(...).Wait(timeout) could not, it abandoned the connect task and left it
+            // running against a socket that had already been disposed.
+            try
+            {
+                using var connectCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                connectCts.CancelAfter(TimeSpan.FromSeconds(Math.Max(1, _options.ConnectTimeoutSeconds)));
+                await client.ConnectAsync(host, port, connectCts.Token);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(
+                    "Push {Meter}: {Which} connect to {Host}:{Port} failed: {Message}",
+                    meterNo, bindSource ? "source-bound" : "default-source", host, port, ex.Message);
+                return null;
+            }
+
+            var sendTimeout = TimeSpan.FromSeconds(Math.Max(1, _options.SendTimeoutSeconds));
+            NetworkStream stream = client.GetStream();
+
+            int sent = 0;
+            for (int i = 0; i < payloads.Count; i++)
+            {
+                try
+                {
+                    using var writeCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                    writeCts.CancelAfter(sendTimeout);
+
+                    await stream.WriteAsync(payloads[i], writeCts.Token);
+                    await stream.FlushAsync(writeCts.Token);
+                    sent++;
+                }
+                catch (Exception ex)
+                {
+                    // A HES that accepts the connection and then stops reading is the failure mode
+                    // this bounds: without the write deadline that Write blocked forever and leaked
+                    // the thread — and "HES slows down under load" is the scenario being tested.
+                    _logger.LogDebug(
+                        "Push {Meter}: write {Index}/{Total} to {Host}:{Port} failed: {Message}",
+                        meterNo, i + 1, payloads.Count, host, port, ex.Message);
+                    break;   // the socket is no longer trustworthy; the rest would fail too
+                }
+            }
+
+            if (sent > 0)
+            {
+                // Half-close so the HES sees a clean end-of-push rather than having to infer it from
+                // a reset when the socket is disposed below.
+                try
+                {
+                    client.Client.Shutdown(SocketShutdown.Send);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug("Push {Meter}: shutdown after send failed: {Message}", meterNo, ex.Message);
+                }
+
+                _logger.LogDebug(
+                    "Push {Meter}: sent {Sent}/{Total} payload(s) to {Host}:{Port} {From}",
+                    meterNo, sent, payloads.Count, host, port,
+                    bindSource ? $"from {source}" : "from the host's default source");
+            }
+
+            return new PushDeliveryResult(sent, payloads.Count - sent);
         }
     }
 

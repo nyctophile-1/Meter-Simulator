@@ -66,12 +66,14 @@ public sealed record PersistedBatch
     public BatchStatus Status { get; init; }
 
     /// <summary>
-    /// Network registry keys this batch is bound to. Null means unbound — see
-    /// <see cref="MeterBatch.BrokerKey"/>. Absent in a pre-registry file, which deserializes to
-    /// null and is then resolved by the one-time migration rather than left ambiguous.
+    /// Key of the HES environment this batch is bound to (version ≥ 2), or null for unbound.
     /// </summary>
+    public string? EnvironmentKey { get; init; }
+
+    /// <summary>Legacy broker key (version 1 files). Read for migration; not written.</summary>
     public string? BrokerKey { get; init; }
 
+    /// <summary>Legacy push-target key (version 1 files). Read for migration; not written.</summary>
     public string? PushTargetKey { get; init; }
 
     public DateTimeOffset CreatedAtUtc { get; init; }

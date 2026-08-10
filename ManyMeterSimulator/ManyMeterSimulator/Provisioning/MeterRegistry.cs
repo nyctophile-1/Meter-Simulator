@@ -107,7 +107,8 @@ public sealed class MeterRegistry
         NicType nicType = NicType.Tcp4G,
         int? hesTemplateId = null,
         string? brokerKey = null,
-        string? pushTargetKey = null)
+        string? pushTargetKey = null,
+        string? environmentKey = null)
     {
         if (count <= 0)
         {
@@ -138,10 +139,7 @@ public sealed class MeterRegistry
                 HesTemplateId = hesTemplateId,
                 StartIndex = _nextIndex,
                 Count = count,
-                // Normalized to null so "", "  " and null are one state — unbound — rather than
-                // three that compare differently against a registry key.
-                BrokerKey = Normalize(brokerKey),
-                PushTargetKey = Normalize(pushTargetKey),
+                EnvironmentKey = Normalize(environmentKey ?? brokerKey ?? pushTargetKey),
             };
             _batches.Add(batch);
             _nextIndex += count;
@@ -162,34 +160,27 @@ public sealed class MeterRegistry
     /// Returns true if anything actually changed, so the caller can skip a needless reconcile.
     /// </para>
     /// </summary>
-    public bool SetNetworkBinding(int batchId, string? brokerKey, string? pushTargetKey)
+    public bool SetNetworkBinding(int batchId, string? environmentKey)
     {
         lock (_lock)
         {
             MeterBatch? batch = _batches.FirstOrDefault(b => b.Id == batchId);
-            if (batch is null)
-            {
-                return false;
-            }
+            if (batch is null) return false;
 
-            string? broker = Normalize(brokerKey);
-            string? push = Normalize(pushTargetKey);
+            string? key = Normalize(environmentKey);
+            if (string.Equals(batch.EnvironmentKey, key, StringComparison.OrdinalIgnoreCase)) return false;
 
-            if (string.Equals(batch.BrokerKey, broker, StringComparison.OrdinalIgnoreCase)
-                && string.Equals(batch.PushTargetKey, push, StringComparison.OrdinalIgnoreCase))
-            {
-                return false;
-            }
-
-            batch.BrokerKey = broker;
-            batch.PushTargetKey = push;
+            batch.EnvironmentKey = key;
             Persist();
         }
 
-        // Outside the lock: the listener's handler reads Batches, which takes it.
         Changed?.Invoke();
         return true;
     }
+
+    // Backward-compat overload used by existing call sites that supply separate broker/push keys.
+    public bool SetNetworkBinding(int batchId, string? brokerKey, string? pushTargetKey) =>
+        SetNetworkBinding(batchId, brokerKey ?? pushTargetKey);
 
     /// <summary>
     /// One-time migration for a store written before the network registry existed: every MQTT batch
@@ -223,9 +214,9 @@ public sealed class MeterRegistry
             {
                 foreach (MeterBatch batch in _batches)
                 {
-                    if (NicTypes.IsMqtt(batch.NicType) && batch.BrokerKey is null)
+                    if (NicTypes.IsMqtt(batch.NicType) && batch.EnvironmentKey is null)
                     {
-                        batch.BrokerKey = defaultBrokerKey;
+                        batch.EnvironmentKey = defaultBrokerKey;
                         bound++;
                     }
                 }
@@ -237,31 +228,24 @@ public sealed class MeterRegistry
         }
     }
 
-    /// <summary>Names of the batches bound to a broker key — used to refuse deleting one in use.</summary>
-    public IReadOnlyList<string> BatchesUsingBroker(string key)
+    public IReadOnlyList<string> BatchesUsingEnvironment(string key)
     {
         lock (_lock)
         {
             return _batches
-                .Where(b => string.Equals(b.BrokerKey, key, StringComparison.OrdinalIgnoreCase))
+                .Where(b => string.Equals(b.EnvironmentKey, key, StringComparison.OrdinalIgnoreCase))
                 .Select(b => b.Name)
                 .ToArray();
         }
     }
 
-    /// <summary>Names of the batches bound to a push target key.</summary>
-    public IReadOnlyList<string> BatchesUsingPushTarget(string key)
-    {
-        lock (_lock)
-        {
-            return _batches
-                .Where(b => string.Equals(b.PushTargetKey, key, StringComparison.OrdinalIgnoreCase))
-                .Select(b => b.Name)
-                .ToArray();
-        }
-    }
+    // Backward-compat aliases.
+    public IReadOnlyList<string> BatchesUsingBroker(string key) => BatchesUsingEnvironment(key);
+    public IReadOnlyList<string> BatchesUsingPushTarget(string key) => BatchesUsingEnvironment(key);
 
     public bool TryStart(int batchId) => TrySetStatus(batchId, BatchStatus.Running);
+
+    public bool TryMarkStarting(int batchId) => TrySetStatus(batchId, BatchStatus.Starting);
 
     public bool TryStop(int batchId) => TrySetStatus(batchId, BatchStatus.Stopped);
 
@@ -403,8 +387,7 @@ public sealed class MeterRegistry
                     StartIndex = pb.StartIndex,
                     Count = pb.Count,
                     Status = pb.Status,
-                    BrokerKey = pb.BrokerKey,
-                    PushTargetKey = pb.PushTargetKey,
+                    EnvironmentKey = pb.EnvironmentKey ?? pb.BrokerKey ?? pb.PushTargetKey,
                     CreatedAtUtc = pb.CreatedAtUtc,
                 });
             }
@@ -452,8 +435,7 @@ public sealed class MeterRegistry
                     StartIndex = pb.StartIndex,
                     Count = pb.Count,
                     Status = pb.Status,
-                    BrokerKey = pb.BrokerKey,
-                    PushTargetKey = pb.PushTargetKey,
+                    EnvironmentKey = pb.EnvironmentKey ?? pb.BrokerKey ?? pb.PushTargetKey,
                     CreatedAtUtc = pb.CreatedAtUtc,
                 });
             }
@@ -489,8 +471,7 @@ public sealed class MeterRegistry
             StartIndex = b.StartIndex,
             Count = b.Count,
             Status = b.Status,
-            BrokerKey = b.BrokerKey,
-            PushTargetKey = b.PushTargetKey,
+            EnvironmentKey = b.EnvironmentKey,
             CreatedAtUtc = b.CreatedAtUtc,
         }).ToList(),
     };

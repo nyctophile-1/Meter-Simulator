@@ -37,6 +37,25 @@ public sealed class PushOptions
     public int PublishQos { get; set; } = 2;
 
     /// <summary>
+    /// How long a TCP push waits for the connect before giving up on that meter. Bounded because a
+    /// destination that is routed-but-dead otherwise holds the connection slot for the OS default
+    /// (tens of seconds), which at fleet scale is indistinguishable from the simulator hanging.
+    /// </summary>
+    public int ConnectTimeoutSeconds { get; set; } = 5;
+
+    /// <summary>
+    /// How long a single payload write may take once connected.
+    ///
+    /// <para>
+    /// This is the deadline that matters when testing HES capacity: a HES which accepts the TCP
+    /// connection but stops draining its receive buffer would otherwise block the send forever —
+    /// the socket is healthy, it is the far side that stopped reading. Without this, "the HES got
+    /// slow" turns into "the simulator hung", which is the wrong diagnosis and loses the test.
+    /// </para>
+    /// </summary>
+    public int SendTimeoutSeconds { get; set; } = 5;
+
+    /// <summary>
     /// TCP push must originate from the METER's own assigned IP, so the HES push server can tell
     /// which meter sent the data — that source address is the only identity a TCP push carries.
     ///

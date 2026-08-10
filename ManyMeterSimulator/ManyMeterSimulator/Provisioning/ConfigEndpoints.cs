@@ -21,6 +21,7 @@ public static class ConfigEndpoints
         Download(app, "/config/network.json", "maya-network", (b, host) => b.ExportNetwork(host));
         Download(app, "/config/badcomm.json", "maya-badcomm", (b, host) => b.ExportBadComm(host));
         Download(app, "/config/testing.json", "maya-testing", (b, host) => b.ExportTesting(host));
+        Download(app, "/config/testplans.json", "maya-testplans", (b, host) => b.ExportTestPlans(host));
     }
 
     private static void Download(

@@ -34,6 +34,9 @@ public sealed class MeterSessionManager
 
     // Lazy so each meter's session is constructed exactly once even under concurrent first-touch.
     private readonly ConcurrentDictionary<long, Lazy<DLMSServerSession>> _sessions = new();
+    private readonly ConcurrentDictionary<int, BatchMaterializationProgress> _startingProgress = new();
+
+    public event Action<BatchMaterializationProgress>? OnProgressChanged;
 
     public MeterSessionManager(
         MeterRegistry meterRegistry,
@@ -51,6 +54,10 @@ public sealed class MeterSessionManager
 
     /// <summary>Number of meters with a live session.</summary>
     public int LiveMeterCount => _sessions.Count;
+
+    /// <summary>Gets active materialization progress for a batch being started, or null if not starting.</summary>
+    public BatchMaterializationProgress? GetProgress(int batchId) =>
+        _startingProgress.TryGetValue(batchId, out var p) ? p : null;
 
     /// <summary>
     /// Drops every live meter session. Used by the admin "reset batches" flow so a fresh batch that
@@ -111,19 +118,72 @@ public sealed class MeterSessionManager
     }
 
     /// <summary>
-    /// Eagerly materializes every meter in a batch so they are "live" WITHOUT an inbound HES
-    /// connection, returning each meter paired with its session. The push path needs this because a
-    /// meter with no prior HES pull has no session yet — there'd be nothing to push from. Building a
-    /// session is the same idempotent first-touch as the inbound path (<see cref="GetOrCreate"/>), so
-    /// calling this for a batch already being polled just returns the existing instances.
+    /// Starts a batch asynchronously: marks status as Starting, materializes all meter sessions in
+    /// background chunks without blocking the UI thread, and sets status to Running upon completion.
     /// </summary>
-    public IReadOnlyList<(MeterRef Meter, DLMSServerSession Session)> MaterializeBatch(MeterBatch batch)
+    public async Task StartBatchAsync(int batchId, CancellationToken cancellationToken = default)
+    {
+        MeterBatch? batch = _meterRegistry.Batches.FirstOrDefault(b => b.Id == batchId);
+        if (batch is null) return;
+
+        _meterRegistry.TryMarkStarting(batchId);
+        long total = batch.EndIndex - batch.StartIndex + 1;
+        var initialProgress = new BatchMaterializationProgress(batch.Id, 0, total);
+        _startingProgress[batch.Id] = initialProgress;
+        OnProgressChanged?.Invoke(initialProgress);
+
+        await Task.Yield();
+
+        try
+        {
+            await MaterializeBatchAsync(batch, cancellationToken: cancellationToken);
+            _meterRegistry.TryStart(batchId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to start batch {BatchId} ({BatchName})", batchId, batch.Name);
+            _meterRegistry.TryStop(batchId);
+            throw;
+        }
+        finally
+        {
+            _startingProgress.TryRemove(batchId, out _);
+            var finalProgress = new BatchMaterializationProgress(batch.Id, total, total);
+            OnProgressChanged?.Invoke(finalProgress);
+        }
+    }
+
+    /// <summary>
+    /// Asynchronously materializes every meter in a batch in chunks of 500 meters, yielding execution
+    /// to keep the UI thread fully responsive.
+    /// </summary>
+    public async Task<IReadOnlyList<(MeterRef Meter, DLMSServerSession Session)>> MaterializeBatchAsync(
+        MeterBatch batch,
+        IProgress<BatchMaterializationProgress>? progress = null,
+        CancellationToken cancellationToken = default)
     {
         var result = new List<(MeterRef, DLMSServerSession)>();
+        long total = batch.EndIndex - batch.StartIndex + 1;
+        long count = 0;
+        int chunkSize = 500;
+
+        await Task.Yield();
+
         for (long index = batch.StartIndex; index <= batch.EndIndex; index++)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var meter = new MeterRef(index, batch.NicType);
             result.Add((meter, GetOrCreate(meter)));
+            count++;
+
+            if (count % chunkSize == 0 || count == total)
+            {
+                var p = new BatchMaterializationProgress(batch.Id, count, total);
+                _startingProgress[batch.Id] = p;
+                progress?.Report(p);
+                OnProgressChanged?.Invoke(p);
+                await Task.Yield();
+            }
         }
 
         _logger.LogDebug("Materialized {Count} meter session(s) for batch {BatchId} ({BatchName})",
@@ -131,4 +191,16 @@ public sealed class MeterSessionManager
 
         return result;
     }
+
+    /// <summary>Synchronous wrapper for backwards compatibility.</summary>
+    public IReadOnlyList<(MeterRef Meter, DLMSServerSession Session)> MaterializeBatch(MeterBatch batch)
+    {
+        return MaterializeBatchAsync(batch).GetAwaiter().GetResult();
+    }
+}
+
+public record BatchMaterializationProgress(int BatchId, long MaterializedCount, long TotalCount)
+{
+    public double Percent => TotalCount > 0 ? (MaterializedCount * 100.0 / TotalCount) : 0;
+    public bool IsComplete => MaterializedCount >= TotalCount;
 }

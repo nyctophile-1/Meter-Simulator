@@ -96,6 +96,60 @@ public sealed class SimulatorMetrics
     }
 
     /// <summary>
+    /// One meter's push finished. <paramref name="latency"/> covers encode + wire time for that
+    /// meter, which is the figure that says whether the HES kept up: it is what stretches when the
+    /// far side starts queueing, long before anything actually fails.
+    ///
+    /// <para>
+    /// Recorded per meter rather than per payload so the number lines up with what the UI reports
+    /// ("pushed 480/500 meters"), and kept apart from exchange latency because a push is an OUTBOUND
+    /// connect the HES never asked for — averaging the two would hide which side is slow.
+    /// </para>
+    /// </summary>
+    public void RecordPushMeter(NicType nic, bool ok, TimeSpan latency)
+    {
+        NicCounters c = For(nic);
+        if (ok)
+        {
+            Interlocked.Increment(ref c.TotalPushMetersSent);
+        }
+        else
+        {
+            Interlocked.Increment(ref c.TotalPushMetersFailed);
+        }
+
+        Interlocked.Add(ref c.PushLatencyTicksSum, latency.Ticks);
+        Interlocked.Increment(ref c.PushLatencySamples);
+        InterlockedMax(ref c.PushLatencyMaxTicks, latency.Ticks);
+    }
+
+    /// <summary>
+    /// A meter that had nothing to push — no sendable PushSetup. Counted separately because it is
+    /// neither a success nor a failure, and folding it into either would make Sent + Failed stop
+    /// adding up to the batch size that the operator can see on screen.
+    /// </summary>
+    public void RecordPushSkipped(NicType nic) => Interlocked.Increment(ref For(nic).TotalPushMetersSkipped);
+
+    /// <summary>
+    /// Individual payloads (DataNotification frames) delivered for one meter. A meter can carry
+    /// several push objects, so this runs ahead of the meter counts and is what to compare against
+    /// what the HES says it received.
+    /// </summary>
+    public void RecordPushPayloads(NicType nic, int sent, int failed)
+    {
+        NicCounters c = For(nic);
+        if (sent > 0)
+        {
+            Interlocked.Add(ref c.TotalPushPayloadsSent, sent);
+        }
+
+        if (failed > 0)
+        {
+            Interlocked.Add(ref c.TotalPushPayloadsFailed, failed);
+        }
+    }
+
+    /// <summary>
     /// The simulated network delay actually applied to one exchange. Recorded even when zero, so
     /// the average is over every exchange rather than only the delayed ones - otherwise turning
     /// the delay off would leave a stale average sitting on the dashboard.
@@ -126,9 +180,19 @@ public sealed class SimulatorMetrics
         long accepted = 0, collision = 0, maxConn = 0, notRunning = 0, noTemplate = 0;
         long idle = 0, exchanges = 0, ticksSum = 0, ticksMax = 0;
         long mailboxFull = 0, malformed = 0, fragTimeouts = 0, ignored = 0, crossBroker = 0;
+        long pushSent = 0, pushFailed = 0, pushSkipped = 0, pushPayloadsSent = 0, pushPayloadsFailed = 0;
+        long pushTicksSum = 0, pushTicksMax = 0, pushSamples = 0;
 
         foreach (NicCounters c in _byNic)
         {
+            pushSent += Interlocked.Read(ref c.TotalPushMetersSent);
+            pushFailed += Interlocked.Read(ref c.TotalPushMetersFailed);
+            pushSkipped += Interlocked.Read(ref c.TotalPushMetersSkipped);
+            pushPayloadsSent += Interlocked.Read(ref c.TotalPushPayloadsSent);
+            pushPayloadsFailed += Interlocked.Read(ref c.TotalPushPayloadsFailed);
+            pushTicksSum += Interlocked.Read(ref c.PushLatencyTicksSum);
+            pushSamples += Interlocked.Read(ref c.PushLatencySamples);
+            pushTicksMax = Math.Max(pushTicksMax, Interlocked.Read(ref c.PushLatencyMaxTicks));
             accepted += Interlocked.Read(ref c.TotalAccepted);
             collision += Interlocked.Read(ref c.TotalRejectedCollision);
             maxConn += Interlocked.Read(ref c.TotalRejectedMaxConnections);
@@ -146,7 +210,9 @@ public sealed class SimulatorMetrics
         }
 
         return Build(activeConnections, accepted, collision, maxConn, notRunning, noTemplate, idle,
-            exchanges, ticksSum, ticksMax, mailboxFull, malformed, fragTimeouts, ignored, crossBroker);
+            exchanges, ticksSum, ticksMax, mailboxFull, malformed, fragTimeouts, ignored, crossBroker,
+            pushSent, pushFailed, pushSkipped, pushPayloadsSent, pushPayloadsFailed,
+            pushTicksSum, pushTicksMax, pushSamples);
     }
 
     /// <summary>Totals for a single NIC. <paramref name="activeConnections"/> is the caller's own count.</summary>
@@ -168,7 +234,15 @@ public sealed class SimulatorMetrics
             Interlocked.Read(ref c.TotalMalformedPackets),
             Interlocked.Read(ref c.TotalFragmentTimeouts),
             Interlocked.Read(ref c.TotalIgnoredPackets),
-            Interlocked.Read(ref c.TotalCrossBrokerMessages));
+            Interlocked.Read(ref c.TotalCrossBrokerMessages),
+            Interlocked.Read(ref c.TotalPushMetersSent),
+            Interlocked.Read(ref c.TotalPushMetersFailed),
+            Interlocked.Read(ref c.TotalPushMetersSkipped),
+            Interlocked.Read(ref c.TotalPushPayloadsSent),
+            Interlocked.Read(ref c.TotalPushPayloadsFailed),
+            Interlocked.Read(ref c.PushLatencyTicksSum),
+            Interlocked.Read(ref c.PushLatencyMaxTicks),
+            Interlocked.Read(ref c.PushLatencySamples));
     }
 
     /// <summary>Every NIC that has seen any traffic at all — what the periodic summary iterates.</summary>
@@ -197,8 +271,16 @@ public sealed class SimulatorMetrics
     private SimulatorMetricsSnapshot Build(
         int activeConnections, long accepted, long collision, long maxConn, long notRunning,
         long noTemplate, long idle, long exchanges, long ticksSum, long ticksMax,
-        long mailboxFull, long malformed, long fragmentTimeouts, long ignored, long crossBroker)
+        long mailboxFull, long malformed, long fragmentTimeouts, long ignored, long crossBroker,
+        long pushSent, long pushFailed, long pushSkipped, long pushPayloadsSent,
+        long pushPayloadsFailed, long pushTicksSum, long pushTicksMax, long pushSamples)
     {
+        // Averaged over meters actually pushed (success or failure), not over every meter in the
+        // fleet — a batch that never pushed must not drag this toward zero and read as "fast".
+        TimeSpan avgPushLatency = pushSamples == 0
+            ? TimeSpan.Zero
+            : TimeSpan.FromTicks(pushTicksSum / pushSamples);
+
         TimeSpan avgLatency = exchanges == 0 ? TimeSpan.Zero : TimeSpan.FromTicks(ticksSum / exchanges);
 
         // Divided by its own sample count, not by `exchanges`, so a per-NIC snapshot cannot divide
@@ -222,7 +304,9 @@ public sealed class SimulatorMetrics
             avgNetworkLatency, TimeSpan.FromTicks(Interlocked.Read(ref _networkLatencyMaxTicks)),
             Interlocked.Read(ref _totalNonCommDrops),
             Interlocked.Read(ref _totalBadCommDrops),
-            avgBadCommDelay);
+            avgBadCommDelay,
+            pushSent, pushFailed, pushSkipped, pushPayloadsSent, pushPayloadsFailed,
+            avgPushLatency, TimeSpan.FromTicks(pushTicksMax));
     }
 
     private NicCounters For(NicType nic) => _byNic[(int)nic];
@@ -259,6 +343,14 @@ public sealed class SimulatorMetrics
         public long TotalIgnoredPackets;
         public long TotalFragmentTimeouts;
         public long TotalCrossBrokerMessages;
+        public long TotalPushMetersSent;
+        public long TotalPushMetersFailed;
+        public long TotalPushMetersSkipped;
+        public long TotalPushPayloadsSent;
+        public long TotalPushPayloadsFailed;
+        public long PushLatencyTicksSum;
+        public long PushLatencyMaxTicks;
+        public long PushLatencySamples;
     }
 }
 
@@ -284,8 +376,28 @@ public readonly record struct SimulatorMetricsSnapshot(
     TimeSpan MaxNetworkLatency,
     long TotalNonCommDrops,
     long TotalBadCommDrops,
-    TimeSpan AvgBadCommDelay)
+    TimeSpan AvgBadCommDelay,
+    /// <summary>Meters whose push was fully delivered.</summary>
+    long TotalPushMetersSent,
+    /// <summary>Meters whose push failed, wholly or partly.</summary>
+    long TotalPushMetersFailed,
+    /// <summary>Meters that had no sendable PushSetup — neither success nor failure.</summary>
+    long TotalPushMetersSkipped,
+    long TotalPushPayloadsSent,
+    long TotalPushPayloadsFailed,
+    TimeSpan AvgPushLatency,
+    TimeSpan MaxPushLatency)
 {
+    /// <summary>Meters actually attempted — what Sent and Failed add up to.</summary>
+    public long TotalPushMetersAttempted => TotalPushMetersSent + TotalPushMetersFailed;
+
+    /// <summary>
+    /// Share of attempted pushes the HES accepted, 0..100. The headline number for "can the HES take
+    /// what the fleet sends": it is what falls first when the far side starts shedding load.
+    /// </summary>
+    public double PushSuccessPercent =>
+        TotalPushMetersAttempted == 0 ? 0 : (double)TotalPushMetersSent / TotalPushMetersAttempted * 100;
+
     /// <summary>
     /// Exchanges per admitted session. This is the number that says whether callers got PAST the
     /// handshake: ~1 means every session died right after the association, which is invisible in

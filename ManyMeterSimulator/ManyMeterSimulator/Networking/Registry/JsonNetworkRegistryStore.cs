@@ -83,6 +83,11 @@ public sealed class JsonNetworkRegistryStore : INetworkRegistryStore
                     "silently stop resolving). Fix or remove the file.", ex);
             }
 
+            foreach (HesEnvironment env in snapshot.Environments)
+            {
+                env.BrokerPassword = _protector.Unprotect(env.BrokerPassword);
+            }
+
             foreach (BrokerEndpoint broker in snapshot.Brokers)
             {
                 broker.Password = _protector.Unprotect(broker.Password);
@@ -96,10 +101,9 @@ public sealed class JsonNetworkRegistryStore : INetworkRegistryStore
     {
         lock (_fileLock)
         {
-            // Serialize from a copy whose passwords are encrypted, so the caller's live objects are
-            // never mutated into ciphertext behind its back.
             var onDisk = snapshot with
             {
+                Environments = snapshot.Environments.Select(EncryptedEnv).ToList(),
                 Brokers = snapshot.Brokers.Select(Encrypted).ToList(),
             };
 
@@ -110,6 +114,23 @@ public sealed class JsonNetworkRegistryStore : INetworkRegistryStore
             File.Move(tempPath, _filePath, overwrite: true);
         }
     }
+
+    private HesEnvironment EncryptedEnv(HesEnvironment env) => new()
+    {
+        Key = env.Key,
+        Name = env.Name,
+        TcpHost = env.TcpHost,
+        TcpPort = env.TcpPort,
+        BrokerHost = env.BrokerHost,
+        BrokerPort = env.BrokerPort,
+        BrokerUsername = env.BrokerUsername,
+        BrokerPassword = _protector.Protect(env.BrokerPassword),
+        BrokerUseTls = env.BrokerUseTls,
+        Enabled = env.Enabled,
+        Verified = env.Verified,
+        LastVerifiedUtc = env.LastVerifiedUtc,
+        CreatedAtUtc = env.CreatedAtUtc,
+    };
 
     private BrokerEndpoint Encrypted(BrokerEndpoint broker) => new()
     {

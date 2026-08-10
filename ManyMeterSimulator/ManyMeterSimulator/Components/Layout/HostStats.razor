@@ -1,6 +1,8 @@
 @using System.Diagnostics
 @using System.Text
 @using System.Globalization
+@using ManyMeterSimulator.Brain
+@inject MeterSessionManager Sessions
 @implements IDisposable
 
 <div class="host-stats">
@@ -17,6 +19,14 @@
         <span class="host-stat-value">@_memUsedMb.ToString("N0")<span class="unit">MB</span></span>
         <span class="host-stat-sub">/ @_memTotalMb.ToString("N0") MB</span>
     </div>
+    <div class="host-stat">
+        <span class="host-stat-label">Meters</span>
+        <span class="host-stat-value">@_activeMeters.ToString("N0")</span>
+    </div>
+    <div class="host-stat">
+        <span class="host-stat-label">Mem / Meter</span>
+        <span class="host-stat-value">@((MarkupString)_memPerMeterFormatted)</span>
+    </div>
 </div>
 
 @code {
@@ -30,6 +40,8 @@
     private double _cpuPercent;
     private double _memUsedMb;
     private double _memTotalMb;
+    private int _activeMeters;
+    private string _memPerMeterFormatted = "—";
     private readonly List<double> _cpuHistory = new();
     private string _cpuSparkline = "";
     private DateTime _lastSampleUtc;
@@ -59,8 +71,12 @@
                 : Math.Clamp((cpuTime - _lastCpuTime).TotalSeconds / elapsedSeconds / _cpuCores * 100, 0, 100);
             _lastCpuTime = cpuTime;
 
-            _memUsedMb = proc.WorkingSet64 / 1024.0 / 1024.0;
+            long workingSetBytes = proc.WorkingSet64;
+            _memUsedMb = workingSetBytes / 1024.0 / 1024.0;
             _memTotalMb = GC.GetGCMemoryInfo().TotalAvailableMemoryBytes / 1024.0 / 1024.0;
+
+            _activeMeters = Sessions.LiveMeterCount;
+            _memPerMeterFormatted = FormatMemPerMeter(workingSetBytes, _activeMeters);
 
             _cpuHistory.Add(_cpuPercent);
             if (_cpuHistory.Count > MaxPoints) _cpuHistory.RemoveAt(0);
@@ -70,6 +86,21 @@
         {
             // Ignore process read failures if any
         }
+    }
+
+    private static string FormatMemPerMeter(long workingSetBytes, int activeMeters)
+    {
+        if (activeMeters <= 0) return "—";
+        double bytesPerMeter = (double)workingSetBytes / activeMeters;
+        if (bytesPerMeter >= 1024.0 * 1024.0)
+        {
+            return $"{(bytesPerMeter / (1024.0 * 1024.0)):N1}<span class=\"unit\">MB</span>";
+        }
+        if (bytesPerMeter >= 1024.0)
+        {
+            return $"{(bytesPerMeter / 1024.0):N1}<span class=\"unit\">KB</span>";
+        }
+        return $"{bytesPerMeter:N0}<span class=\"unit\">B</span>";
     }
 
     private static string BuildSparkline(IReadOnlyList<double> data)

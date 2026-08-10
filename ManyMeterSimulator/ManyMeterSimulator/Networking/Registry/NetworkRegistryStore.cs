@@ -26,11 +26,19 @@ public interface INetworkRegistryStore
 /// </summary>
 public sealed record NetworkRegistrySnapshot
 {
-    /// <summary>Bumped only if a future change needs migration logic; unread today.</summary>
-    public int Version { get; init; } = 1;
+    /// <summary>
+    /// 1 = legacy separate brokers+pushTargets; 2 = unified environments.
+    /// Bumped when migration logic is needed on load.
+    /// </summary>
+    public int Version { get; init; } = 2;
 
+    /// <summary>Current format: unified HES environments (version ≥ 2).</summary>
+    public List<HesEnvironment> Environments { get; init; } = new();
+
+    /// <summary>Legacy brokers (version 1). Read on load for migration only; never written.</summary>
     public List<BrokerEndpoint> Brokers { get; init; } = new();
 
+    /// <summary>Legacy push targets (version 1). Read on load for migration only; never written.</summary>
     public List<PushTargetEndpoint> PushTargets { get; init; } = new();
 }
 

@@ -8,7 +8,9 @@
 @using ManyMeterSimulator.Auth
 @using ManyMeterSimulator.Brain
 @using ManyMeterSimulator.Provisioning
+@using ManyMeterSimulator.Testing
 @inject ConfigBundleService ConfigBundles
+@inject TestPlanRegistry TestPlans
 @inject MeterSessionManager Sessions
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
@@ -112,6 +114,25 @@ else
                     </MudButton>
                     <InputFile id="testing-import-input" OnChange="OnTestingFileSelected" accept=".json" class="d-none" />
                     <MudButton HtmlTag="label" for="testing-import-input" Size="Size.Small" Variant="Variant.Outlined"
+                               Color="Color.Warning" Class="ml-1" StartIcon="@Icons.Material.Filled.CloudDownload">
+                        Import
+                    </MudButton>
+                </td>
+            </tr>
+            <tr class="batch-row is-idle">
+                <td class="col-flex">
+                    <MudText Typo="Typo.body1">Test Plans</MudText>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                        All benchmark plans (environments, batches, push cadence, collection window). The base plan is always re-seeded on import.
+                    </MudText>
+                </td>
+                <td style="text-align:right">
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Info"
+                               StartIcon="@Icons.Material.Filled.CloudUpload" OnClick="ExportTestPlans">
+                        Export
+                    </MudButton>
+                    <InputFile id="testplans-import-input" OnChange="OnTestPlansFileSelected" accept=".json" class="d-none" />
+                    <MudButton HtmlTag="label" for="testplans-import-input" Size="Size.Small" Variant="Variant.Outlined"
                                Color="Color.Warning" Class="ml-1" StartIcon="@Icons.Material.Filled.CloudDownload">
                         Import
                     </MudButton>
@@ -368,6 +389,44 @@ else
                 applied.Missing.Count > 0 ? Severity.Warning : Severity.Success);
         }
         catch (ArgumentException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    // ── Test plans ─────────────────────────────────────────────────────────────────────────────
+
+    private async Task ExportTestPlans()
+    {
+        if (IsAdmin)
+        {
+            await JS.InvokeVoidAsync("mayaDownload", "/config/testplans.json");
+        }
+    }
+
+    private async Task OnTestPlansFileSelected(InputFileChangeEventArgs e)
+    {
+        string? json = await ReadFileAsync(e);
+        if (json is null) return;
+
+        int count;
+        try { count = ConfigBundles.PreviewTestPlans(json); }
+        catch (ArgumentException ex) { Snackbar.Add(ex.Message, Severity.Error); return; }
+
+        bool? confirmed = await DialogService.ShowMessageBoxAsync(
+            "Replace test plans?",
+            $"This file holds {count} plan(s). Importing replaces all custom plans. The base plan is always re-seeded. This cannot be undone.",
+            yesText: "Replace plans", cancelText: "Cancel");
+
+        if (confirmed != true) return;
+
+        try
+        {
+            (int imported, int missing) = ConfigBundles.ImportTestPlans(json);
+            string note = missing > 0 ? $" ({missing} batch binding(s) not resolved here)" : "";
+            Snackbar.Add($"Imported {imported} plan(s).{note}", missing > 0 ? Severity.Warning : Severity.Success);
+        }
+        catch (Exception ex)
         {
             Snackbar.Add(ex.Message, Severity.Error);
         }

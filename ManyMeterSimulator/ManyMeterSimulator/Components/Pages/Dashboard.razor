@@ -21,20 +21,18 @@
 
 
 @* ---------- KPI stat cards ---------- *@
-<MudGrid Class="mb-2">
+<div class="d-flex flex-row gap-2 mb-2" style="flex-wrap:nowrap;">
     @foreach (var kpi in Kpis)
     {
-        <MudItem xs="6" sm="4" md="3" lg="2">
-            <MudPaper Elevation="1" Class="pa-4 kpi-card">
-                <div class="d-flex align-center justify-space-between">
-                    <MudText Typo="Typo.caption" Class="mud-text-secondary">@kpi.Label</MudText>
-                    <MudIcon Icon="@kpi.Icon" Color="@kpi.Color" Size="Size.Small" />
-                </div>
-                <MudText Typo="Typo.h4" Class="mt-1" Style="font-weight:600;">@kpi.Value</MudText>
-            </MudPaper>
-        </MudItem>
+        <MudPaper Elevation="1" Class="pa-4 kpi-card" Style="flex:1 1 0;min-width:0;">
+            <div class="d-flex align-center justify-space-between">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">@kpi.Label</MudText>
+                <MudIcon Icon="@kpi.Icon" Color="@kpi.Color" Size="Size.Small" />
+            </div>
+            <MudText Typo="Typo.h4" Class="mt-1" Style="font-weight:600;">@kpi.Value</MudText>
+        </MudPaper>
     }
-</MudGrid>
+</div>
 
 <MudGrid>
     @* ---------- Live activity area chart ---------- *@
@@ -299,6 +297,93 @@
                 </MudText>
             </div>
             <MudProgressLinear Color="Color.Info" Value="@MaterializedPercent" Size="Size.Large" Rounded="true" />
+
+            <div style="height: 1px; background: rgba(255, 255, 255, 0.08); margin: 1rem 0; flex-shrink: 0;"></div>
+
+            @{
+                RamCapacityPrediction ramPred = RamCapacityPredictor.PredictCurrentProcess(_liveMeters);
+            }
+            <div class="d-flex align-center justify-space-between mb-1">
+                <MudText Typo="Typo.body2">Predicted RAM Fleet Capacity</MudText>
+                <MudText Typo="Typo.body2" Style="font-weight: 600; color: #4ec9b0;">
+                    @_liveMeters.ToString("N0") / ~@ramPred.PredictedMaxTotalMeters.ToString("N0") max meters
+                </MudText>
+            </div>
+            <MudProgressLinear Color="Color.Success" Value="@ramPred.CurrentUsagePercent(_liveMeters)" Size="Size.Large" Rounded="true" />
+            <div class="d-flex justify-space-between mt-1" style="font-size: 0.725rem; color: #8a8f98;">
+                <span>RAM Free: @ramPred.FreeRamMb.ToString("N0") MB (1 GB OS buffer reserved)</span>
+                <span>Avg: ~@ramPred.AvgKbPerMeter.ToString("N1") KB/meter</span>
+            </div>
+        </MudPaper>
+    </MudItem>
+
+    @* ---------- Push activity ---------- *@
+    <MudItem xs="12">
+        <MudPaper Elevation="1" Class="pa-4">
+            <div class="d-flex align-center justify-space-between flex-wrap mb-3" style="gap:12px;">
+                <div>
+                    <MudText Typo="Typo.subtitle1">Push activity</MudText>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                        Outbound meter&rarr;HES pushes. Latency is encode + wire time per meter &mdash;
+                        it stretches before anything fails, so it leads the failure count.
+                    </MudText>
+                </div>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                    <MudLink Href="testing">on-demand &amp; loop push</MudLink>
+                </MudText>
+            </div>
+
+            @if (_snap.TotalPushMetersAttempted == 0)
+            {
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                    No pushes yet. Send one from the <MudLink Href="testing">Testing</MudLink> page.
+                </MudText>
+            }
+            else
+            {
+                <div class="batch-bar">
+                    <div class="batch-seg" style="width:@F(PushPercentOf(_snap.TotalPushMetersSent))%;background:#4ec9b0;"
+                         title="Sent: @_snap.TotalPushMetersSent.ToString("N0")"></div>
+                    <div class="batch-seg" style="width:@F(PushPercentOf(_snap.TotalPushMetersFailed))%;background:#f48771;"
+                         title="Failed: @_snap.TotalPushMetersFailed.ToString("N0")"></div>
+                </div>
+
+                <MudGrid Class="mt-4">
+                    <MudItem xs="6" sm="4" md="2">
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">Meters pushed</MudText>
+                        <MudText Typo="Typo.h5" Style="font-weight:600;">@_snap.TotalPushMetersSent.ToString("N0")</MudText>
+                    </MudItem>
+                    <MudItem xs="6" sm="4" md="2">
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">Failed</MudText>
+                        <MudText Typo="Typo.h5" Style="@PushFailedStyle">
+                            @_snap.TotalPushMetersFailed.ToString("N0")
+                        </MudText>
+                    </MudItem>
+                    <MudItem xs="6" sm="4" md="2">
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">Success rate</MudText>
+                        <MudText Typo="Typo.h5" Style="font-weight:600;">@_snap.PushSuccessPercent.ToString("N1")<span class="unit">%</span></MudText>
+                    </MudItem>
+                    <MudItem xs="6" sm="4" md="2">
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">Pushes/sec</MudText>
+                        <MudText Typo="Typo.h5" Style="font-weight:600;">@_pushPerSec.ToString("N1")</MudText>
+                    </MudItem>
+                    <MudItem xs="6" sm="4" md="2">
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">Avg push latency</MudText>
+                        <MudText Typo="Typo.h5" Style="font-weight:600;">@_snap.AvgPushLatency.TotalMilliseconds.ToString("N0") <span class="unit">ms</span></MudText>
+                    </MudItem>
+                    <MudItem xs="6" sm="4" md="2">
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">Max push latency</MudText>
+                        <MudText Typo="Typo.h5" Style="font-weight:600;">@_snap.MaxPushLatency.TotalMilliseconds.ToString("N0") <span class="unit">ms</span></MudText>
+                    </MudItem>
+                </MudGrid>
+
+                <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mt-3">
+                    @_snap.TotalPushPayloadsSent.ToString("N0") payload(s) delivered,
+                    @_snap.TotalPushPayloadsFailed.ToString("N0") failed &middot;
+                    @_snap.TotalPushMetersSkipped.ToString("N0") meter(s) had no sendable PushSetup.
+                    A meter can carry several push objects, so payloads run ahead of meters.
+                </MudText>
+            }
         </MudPaper>
     </MudItem>
 
@@ -388,6 +473,11 @@
     private long _lastExchanges;
     private DateTime _lastSampleUtc;
 
+    // Push throughput, derived the same way as exchanges/sec: a delta over the sample interval
+    // rather than a running total, so a finished burst decays to zero instead of sitting there.
+    private long _lastPushAttempts;
+    private double _pushPerSec;
+
     // Pre-rendered SVG path data for the Live activity area chart (recomputed each 2s sample).
     private string _connLine = "", _connArea = "", _exchLine = "", _exchArea = "";
 
@@ -404,7 +494,7 @@
     private SimulatorMetricsSnapshot _snap;
     private int _liveMeters;
     private long _provisionedMeters;
-    private int _runningBatches, _stoppedBatches, _notStartedBatches, _totalBatches;
+    private int _runningBatches, _startingBatches, _stoppedBatches, _notStartedBatches, _totalBatches;
     private IReadOnlyList<MeterBatch> _batches = Array.Empty<MeterBatch>();
     // Cached by FleetCompositionCache: recomputing this walks every provisioned index, so it must
     // not be recalculated on the 2s sample. The cache returns instantly unless config changed.
@@ -436,6 +526,7 @@
         _batches = batches;
         _totalBatches = batches.Count;
         _runningBatches = batches.Count(b => b.Status == BatchStatus.Running);
+        _startingBatches = batches.Count(b => b.Status == BatchStatus.Starting);
         _stoppedBatches = batches.Count(b => b.Status == BatchStatus.Stopped);
         _notStartedBatches = batches.Count(b => b.Status == BatchStatus.NotStarted);
         _provisionedMeters = batches.Sum(b => b.Count);
@@ -446,6 +537,10 @@
         double secs = Math.Max(0.001, (now - _lastSampleUtc).TotalSeconds);
         double perSec = initial ? 0 : Math.Max(0, (_snap.TotalExchanges - _lastExchanges) / secs);
         _lastExchanges = _snap.TotalExchanges;
+
+        long pushAttempts = _snap.TotalPushMetersAttempted;
+        _pushPerSec = initial ? 0 : Math.Max(0, (pushAttempts - _lastPushAttempts) / secs);
+        _lastPushAttempts = pushAttempts;
 
         // Per-NIC breakdown for the "NIC statistics" table — same delta-over-interval approach as
         // the fleet-wide exchanges/sec above, just tracked once per NIC instead of once overall.
@@ -551,6 +646,8 @@
         ("Provisioned meters", _provisionedMeters.ToString("N0"), Icons.Material.Filled.Dns, Color.Info),
         ("Total exchanges", _snap.TotalExchanges.ToString("N0"), Icons.Material.Filled.SwapHoriz, Color.Primary),
         ("Total accepted", _snap.TotalAccepted.ToString("N0"), Icons.Material.Filled.CheckCircle, Color.Success),
+        ("Meters pushed", _snap.TotalPushMetersSent.ToString("N0"), Icons.Material.Filled.Send,
+            _snap.TotalPushMetersFailed > 0 ? Color.Warning : Color.Secondary),
     };
 
     // Three gridlines/ticks — full scale, half, zero — as 0..1 fractions of plot height matching
@@ -590,6 +687,7 @@
     private IEnumerable<(string Label, string Color, int Batches, long Meters)> BatchSegments => new[]
     {
         ("Running", "#4ec9b0", _runningBatches, _batches.Where(b => b.Status == BatchStatus.Running).Sum(b => b.Count)),
+        ("Starting", "#3b82f6", _startingBatches, _batches.Where(b => b.Status == BatchStatus.Starting).Sum(b => b.Count)),
         ("Stopped", "#e0a458", _stoppedBatches, _batches.Where(b => b.Status == BatchStatus.Stopped).Sum(b => b.Count)),
         ("Not started", "#6b7178", _notStartedBatches, _batches.Where(b => b.Status == BatchStatus.NotStarted).Sum(b => b.Count)),
     };
@@ -604,6 +702,7 @@
     private static string StatusColor(BatchStatus status) => status switch
     {
         BatchStatus.Running => "#4ec9b0",
+        BatchStatus.Starting => "#3b82f6",
         BatchStatus.Stopped => "#e0a458",
         _ => "#6b7178",
     };
@@ -617,6 +716,14 @@
         NicType.MqttKmesh => "RF Kimbal Mesh",
         _ => nic.ToString(),
     };
+
+    // Only turns red once something has actually failed, so a clean run doesn't sit there looking
+    // alarming at zero.
+    private string PushFailedStyle =>
+        _snap.TotalPushMetersFailed > 0 ? "font-weight:600;color:#f48771;" : "font-weight:600;";
+
+    private double PushPercentOf(long count) =>
+        _snap.TotalPushMetersAttempted == 0 ? 0 : (double)count / _snap.TotalPushMetersAttempted * 100;
 
     private double CapacityPercent => _maxConns > 0 ? (double)_snap.ActiveConnections / _maxConns * 100 : 0;
     private double MaterializedPercent => _provisionedMeters > 0 ? (double)_liveMeters / _provisionedMeters * 100 : 0;

@@ -12,6 +12,7 @@ using ManyMeterSimulator.Networking.Push;
 using ManyMeterSimulator.Networking.Registry;
 using ManyMeterSimulator.Provisioning;
 using ManyMeterSimulator.Settings;
+using ManyMeterSimulator.Testing;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.DataProtection;
 using MudBlazor.Services;
@@ -142,6 +143,10 @@ builder.Services.AddSingleton<MeterSessionManager>();
 builder.Services.AddSingleton<TcpPushSender>();
 builder.Services.AddSingleton<PushCoordinator>();
 builder.Services.AddSingleton<PushScheduleService>();
+builder.Services.AddSingleton<ITestPlanStore, JsonTestPlanStore>();
+builder.Services.AddSingleton<TestPlanRegistry>();
+builder.Services.AddSingleton<TestRunStore>();
+builder.Services.AddSingleton<TestRunEngine>();
 
 // Bridge selection: the real in-process brain (default) or the echo stand-in (framing only).
 string bridgeMode = builder.Configuration.GetValue("Brain:Mode", "Brain") ?? "Brain";
@@ -243,6 +248,7 @@ app.UseAntiforgery();
 app.MapAuthEndpoints();
 app.MapBatchEndpoints();
 app.MapConfigEndpoints();
+app.MapTestReportEndpoints();
 
 app.MapStaticAssets();
 

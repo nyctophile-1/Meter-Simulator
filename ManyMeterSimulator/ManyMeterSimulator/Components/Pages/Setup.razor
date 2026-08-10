@@ -1,4 +1,5 @@
 @page "/batches"
+@implements IDisposable
 @attribute [Authorize]
 @rendermode InteractiveServer
 @using System.Security.Claims
@@ -6,6 +7,7 @@
 @using Microsoft.AspNetCore.Components.Authorization
 @using ManyMeterSimulator.Auth
 @using ManyMeterSimulator.Brain
+@using ManyMeterSimulator.Diagnostics
 @using ManyMeterSimulator.Networking.Nic
 @using ManyMeterSimulator.Networking.Registry
 @using Microsoft.AspNetCore.Components.Forms
@@ -84,34 +86,37 @@
                                  Variant="Variant.Outlined" Margin="Margin.Dense" />
             </MudItem>
             <MudItem xs="12" sm="6">
-                <MudSelect T="string" @bind-Value="SelectedBroker" Label="MQTT broker"
-                           Disabled="@(!NicTypes.IsMqtt(SelectedNic))"
-                           HelperText="@(NicTypes.IsMqtt(SelectedNic)
-                               ? "Unbound meters are never reached"
-                               : "TCP is broker-agnostic")"
+                <MudSelect T="string" @bind-Value="SelectedEnvironment" Label="Environment"
                            Variant="Variant.Outlined" Margin="Margin.Dense">
                     <MudSelectItem T="string" Value="@UnboundOption">(none — unbound)</MudSelectItem>
-                    @foreach (BrokerEndpoint b in Network.Brokers)
+                    @foreach (var env in Network.Environments)
                     {
-                        <MudSelectItem T="string" Value="@b.Key">@b.Key@(b.Enabled ? "" : " (disabled)")</MudSelectItem>
-                    }
-                </MudSelect>
-            </MudItem>
-            <MudItem xs="12" sm="6">
-                <MudSelect T="string" @bind-Value="SelectedPushTarget" Label="HES push target"
-                           Disabled="@(SelectedNic != NicType.Tcp4G)"
-                           HelperText="@(SelectedNic == NicType.Tcp4G
-                               ? "Only needed for push; pulls work regardless"
-                               : "4G TCP only")"
-                           Variant="Variant.Outlined" Margin="Margin.Dense">
-                    <MudSelectItem T="string" Value="@UnboundOption">(none — unbound)</MudSelectItem>
-                    @foreach (PushTargetEndpoint t in Network.PushTargets)
-                    {
-                        <MudSelectItem T="string" Value="@t.Key">@t.Key@(t.Enabled ? "" : " (disabled)")</MudSelectItem>
+                        <MudSelectItem T="string" Value="@env.Key">@env.DisplayName@(env.Enabled ? "" : " (disabled)")</MudSelectItem>
                     }
                 </MudSelect>
             </MudItem>
         </MudGrid>
+
+        @{
+            RamCapacityPrediction pred = RamCapacityPredictor.PredictCurrentProcess(Sessions.LiveMeterCount);
+        }
+        <MudAlert Severity="Severity.Normal" Dense="true" Variant="Variant.Outlined" Class="mt-3" Style="border-color: rgba(78, 201, 176, 0.3); background: rgba(78, 201, 176, 0.05);">
+            <div class="d-flex align-center justify-space-between" style="font-size: 0.8rem;">
+                <span>
+                    <strong>RAM Meter Capacity:</strong> Max <strong>~@pred.PredictedMaxAdditionalMeters.ToString("N0")</strong> additional meters predicted
+                </span>
+                <span class="mud-text-secondary" style="font-size: 0.75rem;">
+                    (@pred.FreeRamMb.ToString("N0") MB free RAM &middot; ~@pred.AvgKbPerMeter.ToString("N1") KB/meter &middot; 1 GB OS buffer)
+                </span>
+            </div>
+        </MudAlert>
+
+        @if (MeterCount > pred.PredictedMaxAdditionalMeters)
+        {
+            <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2">
+                Requested meter count (@MeterCount.ToString("N0")) exceeds predicted available RAM capacity (~@pred.PredictedMaxAdditionalMeters.ToString("N0") meters).
+            </MudAlert>
+        }
 
         @if (MeterCount > 0)
         {
@@ -286,14 +291,23 @@ else
                         <MudChip T="string" Size="Size.Small" Variant="Variant.Filled" Color="@StatusColor(batch.Status)">
                             @batch.Status
                         </MudChip>
+                        @if (batch.Status == BatchStatus.Starting && Sessions.GetProgress(batch.Id) is { } p)
+                        {
+                            <div style="min-width: 140px; margin-top: 4px;">
+                                <MudProgressLinear Color="Color.Info" Value="@p.Percent" Size="Size.Small" Rounded="true" />
+                                <div style="font-size: 0.7rem; color: #90caf9; margin-top: 2px;">
+                                    @p.MaterializedCount.ToString("N0") / @p.TotalCount.ToString("N0") (@p.Percent.ToString("N0")%)
+                                </div>
+                            </div>
+                        }
                     </td>
                     @if (CanOperate)
                     {
                         <td style="text-align:right" @onclick:stopPropagation="true">
                             <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Success"
-                                       OnClick="() => Start(batch.Id)" Disabled="@(batch.Status == BatchStatus.Running)">Start</MudButton>
+                                       OnClick="() => Start(batch.Id)" Disabled="@(batch.Status == BatchStatus.Running || batch.Status == BatchStatus.Starting)">Start</MudButton>
                             <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Warning" Class="ml-1"
-                                       OnClick="() => Stop(batch.Id)" Disabled="@(batch.Status == BatchStatus.Stopped)">Stop</MudButton>
+                                       OnClick="() => Stop(batch.Id)" Disabled="@(batch.Status == BatchStatus.Stopped || batch.Status == BatchStatus.Starting)">Stop</MudButton>
                             @if (IsAdmin)
                             {
                                 <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Error" Class="ml-1"
@@ -386,26 +400,13 @@ else
             Takes effect immediately: an MQTT batch's traffic moves to the new broker on the next
             reconcile, with no restart. Choose <em>(none)</em> to leave it connected to nothing.
         </MudText>
-        @if (_rebindBatch is not null && NicTypes.IsMqtt(_rebindBatch.NicType))
-        {
-            <MudSelect T="string" @bind-Value="_rebindBroker" Label="MQTT broker" Variant="Variant.Outlined">
-                <MudSelectItem T="string" Value="@UnboundOption">(none — unbound)</MudSelectItem>
-                @foreach (BrokerEndpoint b in Network.Brokers)
-                {
-                    <MudSelectItem T="string" Value="@b.Key">@b.Key@(b.Enabled ? "" : " (disabled)")</MudSelectItem>
-                }
-            </MudSelect>
-        }
-        else
-        {
-            <MudSelect T="string" @bind-Value="_rebindPushTarget" Label="HES push target" Variant="Variant.Outlined">
-                <MudSelectItem T="string" Value="@UnboundOption">(none — unbound)</MudSelectItem>
-                @foreach (PushTargetEndpoint t in Network.PushTargets)
-                {
-                    <MudSelectItem T="string" Value="@t.Key">@t.Key@(t.Enabled ? "" : " (disabled)")</MudSelectItem>
-                }
-            </MudSelect>
-        }
+        <MudSelect T="string" @bind-Value="_rebindEnvironment" Label="Environment" Variant="Variant.Outlined">
+            <MudSelectItem T="string" Value="@UnboundOption">(none — unbound)</MudSelectItem>
+            @foreach (var env in Network.Environments)
+            {
+                <MudSelectItem T="string" Value="@env.Key">@env.DisplayName@(env.Enabled ? "" : " (disabled)")</MudSelectItem>
+            }
+        </MudSelect>
 
         @if (_rebindError is not null)
         {
@@ -438,15 +439,13 @@ else
     /// </summary>
     private const string UnboundOption = "";
 
-    private string SelectedBroker { get; set; } = UnboundOption;
-    private string SelectedPushTarget { get; set; } = UnboundOption;
+    private string SelectedEnvironment { get; set; } = UnboundOption;
 
     // ── Rebind dialog ──
     private readonly DialogOptions _rebindOptions = new() { MaxWidth = MaxWidth.Small, FullWidth = true };
     private bool _rebindOpen;
     private MeterBatch? _rebindBatch;
-    private string _rebindBroker = UnboundOption;
-    private string _rebindPushTarget = UnboundOption;
+    private string _rebindEnvironment = UnboundOption;
     private string? _rebindError;
 
     // ── Add Batch dialog ──
@@ -480,17 +479,17 @@ else
         const string Red = "#f48771";
         const string Grey = "#8a8f98";
 
-        bool isMqtt = NicTypes.IsMqtt(batch.NicType);
-        string? key = isMqtt ? batch.BrokerKey : batch.PushTargetKey;
+        string? key = batch.EnvironmentKey;
 
         if (string.IsNullOrWhiteSpace(key))
         {
+            bool isMqtt = NicTypes.IsMqtt(batch.NicType);
             return isMqtt
-                ? ("unbound", Grey, "No broker bound — this batch's meters are never reached.")
-                : ("—", Grey, "No push target bound. Pulls work regardless; only push needs one.");
+                ? ("unbound", Grey, "No environment bound — this batch's meters are never reached.")
+                : ("—", Grey, "No environment bound. Pulls work regardless; only push needs one.");
         }
 
-        bool exists = isMqtt ? Network.Broker(key) is not null : Network.PushTarget(key) is not null;
+        bool exists = Network.Environment(key) is not null;
         if (!exists)
         {
             return (key, Red, $"'{key}' is not in the network registry.");
@@ -507,16 +506,9 @@ else
     /// <summary>Where the bound endpoint actually points — the part the row cannot show.</summary>
     private string BindingDetail(MeterBatch batch)
     {
-        if (NicTypes.IsMqtt(batch.NicType))
-        {
-            return Network.Broker(batch.BrokerKey) is { } broker
-                ? $"broker {broker.Describe()}"
-                : $"broker: {BindingLabel(batch.BrokerKey, exists: false)}";
-        }
-
-        return Network.PushTarget(batch.PushTargetKey) is { } target
-            ? $"push target {target.Describe()}"
-            : $"push target: {BindingLabel(batch.PushTargetKey, exists: false)}";
+        return Network.Environment(batch.EnvironmentKey) is { } env
+            ? env.Describe()
+            : BindingLabel(batch.EnvironmentKey, exists: false);
     }
 
     private void OpenRebind(MeterBatch batch)
@@ -527,8 +519,7 @@ else
         }
 
         _rebindBatch = batch;
-        _rebindBroker = batch.BrokerKey ?? UnboundOption;
-        _rebindPushTarget = batch.PushTargetKey ?? UnboundOption;
+        _rebindEnvironment = batch.EnvironmentKey ?? UnboundOption;
         _rebindError = null;
         _rebindOpen = true;
     }
@@ -540,16 +531,15 @@ else
             return;   // defense in depth — the button is admin-gated too
         }
 
-        string? broker = string.IsNullOrWhiteSpace(_rebindBroker) ? null : _rebindBroker;
-        string? push = string.IsNullOrWhiteSpace(_rebindPushTarget) ? null : _rebindPushTarget;
+        string? envKey = string.IsNullOrWhiteSpace(_rebindEnvironment) ? null : _rebindEnvironment;
 
-        if (!Bindings.Validate(_rebindBatch.NicType, broker, push, out string error))
+        if (!Bindings.Validate(_rebindBatch.NicType, envKey, out string error))
         {
             _rebindError = error;
             return;
         }
 
-        MeterRegistry.SetNetworkBinding(_rebindBatch.Id, broker, push);
+        MeterRegistry.SetNetworkBinding(_rebindBatch.Id, envKey);
         _rebindOpen = false;
         Snackbar.Add($"'{_rebindBatch.Name}' rebound.", Severity.Success);
     }
@@ -605,6 +595,7 @@ else
     private static Color StatusColor(BatchStatus status) => status switch
     {
         BatchStatus.Running => Color.Success,
+        BatchStatus.Starting => Color.Info,
         BatchStatus.Stopped => Color.Error,
         _ => Color.Default,
     };
@@ -617,17 +608,30 @@ else
     private static string StatusRowClass(BatchStatus status) => status switch
     {
         BatchStatus.Running => "is-running",
+        BatchStatus.Starting => "is-starting",
         BatchStatus.Stopped => "is-stopped",
         _ => "is-idle",
     };
 
     protected override async Task OnInitializedAsync()
     {
+        Sessions.OnProgressChanged += OnProgressChanged;
+        MeterRegistry.Changed += OnRegistryChanged;
+
         if (AuthStateTask is not null)
         {
             AuthenticationState state = await AuthStateTask;
             _user = state.User;
         }
+    }
+
+    private void OnProgressChanged(BatchMaterializationProgress p) => _ = InvokeAsync(StateHasChanged);
+    private void OnRegistryChanged() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        Sessions.OnProgressChanged -= OnProgressChanged;
+        MeterRegistry.Changed -= OnRegistryChanged;
     }
 
     private void AddBatch()
@@ -639,14 +643,9 @@ else
 
         ErrorMessage = null;
 
-        // Keys only apply to the NIC that uses them — a stale selection left over from switching
-        // the NIC dropdown must not be stored on a batch that can never use it.
-        string? broker = NicTypes.IsMqtt(SelectedNic) && !string.IsNullOrWhiteSpace(SelectedBroker)
-            ? SelectedBroker : null;
-        string? pushTarget = SelectedNic == NicType.Tcp4G && !string.IsNullOrWhiteSpace(SelectedPushTarget)
-            ? SelectedPushTarget : null;
+        string? envKey = string.IsNullOrWhiteSpace(SelectedEnvironment) ? null : SelectedEnvironment;
 
-        if (!Bindings.Validate(SelectedNic, broker, pushTarget, out string bindingError))
+        if (!Bindings.Validate(SelectedNic, envKey, out string bindingError))
         {
             ErrorMessage = bindingError;
             return;
@@ -657,7 +656,7 @@ else
             MeterRegistry.AddBatch(
                 BatchName, SelectedTemplate, MeterCount, SelectedNic,
                 NeedsHesTemplateId(SelectedNic) ? HesTemplateId : null,
-                broker, pushTarget);
+                environmentKey: envKey);
             BatchName = "";
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
@@ -706,7 +705,9 @@ else
     {
         if (CanOperate)
         {
-            MeterRegistry.TryStart(batchId);
+            MeterRegistry.TryMarkStarting(batchId);
+            StateHasChanged();
+            _ = Task.Run(() => Sessions.StartBatchAsync(batchId));
         }
     }
 

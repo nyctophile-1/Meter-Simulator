@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using ManyMeterSimulator.Diagnostics;
 using ManyMeterSimulator.Networking.Mqtt;
 using ManyMeterSimulator.Networking.Nic;
 using ManyMeterSimulator.Networking.Push;
@@ -23,6 +25,7 @@ public sealed class PushCoordinator
     private readonly IMqttPushPublisher _mqtt;
     private readonly NicCodecFactory _codecs;
     private readonly PushOptions _options;
+    private readonly SimulatorMetrics _metrics;
     private readonly ILogger<PushCoordinator> _logger;
 
     public PushCoordinator(
@@ -33,6 +36,7 @@ public sealed class PushCoordinator
         IMqttPushPublisher mqtt,
         NicCodecFactory codecs,
         IOptions<PushOptions> options,
+        SimulatorMetrics metrics,
         ILogger<PushCoordinator> logger)
     {
         _registry = registry;
@@ -42,6 +46,7 @@ public sealed class PushCoordinator
         _mqtt = mqtt;
         _codecs = codecs;
         _options = options.Value;
+        _metrics = metrics;
         _logger = logger;
     }
 
@@ -96,7 +101,7 @@ public sealed class PushCoordinator
 
         destination = resolved;
 
-        IReadOnlyList<(MeterRef Meter, DLMSServerSession Session)> meters = _sessions.MaterializeBatch(batch);
+        IReadOnlyList<(MeterRef Meter, DLMSServerSession Session)> meters = await _sessions.MaterializeBatchAsync(batch, cancellationToken: cancellationToken);
 
         int metersSent = 0, metersFailed = 0;
         using var gate = new SemaphoreSlim(Math.Max(1, _options.MaxConcurrency));
@@ -104,12 +109,14 @@ public sealed class PushCoordinator
         var tasks = meters.Select(async pair =>
         {
             await gate.WaitAsync(cancellationToken);
+            long startedTicks = Stopwatch.GetTimestamp();
             try
             {
                 // Two stages, cleanly split: the session ENCODES the push (transport-agnostic), and
-                // the NIC sender puts it on the wire. Both are blocking, so offload them; encoding is
-                // serialized per session (same lock the inbound bridge takes) because it mutates the
-                // session's push objects, while the socket send needs no session lock.
+                // the NIC sender puts it on the wire. Encoding stays on Task.Run — it is CPU work
+                // under the same monitor the inbound bridge takes, so it can block on a meter that
+                // is mid-pull. The send does NOT: it is async all the way down now, so thousands of
+                // pushes can be in flight without a thread each.
                 byte[][] payloads = await Task.Run(() =>
                 {
                     lock (pair.Session)
@@ -120,28 +127,33 @@ public sealed class PushCoordinator
 
                 if (payloads.Length == 0)
                 {
+                    _metrics.RecordPushSkipped(batch.NicType);
                     return;   // meter has no sendable PushSetup — not counted either way
                 }
 
-                PushDeliveryResult result = await Task.Run(
-                    () => _tcpPush.Send(
-                        pair.Meter.Serial, pair.Session.SourceAddress, destination, _options.DefaultPort, payloads, cancellationToken),
-                    cancellationToken);
+                PushDeliveryResult result = await _tcpPush.SendAsync(
+                    pair.Meter.Serial, pair.Session.SourceAddress, destination,
+                    _options.DefaultPort, payloads, cancellationToken);
+
+                _metrics.RecordPushPayloads(batch.NicType, result.Sent, result.Failed);
 
                 if (result.Failed == 0 && result.Sent > 0)
                 {
                     Interlocked.Increment(ref metersSent);
+                    _metrics.RecordPushMeter(batch.NicType, ok: true, Stopwatch.GetElapsedTime(startedTicks));
                 }
                 else if (result.Sent > 0 || result.Failed > 0)
                 {
                     // Fully or partially failed — count the meter as failed.
                     Interlocked.Increment(ref metersFailed);
+                    _metrics.RecordPushMeter(batch.NicType, ok: false, Stopwatch.GetElapsedTime(startedTicks));
                 }
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Push failed for meter {Meter}", pair.Meter);
                 Interlocked.Increment(ref metersFailed);
+                _metrics.RecordPushMeter(batch.NicType, ok: false, Stopwatch.GetElapsedTime(startedTicks));
             }
             finally
             {
@@ -211,7 +223,7 @@ public sealed class PushCoordinator
             return PushBatchResult.ForError(ex.Message);
         }
 
-        IReadOnlyList<(MeterRef Meter, DLMSServerSession Session)> meters = _sessions.MaterializeBatch(batch);
+        IReadOnlyList<(MeterRef Meter, DLMSServerSession Session)> meters = await _sessions.MaterializeBatchAsync(batch, cancellationToken: cancellationToken);
 
         int metersSent = 0, metersFailed = 0;
         using var gate = new SemaphoreSlim(Math.Max(1, _options.MaxConcurrency));
@@ -219,6 +231,7 @@ public sealed class PushCoordinator
         var tasks = meters.Select(async pair =>
         {
             await gate.WaitAsync(cancellationToken);
+            long startedTicks = Stopwatch.GetTimestamp();
             try
             {
                 byte[][] payloads = await Task.Run(() =>
@@ -231,22 +244,31 @@ public sealed class PushCoordinator
 
                 if (payloads.Length == 0)
                 {
+                    _metrics.RecordPushSkipped(batch.NicType);
                     return;
                 }
 
                 bool anyFailed = false;
+                int published = 0, publishFailed = 0;
                 foreach (byte[] payload in payloads)
                 {
                     IReadOnlyList<NicPublish> publishes = codec.EncodePush(pair.Meter.NodeId, payload);
                     foreach (NicPublish publish in publishes)
                     {
                         bool ok = await _mqtt.TryPublishPushAsync(binding, publish, _options.PublishQos, cancellationToken);
-                        if (!ok)
+                        if (ok)
                         {
+                            published++;
+                        }
+                        else
+                        {
+                            publishFailed++;
                             anyFailed = true;
                         }
                     }
                 }
+
+                _metrics.RecordPushPayloads(batch.NicType, published, publishFailed);
 
                 if (anyFailed)
                 {
@@ -256,11 +278,14 @@ public sealed class PushCoordinator
                 {
                     Interlocked.Increment(ref metersSent);
                 }
+
+                _metrics.RecordPushMeter(batch.NicType, ok: !anyFailed, Stopwatch.GetElapsedTime(startedTicks));
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "MQTT push failed for meter {Meter}", pair.Meter);
                 Interlocked.Increment(ref metersFailed);
+                _metrics.RecordPushMeter(batch.NicType, ok: false, Stopwatch.GetElapsedTime(startedTicks));
             }
             finally
             {

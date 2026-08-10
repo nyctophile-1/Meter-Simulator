@@ -46,7 +46,9 @@ public class PushDestinationTests
         var mqtt = new StubPushPublisher();
         var push = new PushCoordinator(
             batches, sessions, network, tcpPush, mqtt, new NicCodecFactory(),
-            Options.Create(new PushOptions()), NullLogger<PushCoordinator>.Instance);
+            Options.Create(new PushOptions()),
+            new ManyMeterSimulator.Diagnostics.SimulatorMetrics(),
+            NullLogger<PushCoordinator>.Instance);
 
         return (push, batches, network, mqtt);
     }

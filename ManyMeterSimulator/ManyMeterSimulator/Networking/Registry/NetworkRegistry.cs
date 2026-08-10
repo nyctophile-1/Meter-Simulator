@@ -4,27 +4,26 @@ using Microsoft.Extensions.Options;
 namespace ManyMeterSimulator.Networking.Registry;
 
 /// <summary>
-/// The operator-managed set of network endpoints a batch can be bound to: MQTT brokers for the RF
-/// and 4G MQTT NICs, HES TCP push listeners for the 4G TCP NIC (network_registry.md §3).
+/// The operator-managed set of HES environments a batch can be bound to. An environment pairs a
+/// TCP push listener with an MQTT broker — one HES instance, one registry row.
 ///
 /// <para>
 /// Deliberately knows nothing about batches. <see cref="ManyMeterSimulator.Provisioning.MeterRegistry"/>
-/// stores binding keys as opaque strings — exactly as it already stores a template name without
-/// depending on the template registry — so the dependency runs one way only and there is no cycle.
-/// The one place this registry needs to see batches is refusing to delete an endpoint still in use,
-/// and that arrives through <see cref="IEndpointUsageSource"/>.
+/// stores binding keys as opaque strings — exactly as it does for template names — so the dependency
+/// runs one way only and there is no cycle. The one place this registry needs to see batches is
+/// refusing to delete an environment still in use, and that arrives through
+/// <see cref="IEndpointUsageSource"/>.
 /// </para>
 /// </summary>
 public sealed class NetworkRegistry
 {
     /// <summary>
-    /// Key of the entry seeded from <c>Nics:Shared:Broker</c>. Pre-registry batches are migrated
-    /// onto it, so a deployment that upgrades keeps talking to the same broker it always did.
+    /// Key of the environment seeded from <c>Nics:Shared:Broker</c>. Pre-registry batches are
+    /// migrated onto it so a deployment that upgrades keeps talking to the same broker it always did.
     /// </summary>
     public const string DefaultBrokerKey = "default";
 
-    private readonly Dictionary<string, BrokerEndpoint> _brokers = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, PushTargetEndpoint> _pushTargets = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, HesEnvironment> _environments = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _lock = new();
     private readonly INetworkRegistryStore _store;
     private readonly ILogger<NetworkRegistry>? _logger;
@@ -51,24 +50,47 @@ public sealed class NetworkRegistry
         SeedDefaultBroker(nics?.Value);
     }
 
+    public IReadOnlyList<HesEnvironment> Environments
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _environments.Values.OrderBy(e => e.Key, StringComparer.OrdinalIgnoreCase).ToArray();
+            }
+        }
+    }
+
+    // ── Backward-compat views (used by existing MQTT/push infrastructure) ──────────────────────
+
+    /// <summary>All environments that have a broker configured, as <see cref="BrokerEndpoint"/> adapters.</summary>
     public IReadOnlyList<BrokerEndpoint> Brokers
     {
         get
         {
             lock (_lock)
             {
-                return _brokers.Values.OrderBy(b => b.Key, StringComparer.OrdinalIgnoreCase).ToArray();
+                return _environments.Values
+                    .Where(e => e.HasBroker)
+                    .OrderBy(e => e.Key, StringComparer.OrdinalIgnoreCase)
+                    .Select(e => e.AsBrokerEndpoint())
+                    .ToArray();
             }
         }
     }
 
+    /// <summary>All environments that have TCP configured, as <see cref="PushTargetEndpoint"/> adapters.</summary>
     public IReadOnlyList<PushTargetEndpoint> PushTargets
     {
         get
         {
             lock (_lock)
             {
-                return _pushTargets.Values.OrderBy(p => p.Key, StringComparer.OrdinalIgnoreCase).ToArray();
+                return _environments.Values
+                    .Where(e => e.HasTcp)
+                    .OrderBy(e => e.Key, StringComparer.OrdinalIgnoreCase)
+                    .Select(e => e.AsPushTargetEndpoint())
+                    .ToArray();
             }
         }
     }
@@ -80,59 +102,168 @@ public sealed class NetworkRegistry
     /// </summary>
     public void SetUsageSource(IEndpointUsageSource usage) => _usage = usage;
 
-    /// <summary>The broker with this key, or null. A null or unknown key means unbound (§3.2).</summary>
+    /// <summary>The environment with this key, or null.</summary>
+    public HesEnvironment? Environment(string? key)
+    {
+        if (string.IsNullOrWhiteSpace(key)) return null;
+        lock (_lock) { return _environments.GetValueOrDefault(key); }
+    }
+
+    /// <summary>Broker adapter for <paramref name="key"/> — used by MQTT infrastructure.</summary>
     public BrokerEndpoint? Broker(string? key)
     {
-        if (string.IsNullOrWhiteSpace(key))
-        {
-            return null;
-        }
-
+        if (string.IsNullOrWhiteSpace(key)) return null;
         lock (_lock)
         {
-            return _brokers.GetValueOrDefault(key);
+            return _environments.TryGetValue(key, out HesEnvironment? env) && env.HasBroker
+                ? env.AsBrokerEndpoint()
+                : null;
         }
     }
 
+    /// <summary>Push-target adapter for <paramref name="key"/> — used by PushCoordinator.</summary>
     public PushTargetEndpoint? PushTarget(string? key)
     {
-        if (string.IsNullOrWhiteSpace(key))
+        if (string.IsNullOrWhiteSpace(key)) return null;
+        lock (_lock)
         {
-            return null;
+            return _environments.TryGetValue(key, out HesEnvironment? env) && env.HasTcp
+                ? env.AsPushTargetEndpoint()
+                : null;
         }
+    }
+
+    // ── Mutations ──────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Adds a new HES environment. The caller is expected to have probed it first;
+    /// <paramref name="verified"/> records which path the row came in on.
+    /// </summary>
+    public void AddEnvironment(HesEnvironment env, bool verified)
+    {
+        ValidateKey(env.Key);
 
         lock (_lock)
         {
-            return _pushTargets.GetValueOrDefault(key);
+            if (_environments.ContainsKey(env.Key))
+            {
+                throw new InvalidOperationException($"An environment named '{env.Key}' already exists.");
+            }
+
+            env.Verified = verified;
+            env.LastVerifiedUtc = verified ? DateTimeOffset.UtcNow : null;
+            _environments[env.Key] = env;
+            Persist();
         }
+
+        _logger?.LogInformation(
+            "Added environment {Env}{Unverified}", env.Describe(), verified ? string.Empty : " (UNVERIFIED)");
+        Changed?.Invoke();
     }
 
     /// <summary>
-    /// Adds a broker. The caller is expected to have probed it first — the registry stores what it
-    /// is told, and <paramref name="verified"/> records which of the two paths the row came in on
-    /// (a real connect, or the admin "save unverified" escape hatch).
+    /// Replaces connection details for an existing environment, keeping its key and therefore every
+    /// batch binding. Enabled is preserved — an edit dialog that does not show the toggle must not
+    /// silently re-enable a deliberately disabled environment.
     /// </summary>
-    public void AddBroker(BrokerEndpoint broker, bool verified)
+    public void UpdateEnvironment(HesEnvironment updated, bool verified)
     {
-        ValidateKey(broker.Key);
-
-        if (string.IsNullOrWhiteSpace(broker.Host))
+        lock (_lock)
         {
-            throw new ArgumentException("A broker needs a host.", nameof(broker));
+            if (!_environments.TryGetValue(updated.Key, out HesEnvironment? existing))
+            {
+                throw new InvalidOperationException($"No environment named '{updated.Key}'.");
+            }
+
+            updated.Enabled = existing.Enabled;
+            updated.Verified = verified;
+            updated.LastVerifiedUtc = verified ? DateTimeOffset.UtcNow : existing.LastVerifiedUtc;
+            _environments[updated.Key] = updated;
+            Persist();
         }
 
-        if (broker.Port is < 1 or > 65535)
+        _logger?.LogInformation("Updated environment {Env}", updated.Describe());
+        Changed?.Invoke();
+    }
+
+    public bool SetEnvironmentEnabled(string key, bool enabled)
+    {
+        lock (_lock)
         {
-            throw new ArgumentException($"Port {broker.Port} is out of range (1-65535).", nameof(broker));
+            if (!_environments.TryGetValue(key, out HesEnvironment? env) || env.Enabled == enabled)
+            {
+                return false;
+            }
+
+            env.Enabled = enabled;
+            Persist();
+        }
+
+        _logger?.LogInformation("Environment '{Key}' {State}", key, enabled ? "enabled" : "disabled");
+        Changed?.Invoke();
+        return true;
+    }
+
+    /// <summary>Records a successful probe so the health column shows the last-seen time.</summary>
+    public void RecordEnvironmentReachable(string key)
+    {
+        lock (_lock)
+        {
+            if (!_environments.TryGetValue(key, out HesEnvironment? env)) return;
+            env.Verified = true;
+            env.LastVerifiedUtc = DateTimeOffset.UtcNow;
+            Persist();
+        }
+    }
+
+    public bool TryDeleteEnvironment(string key, out string error)
+    {
+        IReadOnlyList<string> users = _usage.BatchesUsingEnvironment(key);
+        if (users.Count > 0)
+        {
+            error = $"'{key}' is still used by {DescribeBatches(users)}. Rebind or delete those batches first.";
+            return false;
         }
 
         lock (_lock)
         {
-            RequireKeyFree(broker.Key);
+            if (!_environments.Remove(key))
+            {
+                error = $"No environment named '{key}'.";
+                return false;
+            }
 
-            broker.Verified = verified;
-            broker.LastVerifiedUtc = verified ? DateTimeOffset.UtcNow : null;
-            _brokers[broker.Key] = broker;
+            Persist();
+        }
+
+        _logger?.LogInformation("Deleted environment '{Key}'", key);
+        error = string.Empty;
+        Changed?.Invoke();
+        return true;
+    }
+
+    // ── Backward-compat mutation wrappers (used by tests and legacy call sites) ─────────────────
+
+    /// <summary>Creates or updates the broker half of the matching environment.</summary>
+    public void AddBroker(BrokerEndpoint broker, bool verified)
+    {
+        ValidateKey(broker.Key);
+        lock (_lock)
+        {
+            if (!_environments.TryGetValue(broker.Key, out HesEnvironment? env))
+            {
+                env = new HesEnvironment { Key = broker.Key };
+                _environments[broker.Key] = env;
+            }
+
+            env.BrokerHost = broker.Host;
+            env.BrokerPort = broker.Port;
+            env.BrokerUsername = broker.Username;
+            env.BrokerPassword = broker.Password;
+            env.BrokerUseTls = broker.UseTls;
+            env.Enabled = broker.Enabled;
+            env.Verified = verified;
+            env.LastVerifiedUtc = verified ? DateTimeOffset.UtcNow : null;
             Persist();
         }
 
@@ -141,28 +272,26 @@ public sealed class NetworkRegistry
         Changed?.Invoke();
     }
 
-    /// <summary>Adds a push target. <paramref name="verified"/> as for <see cref="AddBroker"/>.</summary>
+    /// <summary>Creates or updates the TCP half of the matching environment.</summary>
     public void AddPushTarget(PushTargetEndpoint target, bool verified)
     {
         ValidateKey(target.Key);
 
         if (!PushTargetEndpoint.TryParseAddress(target.Address, out _, out string addressError))
-        {
             throw new ArgumentException(addressError, nameof(target));
-        }
-
-        if (target.Port is < 1 or > 65535)
-        {
-            throw new ArgumentException($"Port {target.Port} is out of range (1-65535).", nameof(target));
-        }
 
         lock (_lock)
         {
-            RequireKeyFree(target.Key);
+            if (!_environments.TryGetValue(target.Key, out HesEnvironment? env))
+            {
+                env = new HesEnvironment { Key = target.Key };
+                _environments[target.Key] = env;
+            }
 
-            target.Verified = verified;
-            target.LastVerifiedUtc = verified ? DateTimeOffset.UtcNow : null;
-            _pushTargets[target.Key] = target;
+            env.TcpHost = target.Address;
+            env.TcpPort = target.Port;
+            env.Verified = verified;
+            env.LastVerifiedUtc = verified ? DateTimeOffset.UtcNow : null;
             Persist();
         }
 
@@ -171,26 +300,20 @@ public sealed class NetworkRegistry
         Changed?.Invoke();
     }
 
-    /// <summary>
-    /// Replaces a broker's connection details, keeping its key (and therefore every batch binding).
-    /// Editing is how a rotated password is applied — there is no way to change a key, since that
-    /// would orphan bindings with no way to detect it.
-    /// </summary>
     public void UpdateBroker(BrokerEndpoint updated, bool verified)
     {
         lock (_lock)
         {
-            if (!_brokers.TryGetValue(updated.Key, out BrokerEndpoint? existing))
-            {
-                throw new InvalidOperationException($"No broker named '{updated.Key}'.");
-            }
+            if (!_environments.TryGetValue(updated.Key, out HesEnvironment? env))
+                throw new InvalidOperationException($"No environment named '{updated.Key}'.");
 
-            // Enabled is operational state, not connection detail: an edit dialog that did not
-            // show the toggle would otherwise silently re-enable a deliberately disabled endpoint.
-            updated.Enabled = existing.Enabled;
-            updated.Verified = verified;
-            updated.LastVerifiedUtc = verified ? DateTimeOffset.UtcNow : existing.LastVerifiedUtc;
-            _brokers[updated.Key] = updated;
+            env.BrokerHost = updated.Host;
+            env.BrokerPort = updated.Port;
+            env.BrokerUsername = updated.Username;
+            env.BrokerPassword = updated.Password;
+            env.BrokerUseTls = updated.UseTls;
+            env.Verified = verified;
+            env.LastVerifiedUtc = verified ? DateTimeOffset.UtcNow : env.LastVerifiedUtc;
             Persist();
         }
 
@@ -198,178 +321,75 @@ public sealed class NetworkRegistry
         Changed?.Invoke();
     }
 
-    /// <summary>
-    /// Turns an endpoint on or off without deleting it — the replacement for the per-transport
-    /// <c>Nics:&lt;x&gt;:Enabled</c> flags (network_registry.md §5.6). A disabled broker contributes
-    /// no bindings, so the reconcile pass tears its clients down.
-    /// </summary>
-    public bool SetBrokerEnabled(string key, bool enabled)
-    {
-        lock (_lock)
-        {
-            if (!_brokers.TryGetValue(key, out BrokerEndpoint? broker) || broker.Enabled == enabled)
-            {
-                return false;
-            }
+    public bool SetBrokerEnabled(string key, bool enabled) => SetEnvironmentEnabled(key, enabled);
 
-            broker.Enabled = enabled;
-            Persist();
-        }
+    public bool SetPushTargetEnabled(string key, bool enabled) => SetEnvironmentEnabled(key, enabled);
 
-        _logger?.LogInformation("Broker '{Key}' {State}", key, enabled ? "enabled" : "disabled");
-        Changed?.Invoke();
-        return true;
-    }
-
-    public bool SetPushTargetEnabled(string key, bool enabled)
-    {
-        lock (_lock)
-        {
-            if (!_pushTargets.TryGetValue(key, out PushTargetEndpoint? target) || target.Enabled == enabled)
-            {
-                return false;
-            }
-
-            target.Enabled = enabled;
-            Persist();
-        }
-
-        _logger?.LogInformation("Push target '{Key}' {State}", key, enabled ? "enabled" : "disabled");
-        Changed?.Invoke();
-        return true;
-    }
-
-    /// <summary>Records the outcome of a probe or a live connection, for the health table.</summary>
     public void RecordBrokerReachable(string key, bool reachable)
     {
-        lock (_lock)
-        {
-            if (!_brokers.TryGetValue(key, out BrokerEndpoint? broker) || !reachable)
-            {
-                return;
-            }
-
-            // Only success is persisted. A failure is transient health state owned by the monitor;
-            // writing the file on every failed probe would rewrite the store every minute for an
-            // endpoint that is simply down.
-            broker.Verified = true;
-            broker.LastVerifiedUtc = DateTimeOffset.UtcNow;
-            Persist();
-        }
+        if (reachable) RecordEnvironmentReachable(key);
     }
 
     public void RecordPushTargetReachable(string key, bool reachable)
     {
-        lock (_lock)
-        {
-            if (!_pushTargets.TryGetValue(key, out PushTargetEndpoint? target) || !reachable)
-            {
-                return;
-            }
-
-            target.Verified = true;
-            target.LastVerifiedUtc = DateTimeOffset.UtcNow;
-            Persist();
-        }
+        if (reachable) RecordEnvironmentReachable(key);
     }
 
-    /// <summary>
-    /// Deletes a broker, refusing while any batch is bound to it. Refusing rather than cascading:
-    /// silently unbinding a batch would turn a mis-click into a fleet that answers nothing, and the
-    /// operator has no way to know which batches were affected after the fact.
-    /// </summary>
-    public bool TryDeleteBroker(string key, out string error)
-    {
-        IReadOnlyList<string> users = _usage.BatchesUsingBroker(key);
-        if (users.Count > 0)
-        {
-            error = $"'{key}' is still used by {Describe(users)}. Rebind or delete those batches first.";
-            return false;
-        }
+    public bool TryDeleteBroker(string key, out string error) => TryDeleteEnvironment(key, out error);
 
-        lock (_lock)
-        {
-            if (!_brokers.Remove(key))
-            {
-                error = $"No broker named '{key}'.";
-                return false;
-            }
-
-            Persist();
-        }
-
-        _logger?.LogInformation("Deleted broker '{Key}'", key);
-        error = string.Empty;
-        Changed?.Invoke();
-        return true;
-    }
-
-    public bool TryDeletePushTarget(string key, out string error)
-    {
-        IReadOnlyList<string> users = _usage.BatchesUsingPushTarget(key);
-        if (users.Count > 0)
-        {
-            error = $"'{key}' is still used by {Describe(users)}. Rebind or delete those batches first.";
-            return false;
-        }
-
-        lock (_lock)
-        {
-            if (!_pushTargets.Remove(key))
-            {
-                error = $"No push target named '{key}'.";
-                return false;
-            }
-
-            Persist();
-        }
-
-        _logger?.LogInformation("Deleted push target '{Key}'", key);
-        error = string.Empty;
-        Changed?.Invoke();
-        return true;
-    }
+    public bool TryDeletePushTarget(string key, out string error) => TryDeleteEnvironment(key, out error);
 
     /// <summary>Whether a key is free — for live validation in the add dialog.</summary>
     public bool IsKeyAvailable(string key)
     {
         lock (_lock)
         {
-            return !string.IsNullOrWhiteSpace(key)
-                   && !_brokers.ContainsKey(key)
-                   && !_pushTargets.ContainsKey(key);
+            return !string.IsNullOrWhiteSpace(key) && !_environments.ContainsKey(key);
         }
     }
 
-    private static string Describe(IReadOnlyList<string> batches) =>
-        batches.Count == 1
-            ? $"batch '{batches[0]}'"
-            : $"{batches.Count} batches ({string.Join(", ", batches.Take(3))}{(batches.Count > 3 ? ", …" : string.Empty)})";
+    // ── Snapshot / persistence ─────────────────────────────────────────────────────────────────
 
-    private static void ValidateKey(string key)
+    /// <summary>
+    /// Current state as a portable snapshot, with broker passwords in <b>plaintext</b>.
+    /// The exported file carries real credentials — the UI states this plainly before export.
+    /// </summary>
+    public NetworkRegistrySnapshot Snapshot()
     {
-        if (string.IsNullOrWhiteSpace(key))
+        lock (_lock)
         {
-            throw new ArgumentException("An endpoint needs a name.", nameof(key));
-        }
-
-        if (key.Trim() != key)
-        {
-            throw new ArgumentException("An endpoint name cannot start or end with a space.", nameof(key));
+            return new NetworkRegistrySnapshot { Environments = _environments.Values.ToList() };
         }
     }
 
     /// <summary>
-    /// Keys are unique ACROSS both kinds, not within each. They appear together in one health
-    /// table and one set of log lines, so two different endpoints named "hes-1" would be a
-    /// permanent source of misreading for no benefit.
+    /// Replaces every environment with an imported snapshot, then persists (re-encrypting passwords
+    /// under this host's key ring). Wholesale — a half-applied config would leave bindings pointing
+    /// at environments that are not there.
     /// </summary>
-    private void RequireKeyFree(string key)
+    public void ImportSnapshot(NetworkRegistrySnapshot snapshot)
     {
-        if (_brokers.ContainsKey(key) || _pushTargets.ContainsKey(key))
+        lock (_lock)
         {
-            throw new InvalidOperationException($"An endpoint named '{key}' already exists.");
+            _environments.Clear();
+
+            // Prefer the new unified format; fall back to migrating legacy broker+push lists.
+            if (snapshot.Environments.Count > 0)
+            {
+                foreach (HesEnvironment env in snapshot.Environments)
+                {
+                    _environments[env.Key] = env;
+                }
+            }
+            else
+            {
+                MigrateLegacySnapshot(snapshot);
+            }
+
+            Persist();
         }
+
+        Changed?.Invoke();
     }
 
     private void LoadFromStore()
@@ -378,26 +398,74 @@ public sealed class NetworkRegistry
 
         lock (_lock)
         {
-            _brokers.Clear();
-            _pushTargets.Clear();
+            _environments.Clear();
 
-            foreach (BrokerEndpoint broker in snapshot.Brokers)
+            if (snapshot.Environments.Count > 0)
             {
-                _brokers[broker.Key] = broker;
+                foreach (HesEnvironment env in snapshot.Environments)
+                {
+                    _environments[env.Key] = env;
+                }
             }
-
-            foreach (PushTargetEndpoint target in snapshot.PushTargets)
+            else if (snapshot.Brokers.Count > 0 || snapshot.PushTargets.Count > 0)
             {
-                _pushTargets[target.Key] = target;
+                MigrateLegacySnapshot(snapshot);
+                Persist(); // write the migrated data in the new format immediately
             }
         }
     }
 
     /// <summary>
-    /// Turns the legacy configured broker into a real registry row the first time this runs, so the
-    /// migration in <see cref="ManyMeterSimulator.Provisioning.MeterRegistry"/> has something to
-    /// bind pre-registry batches to. Does nothing once the key exists — an operator edit is never
-    /// overwritten by config on the next start.
+    /// Pairs legacy broker and push-target rows by key into unified environments. Rows whose key
+    /// exists in both lists are merged; unpaired rows become environments with only one half set.
+    /// </summary>
+    private void MigrateLegacySnapshot(NetworkRegistrySnapshot snapshot)
+    {
+        foreach (BrokerEndpoint broker in snapshot.Brokers)
+        {
+            if (!_environments.TryGetValue(broker.Key, out HesEnvironment? env))
+            {
+                env = new HesEnvironment { Key = broker.Key, CreatedAtUtc = broker.CreatedAtUtc };
+                _environments[broker.Key] = env;
+            }
+
+            env.BrokerHost = broker.Host;
+            env.BrokerPort = broker.Port;
+            env.BrokerUsername = broker.Username;
+            env.BrokerPassword = broker.Password;
+            env.BrokerUseTls = broker.UseTls;
+            env.Enabled = broker.Enabled;
+            env.Verified = broker.Verified;
+            env.LastVerifiedUtc = broker.LastVerifiedUtc;
+        }
+
+        foreach (PushTargetEndpoint target in snapshot.PushTargets)
+        {
+            if (!_environments.TryGetValue(target.Key, out HesEnvironment? env))
+            {
+                env = new HesEnvironment { Key = target.Key, CreatedAtUtc = target.CreatedAtUtc };
+                _environments[target.Key] = env;
+            }
+
+            env.TcpHost = target.Address;
+            env.TcpPort = target.Port;
+            if (!env.Verified && target.Verified)
+            {
+                env.Verified = true;
+                env.LastVerifiedUtc = target.LastVerifiedUtc;
+            }
+        }
+
+        if (_environments.Count > 0)
+        {
+            _logger?.LogInformation(
+                "Migrated {Count} legacy broker/push-target row(s) to HES environments.", _environments.Count);
+        }
+    }
+
+    /// <summary>
+    /// Turns the legacy configured broker into a registry environment the first time this runs, so
+    /// the migration in MeterRegistry has something to bind pre-registry batches to.
     /// </summary>
     private void SeedDefaultBroker(NicsOptions? nics)
     {
@@ -409,22 +477,20 @@ public sealed class NetworkRegistry
 
         lock (_lock)
         {
-            if (_brokers.ContainsKey(DefaultBrokerKey))
+            if (_environments.ContainsKey(DefaultBrokerKey))
             {
                 return;
             }
 
             MqttCredential? credential = configured.Credentials.FirstOrDefault();
-            _brokers[DefaultBrokerKey] = new BrokerEndpoint
+            _environments[DefaultBrokerKey] = new HesEnvironment
             {
                 Key = DefaultBrokerKey,
-                Host = configured.Host,
-                Port = configured.Port,
-                Username = credential?.Username ?? string.Empty,
-                Password = credential?.Password ?? string.Empty,
-                UseTls = configured.UseTls,
-                // Unverified: it came from config, nothing has connected to it yet. The health
-                // monitor promotes it on the first successful probe.
+                BrokerHost = configured.Host,
+                BrokerPort = configured.Port,
+                BrokerUsername = credential?.Username ?? string.Empty,
+                BrokerPassword = credential?.Password ?? string.Empty,
+                BrokerUseTls = configured.UseTls,
                 Verified = false,
             };
 
@@ -432,83 +498,47 @@ public sealed class NetworkRegistry
         }
 
         _logger?.LogInformation(
-            "Seeded broker '{Key}' from Nics:Shared:Broker ({Host}:{Port}).",
+            "Seeded environment '{Key}' from Nics:Shared:Broker ({Host}:{Port}).",
             DefaultBrokerKey, configured.Host, configured.Port);
     }
 
-    /// <summary>
-    /// Current state as a portable snapshot, with broker passwords in <b>plaintext</b>.
-    ///
-    /// <para>
-    /// Plaintext on purpose: the on-disk <c>network.json</c> encrypts passwords against THIS host's
-    /// key ring, so copying it to another deployment yields brokers that cannot authenticate unless
-    /// the key ring is copied too. An export is the portable alternative — it carries the real
-    /// password so the destination can re-encrypt it under its own keys on import. The trade-off is
-    /// that the exported file DOES contain credentials, which the UI states plainly.
-    /// </para>
-    /// </summary>
-    public NetworkRegistrySnapshot Snapshot()
-    {
-        lock (_lock)
-        {
-            return new NetworkRegistrySnapshot
-            {
-                Brokers = _brokers.Values.ToList(),
-                PushTargets = _pushTargets.Values.ToList(),
-            };
-        }
-    }
-
-    /// <summary>
-    /// Replaces every broker and push target with an imported snapshot, then persists — which
-    /// re-encrypts each password under this host's key ring. Wholesale, matching the batch import:
-    /// the two are one bundle, and a half-applied config (new batches, old endpoints) would leave
-    /// bindings pointing at brokers that are not there.
-    /// </summary>
-    public void ImportSnapshot(NetworkRegistrySnapshot snapshot)
-    {
-        lock (_lock)
-        {
-            _brokers.Clear();
-            _pushTargets.Clear();
-
-            foreach (BrokerEndpoint broker in snapshot.Brokers)
-            {
-                _brokers[broker.Key] = broker;
-            }
-
-            foreach (PushTargetEndpoint target in snapshot.PushTargets)
-            {
-                _pushTargets[target.Key] = target;
-            }
-
-            Persist();
-        }
-
-        Changed?.Invoke();
-    }
-
-    /// <summary>Writes current state to the store. Must be called while holding <see cref="_lock"/>.</summary>
     private void Persist()
     {
         _store.Save(new NetworkRegistrySnapshot
         {
-            Brokers = _brokers.Values.ToList(),
-            PushTargets = _pushTargets.Values.ToList(),
+            Environments = _environments.Values.ToList(),
         });
+    }
+
+    private static string DescribeBatches(IReadOnlyList<string> batches) =>
+        batches.Count == 1
+            ? $"batch '{batches[0]}'"
+            : $"{batches.Count} batches ({string.Join(", ", batches.Take(3))}{(batches.Count > 3 ? ", …" : string.Empty)})";
+
+    private static void ValidateKey(string key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+            throw new ArgumentException("An environment needs a name.", nameof(key));
+
+        if (key.Trim() != key)
+            throw new ArgumentException("An environment name cannot start or end with a space.", nameof(key));
     }
 }
 
 /// <summary>
-/// Answers "which batches are bound to this endpoint?" — the one thing
+/// Answers "which batches are bound to this environment?" — the one thing
 /// <see cref="NetworkRegistry"/> needs from the batch side, kept as an interface so the dependency
 /// between the two registries stays one-directional.
 /// </summary>
 public interface IEndpointUsageSource
 {
-    IReadOnlyList<string> BatchesUsingBroker(string key);
+    IReadOnlyList<string> BatchesUsingEnvironment(string key);
 
-    IReadOnlyList<string> BatchesUsingPushTarget(string key);
+    // Backward-compat aliases — both delegate to BatchesUsingEnvironment since an environment key
+    // is now the single binding identifier for both the broker and TCP push halves.
+    IReadOnlyList<string> BatchesUsingBroker(string key) => BatchesUsingEnvironment(key);
+
+    IReadOnlyList<string> BatchesUsingPushTarget(string key) => BatchesUsingEnvironment(key);
 }
 
 /// <summary>Nothing uses anything — the default until Program.cs wires the real source.</summary>
@@ -520,7 +550,5 @@ public sealed class NullEndpointUsageSource : IEndpointUsageSource
     {
     }
 
-    public IReadOnlyList<string> BatchesUsingBroker(string key) => Array.Empty<string>();
-
-    public IReadOnlyList<string> BatchesUsingPushTarget(string key) => Array.Empty<string>();
+    public IReadOnlyList<string> BatchesUsingEnvironment(string key) => Array.Empty<string>();
 }

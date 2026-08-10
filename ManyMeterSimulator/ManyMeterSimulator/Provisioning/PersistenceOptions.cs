@@ -43,4 +43,10 @@ public sealed class PersistenceOptions
     /// password, surfacing much later as a broker that will not authenticate.
     /// </summary>
     public string KeyRingFolderName { get; set; } = "keys";
+
+    /// <summary>File name of the test plan list within <see cref="Folder"/>.</summary>
+    public string TestPlansFileName { get; set; } = "test-plans.json";
+
+    /// <summary>Sub-folder within <see cref="Folder"/> holding per-run JSON report files.</summary>
+    public string ReportsFolderName { get; set; } = "reports";
 }

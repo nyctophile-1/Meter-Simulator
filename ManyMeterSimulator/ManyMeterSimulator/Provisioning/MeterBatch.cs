@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using ManyMeterSimulator.Networking.Nic;
 
 namespace ManyMeterSimulator.Provisioning;
@@ -48,26 +49,19 @@ public sealed class MeterBatch
     public long EndIndex => StartIndex + Count - 1;
 
     /// <summary>
-    /// Key of the MQTT broker in the network registry this batch's meters talk through, or null for
-    /// **unbound** — a legal state meaning "connected to nothing" (network_registry.md §3.2).
-    ///
-    /// An unbound MQTT batch contributes no broker binding, so it is never reached. That is exactly
-    /// the symptom nobody can diagnose from silence, so it is called out explicitly in the startup
-    /// NIC plan and on the batch row rather than left to be inferred.
-    ///
-    /// Meaningless for <see cref="NicType.Tcp4G"/>, whose inbound sessions are broker-agnostic.
-    /// Settable (like <see cref="Status"/>) because rebinding is an admin action on a live batch.
+    /// Key of the HES environment in the network registry this batch is bound to, or null for
+    /// unbound. The environment supplies both the MQTT broker (for RF/MQTT NICs) and the TCP push
+    /// listener (for TCP NICs) from a single registry row.
     /// </summary>
-    public string? BrokerKey { get; set; }
+    public string? EnvironmentKey { get; set; }
 
-    /// <summary>
-    /// Key of the HES TCP push listener this batch's meters push to, or null for unbound.
-    ///
-    /// Only used in the OUTBOUND push direction, and only by <see cref="NicType.Tcp4G"/> — inbound
-    /// TCP needs no registry at all. Null is benign here: pulls keep working, and push simply has
-    /// no destination until one is assigned.
-    /// </summary>
-    public string? PushTargetKey { get; set; }
+    /// <summary>Backward-compat alias — MQTT infrastructure reads this; it is always EnvironmentKey.</summary>
+    [JsonIgnore]
+    public string? BrokerKey { get => EnvironmentKey; set => EnvironmentKey = value; }
+
+    /// <summary>Backward-compat alias — PushCoordinator reads this; it is always EnvironmentKey.</summary>
+    [JsonIgnore]
+    public string? PushTargetKey { get => EnvironmentKey; set => EnvironmentKey = value; }
 
     public BatchStatus Status { get; set; } = BatchStatus.NotStarted;
 

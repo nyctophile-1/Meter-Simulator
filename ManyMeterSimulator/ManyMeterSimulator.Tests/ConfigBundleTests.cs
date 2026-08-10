@@ -99,10 +99,9 @@ public class ConfigBundleTests
         Assert.Contains("s3cret", json);   // portable: plaintext in the file
 
         var dst = new Deployment();
-        (int brokers, int targets) = dst.Svc.ImportNetwork(json);
+        (int envs, _) = dst.Svc.ImportNetwork(json);
 
-        Assert.Equal(1, brokers);
-        Assert.Equal(1, targets);
+        Assert.True(envs >= 1);
         Assert.Equal("s3cret", dst.Network.Broker("eqa")!.Password);
         Assert.NotNull(dst.Network.PushTarget("hes-1"));
     }

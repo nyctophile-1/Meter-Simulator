@@ -38,55 +38,36 @@ public sealed class NetworkBindingValidator : IEndpointUsageSource
     /// to stop being invisible.
     /// </para>
     /// </summary>
-    public bool Validate(NicType nic, string? brokerKey, string? pushTargetKey, out string error)
+    public bool Validate(NicType nic, string? environmentKey, out string error)
     {
         error = string.Empty;
 
-        if (!string.IsNullOrWhiteSpace(brokerKey))
-        {
-            if (!NicTypes.IsMqtt(nic))
-            {
-                error = $"A {nic} batch has no broker — inbound TCP is broker-agnostic. Leave it unbound.";
-                return false;
-            }
+        if (string.IsNullOrWhiteSpace(environmentKey)) return true;
 
-            if (_network.Broker(brokerKey) is null)
-            {
-                error = $"No broker named '{brokerKey}' exists in the network registry.";
-                return false;
-            }
+        var env = _network.Environment(environmentKey);
+        if (env is null)
+        {
+            error = $"No environment named '{environmentKey}' exists in the network registry.";
+            return false;
         }
 
-        if (!string.IsNullOrWhiteSpace(pushTargetKey))
+        if (NicTypes.IsMqtt(nic) && !env.HasBroker)
         {
-            if (nic != NicType.Tcp4G)
-            {
-                // MQTT meters have no per-meter source IP for a receiver to correlate on, which is
-                // why PushCoordinator already refuses them.
-                error = $"Push targets apply to 4G TCP batches only, not {nic}.";
-                return false;
-            }
-
-            if (_network.PushTarget(pushTargetKey) is null)
-            {
-                error = $"No push target named '{pushTargetKey}' exists in the network registry.";
-                return false;
-            }
+            error = $"Environment '{environmentKey}' has no MQTT broker configured.";
+            return false;
         }
 
         return true;
     }
 
-    /// <summary>
-    /// Whether this batch is a running MQTT batch that is bound to nothing — the one silent
-    /// failure mode of an unbound binding, surfaced wherever batches are listed.
-    /// </summary>
+    // Backward-compat overload used by existing call sites.
+    public bool Validate(NicType nic, string? brokerKey, string? pushTargetKey, out string error) =>
+        Validate(nic, brokerKey ?? pushTargetKey, out error);
+
     public static bool IsUnreachable(MeterBatch batch) =>
         NicTypes.IsMqtt(batch.NicType)
         && batch.Status == BatchStatus.Running
-        && string.IsNullOrWhiteSpace(batch.BrokerKey);
+        && string.IsNullOrWhiteSpace(batch.EnvironmentKey);
 
-    public IReadOnlyList<string> BatchesUsingBroker(string key) => _batches.BatchesUsingBroker(key);
-
-    public IReadOnlyList<string> BatchesUsingPushTarget(string key) => _batches.BatchesUsingPushTarget(key);
+    public IReadOnlyList<string> BatchesUsingEnvironment(string key) => _batches.BatchesUsingEnvironment(key);
 }
