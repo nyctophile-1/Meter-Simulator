@@ -7,37 +7,40 @@
 @using ManyMeterSimulator.Auth
 @using ManyMeterSimulator.BadComm
 @using ManyMeterSimulator.Provisioning
-@using Microsoft.AspNetCore.Components.Forms
 @inject NetworkDelaySettings NetworkDelay
 @inject BadCommSettings BadComm
 @inject FleetCompositionCache Composition
 @inject MeterRegistry MeterRegistry
-@inject ConfigBundleService ConfigBundles
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
-@inject IJSRuntime JS
 
 <PageTitle>MAYA - BadComm Setup</PageTitle>
 
-<div class="d-flex align-center flex-wrap mb-4" style="gap:12px;">
-    <MudText Typo="Typo.body2" Class="mud-text-secondary mb-0" Style="flex:1 1 320px;">
-        Field communication impairment. Everything here is global, applies to every batch, and takes
-        effect on the next exchange &mdash; including sessions already open. Settings survive restarts.
+<MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
+    Field communication impairment. Everything here is global, applies to every batch, and takes
+    effect on the next exchange &mdash; including sessions already open. Settings survive restarts.
+    Export/import lives on the <MudLink Href="/config">Configuration</MudLink> page.
+</MudText>
+
+@* ══════════ Explain a meter ══════════ *@
+<MudPaper Elevation="1" Class="pa-4 mb-6">
+    <MudText Typo="Typo.h6" GutterBottom="true">Explain a meter</MudText>
+    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+        Checks against the <strong>live</strong> settings, not unapplied edits.
     </MudText>
-    @if (IsAdmin)
+    <div class="d-flex align-center flex-wrap mt-2" style="gap:12px;">
+        <MudTextField T="string" @bind-Value="_explainInput" Immediate="true" Label="Meter number or index"
+                      Placeholder="MY000000216 or 216" Variant="Variant.Outlined" Margin="Margin.Dense"
+                      Style="min-width:260px" />
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="Explain">Explain</MudButton>
+    </div>
+    @if (_explainResult is not null)
     {
-        @* Both knobs this page owns — bad-comm rules and network delay — travel in one file. *@
-        <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default"
-                   StartIcon="@Icons.Material.Filled.Download" OnClick="ExportBadComm">
-            Export BadComm
-        </MudButton>
-        <InputFile id="badcomm-import-input" OnChange="OnBadCommFileSelected" accept=".json" class="d-none" />
-        <MudButton HtmlTag="label" for="badcomm-import-input" Size="Size.Small" Variant="Variant.Outlined"
-                   Color="Color.Default" StartIcon="@Icons.Material.Filled.Upload">
-            Import BadComm
-        </MudButton>
+        <MudAlert Severity="@_explainSeverity" Dense="true" Variant="Variant.Outlined" Class="mt-3">
+            @_explainResult
+        </MudAlert>
     }
-</div>
+</MudPaper>
 
 @* ══════════ Network delay ══════════ *@
 <MudPaper Elevation="1" Class="pa-4 mb-6">
@@ -286,26 +289,6 @@ else
     </MudPaper>
 }
 
-@* ══════════ Explain a meter ══════════ *@
-<MudPaper Elevation="1" Class="pa-4 mb-6">
-    <MudText Typo="Typo.h6" GutterBottom="true">Explain a meter</MudText>
-    <MudText Typo="Typo.caption" Class="mud-text-secondary">
-        Checks against the <strong>live</strong> settings, not unapplied edits.
-    </MudText>
-    <div class="d-flex align-center flex-wrap mt-2" style="gap:12px;">
-        <MudTextField T="string" @bind-Value="_explainInput" Immediate="true" Label="Meter number or index"
-                      Placeholder="MY000000216 or 216" Variant="Variant.Outlined" Margin="Margin.Dense"
-                      Style="min-width:260px" />
-        <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="Explain">Explain</MudButton>
-    </div>
-    @if (_explainResult is not null)
-    {
-        <MudAlert Severity="@_explainSeverity" Dense="true" Variant="Variant.Outlined" Class="mt-3">
-            @_explainResult
-        </MudAlert>
-    }
-</MudPaper>
-
 @* ---------- Network delay dialog ---------- *@
 <MudDialog @bind-Visible="_delayDialogOpen" Options="_delayDialogOptions">
     <TitleContent><MudText Typo="Typo.h6">Network delay</MudText></TitleContent>
@@ -364,75 +347,6 @@ else
         }
 
         ResetDraft();
-    }
-
-    // ── BadComm config import / export ─────────────────────────────────────────────────────────
-
-    private const long MaxConfigBytes = 4 * 1024 * 1024;
-
-    private async Task ExportBadComm()
-    {
-        if (IsAdmin)
-        {
-            await JS.InvokeVoidAsync("mayaDownload", "/config/badcomm.json");
-        }
-    }
-
-    private async Task OnBadCommFileSelected(InputFileChangeEventArgs e)
-    {
-        IBrowserFile? file = e.FileCount > 0 ? e.File : null;
-        if (!IsAdmin || file is null)
-        {
-            return;
-        }
-
-        string json;
-        try
-        {
-            await using Stream stream = file.OpenReadStream(MaxConfigBytes);
-            using var reader = new StreamReader(stream);
-            json = await reader.ReadToEndAsync();
-        }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Could not read the file: {ex.Message}", Severity.Error);
-            return;
-        }
-
-        // Peek first — this also rejects a wrong-kind file (a batches or network export) before the
-        // operator is asked to confirm replacing their impairment settings.
-        try
-        {
-            ConfigBundles.PreviewBadComm(json);
-        }
-        catch (ArgumentException ex)
-        {
-            Snackbar.Add(ex.Message, Severity.Error);
-            return;
-        }
-
-        bool? confirmed = await DialogService.ShowMessageBoxAsync(
-            "Replace BadComm settings?",
-            "This replaces the current bad-comm rules and network delay for the whole fleet, on the " +
-            "next exchange. This cannot be undone.",
-            yesText: "Replace settings", cancelText: "Cancel");
-
-        if (confirmed != true)
-        {
-            return;
-        }
-
-        try
-        {
-            ConfigBundles.ImportBadComm(json);
-            ResetDraft();
-            Refresh();
-            Snackbar.Add("BadComm settings imported.", Severity.Success);
-        }
-        catch (ArgumentException ex)
-        {
-            Snackbar.Add(ex.Message, Severity.Error);
-        }
     }
 
     protected override void OnParametersSet() => Refresh();

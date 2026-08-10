@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using ManyMeterSimulator.BadComm;
+using ManyMeterSimulator.Brain;
 using ManyMeterSimulator.Networking;
 using ManyMeterSimulator.Networking.Registry;
 using ManyMeterSimulator.Settings;
@@ -35,22 +36,26 @@ public sealed class ConfigBundleService
     public const string BatchesKind = "maya.batches";
     public const string NetworkKind = "maya.network";
     public const string BadCommKind = "maya.badcomm";
+    public const string TestingKind = "maya.testing";
 
     private readonly MeterRegistry _batches;
     private readonly NetworkRegistry _network;
     private readonly BadCommSettings _badComm;
     private readonly NetworkDelaySettings _networkDelay;
+    private readonly PushScheduleService _pushSchedule;
 
     public ConfigBundleService(
         MeterRegistry batches,
         NetworkRegistry network,
         BadCommSettings badComm,
-        NetworkDelaySettings networkDelay)
+        NetworkDelaySettings networkDelay,
+        PushScheduleService pushSchedule)
     {
         _batches = batches;
         _network = network;
         _badComm = badComm;
         _networkDelay = networkDelay;
+        _pushSchedule = pushSchedule;
     }
 
     // ── Batches ────────────────────────────────────────────────────────────────────────────────
@@ -119,6 +124,66 @@ public sealed class ConfigBundleService
         }
     }
 
+    // ── Testing (the loop-push schedule) ────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Batch identity here is the NAME, not the id: ids are per-deployment allocation order and
+    /// mean nothing on another host, exactly like the batches file's own identity rule. A schedule
+    /// exported with no batches configured yet still exports — the interval alone is worth carrying.
+    /// </summary>
+    public string ExportTesting(string? from = null)
+    {
+        PushScheduleState state = _pushSchedule.State;
+        IReadOnlyDictionary<int, string> names = _batches.Batches.ToDictionary(b => b.Id, b => b.Name);
+
+        var file = new TestingFile
+        {
+            BatchNames = state.BatchIds.Where(names.ContainsKey).Select(id => names[id]).ToList(),
+            IntervalMinutes = state.IntervalMinutes > 0 ? state.IntervalMinutes : PushScheduleService.AllowedIntervalMinutes[0],
+        };
+
+        return Serialize(TestingKind, from, file);
+    }
+
+    public TestingFile PreviewTesting(string json) => Parse<TestingFile>(json, TestingKind);
+
+    /// <summary>
+    /// Resolves the file's batch names against THIS deployment's batches and (re)starts the loop
+    /// with whatever resolves. Names that don't exist here are reported, not silently dropped — a
+    /// batch renamed or not yet created on the destination is the likeliest reason a resolved count
+    /// comes back lower than the file's.
+    /// </summary>
+    public TestingImportResult ImportTesting(string json)
+    {
+        TestingFile file = Parse<TestingFile>(json, TestingKind);
+
+        Dictionary<string, int> idsByName = _batches.Batches
+            .ToDictionary(b => b.Name, b => b.Id, StringComparer.OrdinalIgnoreCase);
+
+        var resolved = new List<int>();
+        var missing = new List<string>();
+        foreach (string name in file.BatchNames)
+        {
+            if (idsByName.TryGetValue(name, out int id))
+            {
+                resolved.Add(id);
+            }
+            else
+            {
+                missing.Add(name);
+            }
+        }
+
+        if (resolved.Count == 0)
+        {
+            throw new ArgumentException(
+                "None of the file's batches exist here. Create or import them first, then re-import the schedule.");
+        }
+
+        _pushSchedule.Start(resolved, file.IntervalMinutes);
+        return new TestingImportResult(resolved.Count, missing);
+    }
+
     // ── Shared ───────────────────────────────────────────────────────────────────────────────────
 
     private static string Serialize<T>(string kind, string? from, T payload) =>
@@ -162,6 +227,7 @@ public sealed class ConfigBundleService
         BatchesKind => "Batch Setup",
         NetworkKind => "Network Setup",
         BadCommKind => "BadComm Setup",
+        TestingKind => "Testing",
         _ => kind ?? "unknown",
     };
 
@@ -217,3 +283,14 @@ public sealed record BadCommFile
 
     public DelayRange? NetworkDelay { get; init; }
 }
+
+/// <summary>The loop-push schedule the Testing page owns: which batches (by name) and how often.</summary>
+public sealed record TestingFile
+{
+    public List<string> BatchNames { get; init; } = new();
+
+    public int IntervalMinutes { get; init; } = PushScheduleService.AllowedIntervalMinutes[0];
+}
+
+/// <summary>What importing a testing schedule actually applied.</summary>
+public readonly record struct TestingImportResult(int Resolved, IReadOnlyList<string> Missing);

@@ -1,0 +1,101 @@
+@using System.Diagnostics
+@using System.Text
+@using System.Globalization
+@implements IDisposable
+
+<div class="host-stats">
+    <div class="host-stat">
+        <span class="host-stat-label">CPU (@_cpuCores cores)</span>
+        <span class="host-stat-value">@_cpuPercent.ToString("N0")<span class="unit">%</span></span>
+        <svg viewBox="0 0 100 24" preserveAspectRatio="none" class="host-spark" aria-hidden="true">
+            <polyline points="@_cpuSparkline" fill="none" stroke="#4ec9b0" stroke-width="2"
+                      vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round" />
+        </svg>
+    </div>
+    <div class="host-stat">
+        <span class="host-stat-label">Memory</span>
+        <span class="host-stat-value">@_memUsedMb.ToString("N0")<span class="unit">MB</span></span>
+        <span class="host-stat-sub">/ @_memTotalMb.ToString("N0") MB</span>
+    </div>
+</div>
+
+@code {
+    private static readonly int _cpuCores = Environment.ProcessorCount;
+    private const int SampleIntervalSeconds = 2;
+    private const int MaxPoints = 30;
+    private const int WindowSeconds = MaxPoints * SampleIntervalSeconds;
+
+    private System.Threading.Timer? _timer;
+    private TimeSpan _lastCpuTime;
+    private double _cpuPercent;
+    private double _memUsedMb;
+    private double _memTotalMb;
+    private readonly List<double> _cpuHistory = new();
+    private string _cpuSparkline = "";
+    private DateTime _lastSampleUtc;
+
+    protected override void OnInitialized()
+    {
+        _lastSampleUtc = DateTime.UtcNow;
+        SampleHostStats(initial: true);
+        _timer = new System.Threading.Timer(
+            _ => InvokeAsync(() => { SampleHostStats(); StateHasChanged(); }),
+            null, 2000, 2000);
+    }
+
+    private void SampleHostStats(bool initial = false)
+    {
+        try
+        {
+            DateTime now = DateTime.UtcNow;
+            double elapsedSeconds = Math.Max(0.001, (now - _lastSampleUtc).TotalSeconds);
+            _lastSampleUtc = now;
+
+            using Process proc = Process.GetCurrentProcess();
+            TimeSpan cpuTime = proc.TotalProcessorTime;
+
+            _cpuPercent = initial
+                ? 0
+                : Math.Clamp((cpuTime - _lastCpuTime).TotalSeconds / elapsedSeconds / _cpuCores * 100, 0, 100);
+            _lastCpuTime = cpuTime;
+
+            _memUsedMb = proc.WorkingSet64 / 1024.0 / 1024.0;
+            _memTotalMb = GC.GetGCMemoryInfo().TotalAvailableMemoryBytes / 1024.0 / 1024.0;
+
+            _cpuHistory.Add(_cpuPercent);
+            if (_cpuHistory.Count > MaxPoints) _cpuHistory.RemoveAt(0);
+            _cpuSparkline = BuildSparkline(_cpuHistory);
+        }
+        catch
+        {
+            // Ignore process read failures if any
+        }
+    }
+
+    private static string BuildSparkline(IReadOnlyList<double> data)
+    {
+        if (data.Count < 2) return "";
+
+        const double W = 100, H = 24, PadTopFrac = 0.15;
+        double max = Math.Max(10, data.Max());
+
+        var sb = new StringBuilder();
+        for (int i = 0; i < data.Count; i++)
+        {
+            double frac = Math.Clamp(data[i] / max, 0, 1);
+            double secondsAgo = (data.Count - 1 - i) * (double)SampleIntervalSeconds;
+            double timeFrac = Math.Clamp(1 - secondsAgo / WindowSeconds, 0, 1);
+            double x = timeFrac * W;
+            double y = (PadTopFrac + (1 - frac) * (1 - PadTopFrac)) * H;
+            if (i > 0) sb.Append(' ');
+            sb.AppendFormat(CultureInfo.InvariantCulture, "{0:F1},{1:F1}", x, y);
+        }
+
+        return sb.ToString();
+    }
+
+    public void Dispose()
+    {
+        _timer?.Dispose();
+    }
+}

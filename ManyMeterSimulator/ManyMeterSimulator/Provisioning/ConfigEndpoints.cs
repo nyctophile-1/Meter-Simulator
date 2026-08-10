@@ -20,6 +20,7 @@ public static class ConfigEndpoints
         Download(app, "/config/batches.json", "maya-batches", (b, host) => b.ExportBatches(host));
         Download(app, "/config/network.json", "maya-network", (b, host) => b.ExportNetwork(host));
         Download(app, "/config/badcomm.json", "maya-badcomm", (b, host) => b.ExportBadComm(host));
+        Download(app, "/config/testing.json", "maya-testing", (b, host) => b.ExportTesting(host));
     }
 
     private static void Download(

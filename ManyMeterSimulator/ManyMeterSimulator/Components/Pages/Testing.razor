@@ -1,0 +1,354 @@
+@page "/testing"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+@using ManyMeterSimulator.Brain
+@using ManyMeterSimulator.Networking.Nic
+@using ManyMeterSimulator.Provisioning
+@inject MeterRegistry MeterRegistry
+@inject PushCoordinator Push
+@inject PushScheduleService Schedule
+@inject ConfigBundleService ConfigBundles
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+@implements IDisposable
+
+<PageTitle>MAYA - Testing</PageTitle>
+
+<MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
+    Ad-hoc checks against a live batch — not automated, just the on-demand triggers an operator
+    reaches for while proving a path end to end. Starts with on-demand and loop push; more of
+    these land here as they're needed rather than on the Dashboard. Export/import of the loop-push
+    schedule lives on the <MudLink Href="/config">Configuration</MudLink> page.
+</MudText>
+
+@* ══════════ On-demand push ══════════ *@
+<MudPaper Elevation="1" Class="pa-4 mb-6">
+    <div class="d-flex align-center justify-space-between flex-wrap" style="gap:12px;">
+        <div>
+            <MudText Typo="Typo.h6">On-demand push</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                Pushes every meter in a batch right now. TCP opens a socket to the batch's bound push
+                target (from the meter's own IP); MQTT publishes to the batch's bound broker.
+            </MudText>
+        </div>
+        <MudButton Variant="Variant.Filled" Color="Color.Secondary"
+                   StartIcon="@Icons.Material.Filled.Loop" OnClick="OpenLoopDialog">
+            Configure loop push
+        </MudButton>
+    </div>
+
+    @* ── Loop status, only shown once a schedule has ever been configured ── *@
+    @if (_scheduleState.IntervalMinutes > 0)
+    {
+        <MudAlert Severity="@(_scheduleState.IsRunning ? Severity.Info : Severity.Normal)"
+                  Variant="Variant.Outlined" Dense="true" Class="mt-3">
+            @if (_scheduleState.IsRunning)
+            {
+                <text>
+                    Looping push every @_scheduleState.IntervalMinutes min over @_scheduleState.BatchIds.Count batch(es).
+                    Next run @RelativeTime(_scheduleState.NextRunUtc).
+                </text>
+            }
+            else
+            {
+                <text>Loop push stopped.</text>
+            }
+            @if (_scheduleState.LastSummary is not null)
+            {
+                <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mt-1">
+                    Last run @RelativeTime(_scheduleState.LastRunUtc): @_scheduleState.LastSummary
+                </MudText>
+            }
+            @if (_scheduleState.IsRunning)
+            {
+                <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Error" Class="mt-1"
+                           OnClick="StopLoop">Stop loop</MudButton>
+            }
+        </MudAlert>
+    }
+
+    @if (_batches.Count == 0)
+    {
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mt-3">No batches yet.</MudText>
+    }
+    else
+    {
+        <MudSimpleTable Hover="true" Dense="true" Bordered="false" Class="batch-table mt-3">
+            <thead>
+                <tr>
+                    <th>NIC</th>
+                    <th class="col-flex">Name</th>
+                    <th style="text-align:right">Count</th>
+                    <th>Status</th>
+                    <th style="text-align:right">Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (MeterBatch b in _batches)
+                {
+                    <tr class="batch-row @StatusRowClass(b.Status)">
+                        <td><MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@NicLabel(b.NicType)</MudChip></td>
+                        <td class="col-flex">
+                            @b.Name
+                            @if (_scheduleState.IsRunning && _scheduleState.BatchIds.Contains(b.Id))
+                            {
+                                <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Secondary" Class="ml-2">looping</MudChip>
+                            }
+                        </td>
+                        <td style="text-align:right">@b.Count.ToString("N0")</td>
+                        <td>
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Filled" Color="@StatusColor(b.Status)">
+                                @b.Status
+                            </MudChip>
+                        </td>
+                        <td style="text-align:right">
+                            <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
+                                       StartIcon="@Icons.Material.Filled.Send"
+                                       Disabled="@_pushingBatchIds.Contains(b.Id)"
+                                       OnClick="@(() => SendPushAsync(b.Id))">
+                                @(_pushingBatchIds.Contains(b.Id) ? "Sending…" : "Send Push")
+                            </MudButton>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    }
+</MudPaper>
+
+@* ---------- Configure loop push dialog ---------- *@
+<MudDialog @bind-Visible="_loopDialogOpen" Options="_loopDialogOptions">
+    <TitleContent><MudText Typo="Typo.h6">Configure loop push</MudText></TitleContent>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
+            Pushes the selected batches on a repeating timer, starting immediately. Replaces any
+            loop already running. Stops when you click Stop, or when the app restarts.
+        </MudText>
+
+        <MudSelect T="int" @bind-SelectedValues="_loopBatchIds" Label="Batches" MultiSelection="true"
+                   Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-4">
+            @foreach (MeterBatch b in _batches)
+            {
+                <MudSelectItem T="int" Value="@b.Id">@b.Name (@NicLabel(b.NicType), @b.Count.ToString("N0") meters)</MudSelectItem>
+            }
+        </MudSelect>
+
+        <MudSelect T="int" @bind-Value="_loopIntervalMinutes" Label="Every"
+                   Variant="Variant.Outlined" Margin="Margin.Dense">
+            @foreach (int minutes in PushScheduleService.AllowedIntervalMinutes)
+            {
+                <MudSelectItem T="int" Value="@minutes">@minutes min</MudSelectItem>
+            }
+        </MudSelect>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => _loopDialogOpen = false)">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   Disabled="@(!_loopBatchIds.Any())" OnClick="StartLoop">
+            Start loop
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private IReadOnlyList<MeterBatch> _batches = Array.Empty<MeterBatch>();
+    private readonly HashSet<int> _pushingBatchIds = new();
+    private System.Threading.Timer? _timer;
+
+    private PushScheduleState _scheduleState = PushScheduleState.Idle;
+
+    private bool _loopDialogOpen;
+    private readonly DialogOptions _loopDialogOptions = new() { MaxWidth = MaxWidth.Small, FullWidth = true };
+    private IReadOnlyCollection<int> _loopBatchIds = Array.Empty<int>();
+    private int _loopIntervalMinutes = PushScheduleService.AllowedIntervalMinutes[0];
+
+    private const long MaxConfigBytes = 4 * 1024 * 1024;
+
+    protected override void OnInitialized()
+    {
+        Refresh();
+        Schedule.Changed += OnScheduleChanged;
+        // Batches can be added/started/stopped from other pages while this one is open.
+        _timer = new System.Threading.Timer(_ => InvokeAsync(() => { Refresh(); StateHasChanged(); }), null, 2000, 2000);
+    }
+
+    private void Refresh()
+    {
+        _batches = MeterRegistry.Batches;
+        _scheduleState = Schedule.State;
+    }
+
+    private void OnScheduleChanged() => InvokeAsync(() => { _scheduleState = Schedule.State; StateHasChanged(); });
+
+    // ── On-demand push ──────────────────────────────────────────────────────────────────────────
+
+    private async Task SendPushAsync(int batchId)
+    {
+        _pushingBatchIds.Add(batchId);
+        try
+        {
+            // No override any more — always the batch's own bound push target / broker.
+            PushBatchResult result = await Push.PushBatchAsync(batchId);
+
+            if (!result.Ok)
+            {
+                Snackbar.Add(result.Error ?? "Push failed.", Severity.Error);
+            }
+            else if (result.Failed == 0)
+            {
+                Snackbar.Add($"Pushed {result.Sent} of {result.Total} meter(s) to its bound push target.", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add($"Pushed {result.Sent}/{result.Total}; {result.Failed} failed.", Severity.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Push error: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _pushingBatchIds.Remove(batchId);
+        }
+    }
+
+    // ── Loop push ───────────────────────────────────────────────────────────────────────────────
+
+    private void OpenLoopDialog()
+    {
+        // Pre-fill with whatever is already looping, so re-opening the dialog to add a batch
+        // doesn't silently drop the ones already selected.
+        _loopBatchIds = _scheduleState.BatchIds.ToList();
+        _loopIntervalMinutes = _scheduleState.IntervalMinutes > 0
+            ? _scheduleState.IntervalMinutes
+            : PushScheduleService.AllowedIntervalMinutes[0];
+        _loopDialogOpen = true;
+    }
+
+    private void StartLoop()
+    {
+        try
+        {
+            Schedule.Start(_loopBatchIds.ToList(), _loopIntervalMinutes);
+            _loopDialogOpen = false;
+            Snackbar.Add($"Loop push started — every {_loopIntervalMinutes} min.", Severity.Success);
+        }
+        catch (ArgumentException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private void StopLoop()
+    {
+        Schedule.Stop();
+        Snackbar.Add("Loop push stopped.", Severity.Info);
+    }
+
+    private static string RelativeTime(DateTimeOffset? when)
+    {
+        if (when is null)
+        {
+            return "—";
+        }
+
+        TimeSpan delta = when.Value - DateTimeOffset.UtcNow;
+        return delta.TotalSeconds switch
+        {
+            > 0 and < 60 => $"in {delta.TotalSeconds:F0}s",
+            > 0 => $"in {delta.TotalMinutes:F0}m",
+            _ => delta.TotalSeconds switch
+            {
+                > -60 => $"{-delta.TotalSeconds:F0}s ago",
+                _ => $"{-delta.TotalMinutes:F0}m ago",
+            },
+        };
+    }
+
+    // ── Config import / export ──────────────────────────────────────────────────────────────────
+
+    private async Task ExportTesting() => await JS.InvokeVoidAsync("mayaDownload", "/config/testing.json");
+
+    private async Task OnTestingFileSelected(InputFileChangeEventArgs e)
+    {
+        IBrowserFile? file = e.FileCount > 0 ? e.File : null;
+        if (file is null)
+        {
+            return;
+        }
+
+        string json;
+        try
+        {
+            await using Stream stream = file.OpenReadStream(MaxConfigBytes);
+            using var reader = new StreamReader(stream);
+            json = await reader.ReadToEndAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not read the file: {ex.Message}", Severity.Error);
+            return;
+        }
+
+        TestingFile preview;
+        try
+        {
+            preview = ConfigBundles.PreviewTesting(json);
+        }
+        catch (ArgumentException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+            return;
+        }
+
+        try
+        {
+            TestingImportResult applied = ConfigBundles.ImportTesting(json);
+            string missing = applied.Missing.Count > 0
+                ? $" ({applied.Missing.Count} not found here: {string.Join(", ", applied.Missing)})"
+                : string.Empty;
+            Snackbar.Add(
+                $"Loop push started — {applied.Resolved} batch(es) every {preview.IntervalMinutes} min.{missing}",
+                applied.Missing.Count > 0 ? Severity.Warning : Severity.Success);
+        }
+        catch (ArgumentException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    // ── Presentation ────────────────────────────────────────────────────────────────────────────
+
+    private static Color StatusColor(BatchStatus status) => status switch
+    {
+        BatchStatus.Running => Color.Success,
+        BatchStatus.Stopped => Color.Error,
+        _ => Color.Default,
+    };
+
+    private static string StatusRowClass(BatchStatus status) => status switch
+    {
+        BatchStatus.Running => "is-running",
+        BatchStatus.Stopped => "is-stopped",
+        _ => "is-idle",
+    };
+
+    private static string NicLabel(NicType nic) => nic switch
+    {
+        NicType.Tcp4G => "4G TCP",
+        NicType.Mqtt4G => "4G MQTT",
+        NicType.Mqtt4GImg => "4G IMG MQTT",
+        NicType.MqttWirepas => "RF Wirepas",
+        NicType.MqttKmesh => "RF Kimbal Mesh",
+        _ => nic.ToString(),
+    };
+
+    public void Dispose()
+    {
+        Schedule.Changed -= OnScheduleChanged;
+        _timer?.Dispose();
+    }
+}

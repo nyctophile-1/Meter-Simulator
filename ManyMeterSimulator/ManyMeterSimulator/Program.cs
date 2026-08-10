@@ -141,6 +141,7 @@ builder.Services.AddSingleton<TemplateRegistry>();
 builder.Services.AddSingleton<MeterSessionManager>();
 builder.Services.AddSingleton<TcpPushSender>();
 builder.Services.AddSingleton<PushCoordinator>();
+builder.Services.AddSingleton<PushScheduleService>();
 
 // Bridge selection: the real in-process brain (default) or the echo stand-in (framing only).
 string bridgeMode = builder.Configuration.GetValue("Brain:Mode", "Brain") ?? "Brain";

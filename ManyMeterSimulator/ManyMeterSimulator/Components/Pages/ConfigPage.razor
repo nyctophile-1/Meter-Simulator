@@ -1,0 +1,375 @@
+@page "/config"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+@using ManyMeterSimulator.Auth
+@using ManyMeterSimulator.Brain
+@using ManyMeterSimulator.Provisioning
+@inject ConfigBundleService ConfigBundles
+@inject MeterSessionManager Sessions
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>MAYA - Configuration</PageTitle>
+
+<MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
+    Export and import each page's own configuration as one JSON file — the migration path between
+    deployments, since re-registering a fleet with the HES by hand is the thing this exists to avoid.
+    Batches are bound to brokers/push targets <b>by name</b>: when moving a fleet whole, import
+    <b>Network before Batches</b>, or the batches land showing their binding as MISSING until the
+    endpoints arrive. Each file is tagged, so importing the wrong one is refused rather than
+    replacing the wrong data.
+</MudText>
+
+@if (!IsAdmin)
+{
+    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+        Admin access is required to export or import configuration.
+    </MudAlert>
+}
+else
+{
+    <MudSimpleTable Hover="false" Dense="false" Bordered="false" Class="batch-table">
+        <thead>
+            <tr>
+                <th class="col-flex">Config</th>
+                <th style="text-align:right">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr class="batch-row is-idle">
+                <td class="col-flex">
+                    <MudText Typo="Typo.body1">Batches</MudText>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                        Every batch and its network binding. Resets the meter numbering to continue past the imported set.
+                    </MudText>
+                </td>
+                <td style="text-align:right">
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Info"
+                               StartIcon="@Icons.Material.Filled.CloudUpload" OnClick="ExportBatches">
+                        Export
+                    </MudButton>
+                    <InputFile id="batches-import-input" OnChange="OnBatchesFileSelected" accept=".json" class="d-none" />
+                    <MudButton HtmlTag="label" for="batches-import-input" Size="Size.Small" Variant="Variant.Outlined"
+                               Color="Color.Warning" Class="ml-1" StartIcon="@Icons.Material.Filled.CloudDownload">
+                        Import
+                    </MudButton>
+                </td>
+            </tr>
+            <tr class="batch-row is-idle">
+                <td class="col-flex">
+                    <MudText Typo="Typo.body1">Network</MudText>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                        MQTT brokers and HES push targets. Broker passwords are plaintext in this file so it is portable — treat it as a secret.
+                    </MudText>
+                </td>
+                <td style="text-align:right">
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Info"
+                               StartIcon="@Icons.Material.Filled.CloudUpload" OnClick="ExportNetwork">
+                        Export
+                    </MudButton>
+                    <InputFile id="network-import-input" OnChange="OnNetworkFileSelected" accept=".json" class="d-none" />
+                    <MudButton HtmlTag="label" for="network-import-input" Size="Size.Small" Variant="Variant.Outlined"
+                               Color="Color.Warning" Class="ml-1" StartIcon="@Icons.Material.Filled.CloudDownload">
+                        Import
+                    </MudButton>
+                </td>
+            </tr>
+            <tr class="batch-row is-idle">
+                <td class="col-flex">
+                    <MudText Typo="Typo.body1">BadComm</MudText>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                        Field-impairment rules and network delay, applied fleet-wide on the next exchange.
+                    </MudText>
+                </td>
+                <td style="text-align:right">
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Info"
+                               StartIcon="@Icons.Material.Filled.CloudUpload" OnClick="ExportBadComm">
+                        Export
+                    </MudButton>
+                    <InputFile id="badcomm-import-input" OnChange="OnBadCommFileSelected" accept=".json" class="d-none" />
+                    <MudButton HtmlTag="label" for="badcomm-import-input" Size="Size.Small" Variant="Variant.Outlined"
+                               Color="Color.Warning" Class="ml-1" StartIcon="@Icons.Material.Filled.CloudDownload">
+                        Import
+                    </MudButton>
+                </td>
+            </tr>
+            <tr class="batch-row is-idle">
+                <td class="col-flex">
+                    <MudText Typo="Typo.body1">Testing (loop push)</MudText>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                        The loop-push schedule — which batches (by name) and how often. Importing starts it immediately.
+                    </MudText>
+                </td>
+                <td style="text-align:right">
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Info"
+                               StartIcon="@Icons.Material.Filled.CloudUpload" OnClick="ExportTesting">
+                        Export
+                    </MudButton>
+                    <InputFile id="testing-import-input" OnChange="OnTestingFileSelected" accept=".json" class="d-none" />
+                    <MudButton HtmlTag="label" for="testing-import-input" Size="Size.Small" Variant="Variant.Outlined"
+                               Color="Color.Warning" Class="ml-1" StartIcon="@Icons.Material.Filled.CloudDownload">
+                        Import
+                    </MudButton>
+                </td>
+            </tr>
+        </tbody>
+    </MudSimpleTable>
+}
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthStateTask { get; set; }
+
+    private ClaimsPrincipal? _user;
+    private bool IsAdmin => _user?.IsInRole(AppRoles.Admin) ?? false;
+
+    private const long MaxConfigBytes = 16 * 1024 * 1024;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthStateTask is not null)
+        {
+            AuthenticationState state = await AuthStateTask;
+            _user = state.User;
+        }
+    }
+
+    private async Task<string?> ReadFileAsync(InputFileChangeEventArgs e)
+    {
+        IBrowserFile? file = e.FileCount > 0 ? e.File : null;
+        if (!IsAdmin || file is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            await using Stream stream = file.OpenReadStream(MaxConfigBytes);
+            using var reader = new StreamReader(stream);
+            return await reader.ReadToEndAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not read the file: {ex.Message}", Severity.Error);
+            return null;
+        }
+    }
+
+    // ── Batches ─────────────────────────────────────────────────────────────────────────────────
+
+    private async Task ExportBatches()
+    {
+        if (IsAdmin)
+        {
+            await JS.InvokeVoidAsync("mayaDownload", "/config/batches.json");
+        }
+    }
+
+    private async Task OnBatchesFileSelected(InputFileChangeEventArgs e)
+    {
+        string? json = await ReadFileAsync(e);
+        if (json is null)
+        {
+            return;
+        }
+
+        int count;
+        try
+        {
+            count = ConfigBundles.PreviewBatches(json);
+        }
+        catch (ArgumentException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+            return;
+        }
+
+        bool? confirmed = await DialogService.ShowMessageBoxAsync(
+            "Replace ALL batches?",
+            $"This file holds {count} batch(es). Importing REPLACES every current batch, resets the " +
+            "meter numbering to continue from the imported set, and clears live meter sessions. Batches " +
+            "keep their broker / push-target bindings by name — import the network file too if those " +
+            "endpoints are not already here. This cannot be undone.",
+            yesText: "Replace batches", cancelText: "Cancel");
+
+        if (confirmed != true)
+        {
+            return;
+        }
+
+        try
+        {
+            int applied = ConfigBundles.ImportBatches(json);
+            // Live brain sessions belonged to the batches we just replaced — same as Reset all.
+            Sessions.Clear();
+            Snackbar.Add($"Imported {applied} batch(es).", Severity.Success);
+        }
+        catch (ArgumentException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    // ── Network ─────────────────────────────────────────────────────────────────────────────────
+
+    private async Task ExportNetwork()
+    {
+        if (IsAdmin)
+        {
+            await JS.InvokeVoidAsync("mayaDownload", "/config/network.json");
+        }
+    }
+
+    private async Task OnNetworkFileSelected(InputFileChangeEventArgs e)
+    {
+        string? json = await ReadFileAsync(e);
+        if (json is null)
+        {
+            return;
+        }
+
+        int brokers, pushTargets;
+        try
+        {
+            (brokers, pushTargets) = ConfigBundles.PreviewNetwork(json);
+        }
+        catch (ArgumentException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+            return;
+        }
+
+        bool? confirmed = await DialogService.ShowMessageBoxAsync(
+            "Replace all network endpoints?",
+            $"This file holds {brokers} broker(s) and {pushTargets} push target(s). Importing REPLACES " +
+            "every current broker and push target. Broker passwords in the file are re-encrypted under " +
+            "this host. Batches keep their bindings by name. This cannot be undone.",
+            yesText: "Replace endpoints", cancelText: "Cancel");
+
+        if (confirmed != true)
+        {
+            return;
+        }
+
+        try
+        {
+            (int b, int p) = ConfigBundles.ImportNetwork(json);
+            Snackbar.Add($"Imported {b} broker(s) and {p} push target(s).", Severity.Success);
+        }
+        catch (ArgumentException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    // ── BadComm ─────────────────────────────────────────────────────────────────────────────────
+
+    private async Task ExportBadComm()
+    {
+        if (IsAdmin)
+        {
+            await JS.InvokeVoidAsync("mayaDownload", "/config/badcomm.json");
+        }
+    }
+
+    private async Task OnBadCommFileSelected(InputFileChangeEventArgs e)
+    {
+        string? json = await ReadFileAsync(e);
+        if (json is null)
+        {
+            return;
+        }
+
+        try
+        {
+            ConfigBundles.PreviewBadComm(json);
+        }
+        catch (ArgumentException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+            return;
+        }
+
+        bool? confirmed = await DialogService.ShowMessageBoxAsync(
+            "Replace BadComm settings?",
+            "This replaces the current bad-comm rules and network delay for the whole fleet, on the " +
+            "next exchange. This cannot be undone.",
+            yesText: "Replace settings", cancelText: "Cancel");
+
+        if (confirmed != true)
+        {
+            return;
+        }
+
+        try
+        {
+            ConfigBundles.ImportBadComm(json);
+            Snackbar.Add("BadComm settings imported.", Severity.Success);
+        }
+        catch (ArgumentException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    // ── Testing ─────────────────────────────────────────────────────────────────────────────────
+
+    private async Task ExportTesting()
+    {
+        if (IsAdmin)
+        {
+            await JS.InvokeVoidAsync("mayaDownload", "/config/testing.json");
+        }
+    }
+
+    private async Task OnTestingFileSelected(InputFileChangeEventArgs e)
+    {
+        string? json = await ReadFileAsync(e);
+        if (json is null)
+        {
+            return;
+        }
+
+        TestingFile preview;
+        try
+        {
+            preview = ConfigBundles.PreviewTesting(json);
+        }
+        catch (ArgumentException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+            return;
+        }
+
+        bool? confirmed = await DialogService.ShowMessageBoxAsync(
+            "Start loop push from this file?",
+            $"This starts (or replaces) the loop push using {preview.BatchNames.Count} batch(es) by " +
+            $"name, every {preview.IntervalMinutes} min. Any loop already running is replaced.",
+            yesText: "Start loop", cancelText: "Cancel");
+
+        if (confirmed != true)
+        {
+            return;
+        }
+
+        try
+        {
+            TestingImportResult applied = ConfigBundles.ImportTesting(json);
+            string missing = applied.Missing.Count > 0
+                ? $" ({applied.Missing.Count} not found here: {string.Join(", ", applied.Missing)})"
+                : string.Empty;
+            Snackbar.Add(
+                $"Loop push started — {applied.Resolved} batch(es) every {preview.IntervalMinutes} min.{missing}",
+                applied.Missing.Count > 0 ? Severity.Warning : Severity.Success);
+        }
+        catch (ArgumentException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+}

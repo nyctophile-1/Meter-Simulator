@@ -12,10 +12,28 @@
         <MudText Typo="Typo.h6" Color="Color.Primary" Class="mr-6" Style="font-weight:700;letter-spacing:1px;">MAYA</MudText>
         <MudText Typo="Typo.body2" Class="mud-text-secondary d-none d-sm-flex">Many-Meter Simulator</MudText>
         <MudSpacer />
+        <div class="mr-6 d-none d-sm-flex align-center">
+            <HostStats />
+        </div>
         <AuthorizeView>
             <Authorized>
-                <MudIcon Icon="@Icons.Material.Filled.AccountCircle" Size="Size.Small" Class="mr-1" />
-                <MudText Typo="Typo.body2" Class="mr-3">@context.User.Identity?.Name</MudText>
+                @if (context.User.IsInRole(AppRoles.Admin))
+                {
+                    @* The admin account badge doubles as the link to Configuration (export/import) —
+                       one less icon in a bar that is already getting crowded, and it is only ever
+                       meaningful for the role that can use that page anyway. *@
+                    <MudTooltip Text="Configuration (export/import)">
+                        <MudButton Href="/config" Variant="Variant.Text" Color="Color.Inherit" Class="mr-3 px-2"
+                                   StartIcon="@Icons.Material.Filled.AccountCircle">
+                            @context.User.Identity?.Name
+                        </MudButton>
+                    </MudTooltip>
+                }
+                else
+                {
+                    <MudIcon Icon="@Icons.Material.Filled.AccountCircle" Size="Size.Small" Class="mr-1" />
+                    <MudText Typo="Typo.body2" Class="mr-3">@context.User.Identity?.Name</MudText>
+                }
                 <MudButton Href="/logout" Variant="Variant.Text" Color="Color.Inherit"
                            StartIcon="@Icons.Material.Filled.Logout" Size="Size.Small">Log out</MudButton>
             </Authorized>
@@ -28,6 +46,9 @@
             <MudNavLink Href="batches" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Dns">Batch Setup</MudNavLink>
             <MudNavLink Href="network" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Hub">Network Setup</MudNavLink>
             <MudNavLink Href="badcomm" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.NetworkCheck">BadComm Setup</MudNavLink>
+            <MudNavLink Href="testing" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Science">Testing</MudNavLink>
+            @* Configuration is reachable via the admin account badge in the top bar, not the side
+               nav — it's a single admin-only page, not something that belongs in the main list. *@
             <MudNavLink Href="logs" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Terminal">Live Logs</MudNavLink>
             <MudNavLink Href="faqs" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.HelpOutline">FAQs</MudNavLink>
             <MudNavLink Href="docs" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.MenuBook">Docs</MudNavLink>

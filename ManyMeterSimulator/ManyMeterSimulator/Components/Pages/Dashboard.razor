@@ -1,13 +1,13 @@
 @page "/"
 @attribute [Authorize]
 @rendermode InteractiveServer
+@using System.Diagnostics
 @using System.Globalization
 @using System.Text
 @using Microsoft.AspNetCore.Authorization
 @using ManyMeterSimulator.Diagnostics
 @using ManyMeterSimulator.Brain
 @using ManyMeterSimulator.Networking.Nic
-@using ManyMeterSimulator.Networking.Mqtt
 @using ManyMeterSimulator.BadComm
 @inject FleetCompositionCache Composition
 @inject SimulatorMetrics Metrics
@@ -15,46 +15,10 @@
 @inject MeterSessionManager Sessions
 @inject MeterRegistry MeterRegistry
 @inject IOptions<TcpOptions> TcpOptions
-@inject MqttNicListenerService MqttListener
-@inject PushCoordinator Push
-@inject ISnackbar Snackbar
 @implements IDisposable
 
 <PageTitle>MAYA - Dashboard</PageTitle>
 
-@* ---------- MQTT broker status (the MQTT answer to "is the listener bound?") ---------- *@
-@if (_brokerStatuses.Count > 0)
-{
-    <MudPaper Elevation="1" Class="pa-3 mb-2">
-        <div class="d-flex align-center flex-wrap" style="gap:16px;">
-            <MudText Typo="Typo.caption" Class="mud-text-secondary">MQTT brokers</MudText>
-            @foreach ((BrokerBinding binding, MqttConnectionStatus status) in _brokerStatuses)
-            {
-                <div class="d-flex align-center" style="gap:6px;">
-                    <span class="legend-dot" style="background:@(status.IsConnected ? "#4ec9b0" : "#f48771");"></span>
-                    @* Broker name alongside the NIC — with several brokers per transport, the NIC
-                       alone no longer identifies which connection this row is. *@
-                    <span class="nic-badge nic-badge-@binding.Transport.ToString().ToLowerInvariant() mr-1">@NicLabel(binding.Transport)</span>
-                    <MudText Typo="Typo.body2">@binding.BrokerKey</MudText>
-                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
-                        @if (status.IsConnected)
-                        {
-                            <text>connected as @status.CredentialName &middot; @status.SubscribedFilters filter(s)</text>
-                        }
-                        else if (status.LastError is not null)
-                        {
-                            <text>@status.LastError (attempt @status.Attempts)</text>
-                        }
-                        else
-                        {
-                            <text>connecting&hellip;</text>
-                        }
-                    </MudText>
-                </div>
-            }
-        </div>
-    </MudPaper>
-}
 
 @* ---------- KPI stat cards ---------- *@
 <MudGrid Class="mb-2">
@@ -89,13 +53,15 @@
                 </div>
             </div>
 
-            @if (_activeHistory.Count < 2)
-            {
-                <div class="activity-empty mt-3">Collecting samples&hellip;</div>
+
+
+            @{
+                // Always the real chart, from the very first sample: the axes and the 60s window
+                // are fixed regardless of how much history exists yet, so there is nothing for a
+                // "Collecting samples…" placeholder to stand in for — and nothing that changes
+                // height the moment real data arrives (see .chart-layout in site.css).
             }
-            else
-            {
-                <div class="chart-layout mt-3">
+            <div class="chart-layout mt-3">
                     @* Left axis: active connections *@
                     <div class="axis-y axis-y-conn">
                         @foreach (var t in Ticks(_connMax))
@@ -132,7 +98,7 @@
                             <path d="@_connLine" fill="none" stroke="#4ec9b0" stroke-width="2.5"
                                   vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round" />
 
-                            @if (_hover >= 0)
+                            @if (HasHoverData)
                             {
                                 <line x1="@F(HoverX)" y1="0" x2="@F(HoverX)" y2="300" stroke="#8a8f98"
                                       stroke-width="1" vector-effect="non-scaling-stroke" />
@@ -140,8 +106,11 @@
                         </svg>
 
                         @* Markers are HTML, not SVG: the plot is stretched (preserveAspectRatio=none),
-                           which would squash circles into ellipses. *@
-                        @if (_hover >= 0)
+                           which would squash circles into ellipses. Guarded by HasHoverData, not just
+                           _hover >= 0: with 0 or 1 samples _connNorm/_exchNorm are empty (BuildPaths
+                           needs 2+ points for a line), so a stray hover on the lone early sample must
+                           not index into them. *@
+                        @if (HasHoverData)
                         {
                             <span class="plot-dot" style="left:@(F(HoverPct))%;top:@(F(_connNorm[_hover] * 100))%;background:#4ec9b0;"></span>
                             <span class="plot-dot" style="left:@(F(HoverPct))%;top:@(F(_exchNorm[_hover] * 100))%;background:#8b7cf6;"></span>
@@ -161,16 +130,18 @@
                             </div>
                         }
 
-                        @* Invisible hit targets — one per sample, each centred on its data point so the
-                           crosshair lands under the cursor. Hover fires on column change, not per pixel. *@
+                        @* Invisible hit targets — one per sample, sized to its 2s slot in the fixed
+                           60s window (not spread across however many samples exist), and centred on
+                           the point so the crosshair lands under the cursor. *@
                         <div class="hover-cols">
                             @{
-                                double colW = 100.0 / (_activeHistory.Count - 1);
+                                double colW = SampleIntervalSeconds / WindowSeconds * 100;
                             }
                             @for (int i = 0; i < _activeHistory.Count; i++)
                             {
                                 int idx = i;
-                                <div class="hover-col" style="left:@(F(idx * colW))%;width:@(F(colW))%;"
+                                double centerPct = TimeFrac(idx, _activeHistory.Count) * 100;
+                                <div class="hover-col" style="left:@(F(centerPct - colW / 2))%;width:@(F(colW))%;"
                                      @onmouseenter="() => _hover = idx"></div>
                             }
                         </div>
@@ -184,15 +155,16 @@
                         }
                     </div>
 
+                    @* Fixed regardless of how many samples exist yet — this IS the 60s window,
+                       not a summary of what happened to be collected so far. *@
                     <div></div>
                     <div class="axis-x">
-                        <span>@($"-{(_activeHistory.Count - 1) * 2}s")</span>
-                        <span>@($"-{(_activeHistory.Count - 1)}s")</span>
+                        <span>-@(WindowSeconds)s</span>
+                        <span>-@(WindowSeconds / 2)s</span>
                         <span>now</span>
                     </div>
                     <div></div>
                 </div>
-            }
         </MudPaper>
     </MudItem>
 
@@ -205,15 +177,6 @@
                     @_totalBatches total &middot; @_provisionedMeters.ToString("N0") meters
                 </MudText>
             </div>
-
-            @* Push destination — the single TCP IP every "Send Push" targets. The buffer/structure
-               is fixed by each meter's template; only this destination and the trigger are the
-               operator's to set. *@
-            <MudTextField @bind-Value="_pushDestination" Label="TCP push IP"
-                          Placeholder="e.g. 10.0.0.5 or [2406:da1a::1]:7000"
-                          Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-3"
-                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Send"
-                          HelperText="Every meter in a batch pushes to this address on Send Push." />
 
             @if (_totalBatches == 0)
             {
@@ -249,27 +212,14 @@
 
                 <div style="height: 1px; background: rgba(255, 255, 255, 0.08); margin: 0.75rem 0; flex-shrink: 0;"></div>
 
-                <div class="batch-list">
+                <div class="batch-list mt-1">
                     @foreach (var b in _batches)
                     {
-                        <div class="batch-row">
-                            <span class="legend-dot" style="background:@StatusColor(b.Status);"></span>
-                            <div class="batch-row-main">
-                                <div class="batch-row-name">@b.Name</div>
-                                <div class="batch-row-sub d-flex align-center mt-1" style="gap: 6px;">
-                                    <span class="nic-badge nic-badge-@b.NicType.ToString().ToLowerInvariant()">@NicLabel(b.NicType)</span>
-                                    <span>&middot; @b.TemplateName</span>
-                                </div>
-                            </div>
-                            <span class="batch-row-count">@b.Count.ToString("N0")</span>
-                            @* Push works on every NIC now: TCP opens a socket to the bound IP, MQTT
-                               publishes to the bound broker. The coordinator dispatches on the NIC. *@
-                            <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
-                                       StartIcon="@Icons.Material.Filled.Send" Class="ml-2"
-                                       Disabled="@_pushingBatchIds.Contains(b.Id)"
-                                       OnClick="@(() => SendPushAsync(b.Id))">
-                                @(_pushingBatchIds.Contains(b.Id) ? "Sending…" : "Send Push")
-                            </MudButton>
+                        <div class="batch-row d-flex align-center py-2 px-1" style="gap: 8px; border-bottom: 1px solid rgba(255, 255, 255, 0.04);">
+                            <span class="legend-dot" style="background:@StatusColor(b.Status); flex-shrink: 0;"></span>
+                            <span class="batch-row-name" style="font-weight:600; font-size:0.85rem; color:#d4d4d4; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">@b.Name</span>
+                            <span class="nic-badge nic-badge-@b.NicType.ToString().ToLowerInvariant()" style="flex-shrink: 0;">@NicLabel(b.NicType)</span>
+                            <span class="batch-row-count ml-auto pl-2" style="font-weight:700; font-size:0.85rem; color:#d4d4d4; flex-shrink: 0;">@b.Count.ToString("N0")</span>
                         </div>
                     }
                 </div>
@@ -277,21 +227,32 @@
         </MudPaper>
     </MudItem>
 
-    @* ---------- Rejections bar chart ---------- *@
+    @* ---------- NIC-wide statistics ---------- *@
     <MudItem xs="12" md="6">
         <MudPaper Elevation="1" Class="pa-4" Style="height:100%;">
-            <MudText Typo="Typo.subtitle1" GutterBottom="true">Rejected / dropped connections</MudText>
-            @if (_rejectionsTotal == 0)
-            {
-                <MudAlert Severity="Severity.Success" Dense="true" Variant="Variant.Outlined" Class="mt-3">
-                    No rejections or idle timeouts recorded.
-                </MudAlert>
-            }
-            else
-            {
-                <MudChart T="double" ChartType="ChartType.Bar" ChartSeries="@RejectionSeries" XAxisLabels="@RejectionLabels"
-                          ChartOptions="@_chartOptions" Width="100%" Height="260px" />
-            }
+            <MudText Typo="Typo.subtitle1" GutterBottom="true">NIC statistics</MudText>
+            <MudSimpleTable Hover="true" Dense="true" Bordered="false" Class="batch-table">
+                <thead>
+                    <tr>
+                        <th>NIC</th>
+                        <th style="text-align:right">Active</th>
+                        <th style="text-align:right">Total exchanges</th>
+                        <th style="text-align:right">Exchanges/sec</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (NicType nic in AllNicTypes)
+                    {
+                        SimulatorMetricsSnapshot s = _nicSnaps.TryGetValue(nic, out var v) ? v : default;
+                        <tr class="batch-row is-idle">
+                            <td><span class="nic-badge nic-badge-@nic.ToString().ToLowerInvariant()">@NicLabel(nic)</span></td>
+                            <td style="text-align:right">@s.ActiveConnections.ToString("N0")</td>
+                            <td style="text-align:right">@s.TotalExchanges.ToString("N0")</td>
+                            <td style="text-align:right">@_nicExchPerSec.GetValueOrDefault(nic, 0).ToString("N1")</td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
         </MudPaper>
     </MudItem>
 
@@ -414,7 +375,13 @@
 
 @code {
     private System.Threading.Timer? _timer;
+
+    // The chart is a fixed 60-second window, sampled every 2s — 30 points fill it exactly. Both
+    // constants are load-bearing beyond MaxPoints: they also drive the always-on axis labels and
+    // the time-based X position of every point, so the window never changes shape as data arrives.
+    private const int SampleIntervalSeconds = 2;
     private const int MaxPoints = 30;
+    private const int WindowSeconds = MaxPoints * SampleIntervalSeconds;
 
     private readonly List<double> _activeHistory = new();
     private readonly List<double> _exchangesPerSecHistory = new();
@@ -439,66 +406,19 @@
     private long _provisionedMeters;
     private int _runningBatches, _stoppedBatches, _notStartedBatches, _totalBatches;
     private IReadOnlyList<MeterBatch> _batches = Array.Empty<MeterBatch>();
-    // Keyed by binding, not by NIC: several brokers may serve one transport, so a per-NIC row could
-    // only ever show one of them (network_registry.md §5.1).
-    private IReadOnlyList<KeyValuePair<BrokerBinding, MqttConnectionStatus>> _brokerStatuses =
-        Array.Empty<KeyValuePair<BrokerBinding, MqttConnectionStatus>>();
-
     // Cached by FleetCompositionCache: recomputing this walks every provisioned index, so it must
     // not be recalculated on the 2s sample. The cache returns instantly unless config changed.
     private FleetComposition _comms;
-    private long _rejectionsTotal;
     private int _maxConns;
 
-    private readonly ChartOptions _chartOptions = new()
-    {
-        ChartPalette = new[] { "#4ec9b0", "#0e639c", "#e0a458", "#f48771", "#8a8f98" },
-    };
-
-    // ── Push (on-demand "Send Push" button) ──
-    private string _pushDestination = string.Empty;
-    private readonly HashSet<int> _pushingBatchIds = new();
-
-    private async Task SendPushAsync(int batchId)
-    {
-        // An empty box is no longer an error: the batch's bound push target is the default, and the
-        // box is the override. PushCoordinator says which one it used, and complains if there is
-        // neither.
-        string? typed = string.IsNullOrWhiteSpace(_pushDestination) ? null : _pushDestination.Trim();
-
-        _pushingBatchIds.Add(batchId);
-        try
-        {
-            PushBatchResult result = await Push.PushBatchAsync(batchId, typed);
-
-            if (!result.Ok)
-            {
-                Snackbar.Add(result.Error ?? "Push failed.", Severity.Error);
-            }
-            else if (result.Failed == 0)
-            {
-                string where = typed ?? "its bound push target";
-                Snackbar.Add($"Pushed {result.Sent} of {result.Total} meter(s) to {where}.", Severity.Success);
-            }
-            else
-            {
-                Snackbar.Add($"Pushed {result.Sent}/{result.Total}; {result.Failed} failed.", Severity.Warning);
-            }
-        }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Push error: {ex.Message}", Severity.Error);
-        }
-        finally
-        {
-            _pushingBatchIds.Remove(batchId);
-        }
-    }
+    private static readonly NicType[] AllNicTypes = Enum.GetValues<NicType>();
+    private readonly Dictionary<NicType, SimulatorMetricsSnapshot> _nicSnaps = new();
+    private readonly Dictionary<NicType, long> _nicLastExchanges = new();
+    private readonly Dictionary<NicType, double> _nicExchPerSec = new();
 
     protected override void OnInitialized()
     {
         _maxConns = TcpOptions.Value.MaxConcurrentConnections;
-        _pushDestination = Push.Options.DefaultDestination;
         _lastSampleUtc = DateTime.UtcNow;
         Sample(initial: true);
         _timer = new System.Threading.Timer(
@@ -511,10 +431,6 @@
         int active = Connections.ActiveCount;
         _snap = Metrics.Snapshot(active);
         _liveMeters = Sessions.LiveMeterCount;
-        _brokerStatuses = MqttListener.ConnectionStatuses
-            .OrderBy(kv => kv.Key.Transport)
-            .ThenBy(kv => kv.Key.BrokerKey, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
 
         IReadOnlyList<MeterBatch> batches = MeterRegistry.Batches;
         _batches = batches;
@@ -526,14 +442,23 @@
 
         _comms = Composition.Current();
 
-        _rejectionsTotal = _snap.TotalRejectedCollision + _snap.TotalRejectedMaxConnections
-            + _snap.TotalRejectedBatchNotRunning + _snap.TotalRejectedNoTemplate + _snap.TotalIdleTimeouts
-            + _snap.TotalDroppedMailboxFull + _snap.TotalMalformedPackets + _snap.TotalFragmentTimeouts;
-
         DateTime now = DateTime.UtcNow;
         double secs = Math.Max(0.001, (now - _lastSampleUtc).TotalSeconds);
         double perSec = initial ? 0 : Math.Max(0, (_snap.TotalExchanges - _lastExchanges) / secs);
         _lastExchanges = _snap.TotalExchanges;
+
+        // Per-NIC breakdown for the "NIC statistics" table — same delta-over-interval approach as
+        // the fleet-wide exchanges/sec above, just tracked once per NIC instead of once overall.
+        foreach (NicType nic in AllNicTypes)
+        {
+            SimulatorMetricsSnapshot nicSnap = Metrics.Snapshot(nic, Connections.ActiveCountFor(nic));
+            _nicSnaps[nic] = nicSnap;
+
+            long lastForNic = _nicLastExchanges.GetValueOrDefault(nic, 0);
+            _nicExchPerSec[nic] = initial ? 0 : Math.Max(0, (nicSnap.TotalExchanges - lastForNic) / secs);
+            _nicLastExchanges[nic] = nicSnap.TotalExchanges;
+        }
+
         _lastSampleUtc = now;
 
         _activeHistory.Add(active);
@@ -559,8 +484,23 @@
         return nice * pow;
     }
 
+    /// <summary>
+    /// Where sample <paramref name="index"/> sits along the fixed window, as a 0..1 fraction (0 =
+    /// left edge = -<see cref="WindowSeconds"/>, 1 = right edge = now). Assumes the constant 2s
+    /// sampling cadence — the most recent point is always "now", each one before it 2s further
+    /// back — rather than each point's slot depending on how many samples exist, which is what let
+    /// early samples spread across the WHOLE width instead of sitting at their real time.
+    /// </summary>
+    private static double TimeFrac(int index, int count)
+    {
+        double secondsAgo = (count - 1 - index) * (double)SampleIntervalSeconds;
+        return Math.Clamp(1 - secondsAgo / WindowSeconds, 0, 1);
+    }
+
     // Builds a smooth (Catmull-Rom) line path and a matching filled-area path over a 1000x300
-    // viewBox, plus each point's 0..1 vertical fraction for positioning HTML markers.
+    // viewBox, plus each point's 0..1 vertical fraction for positioning HTML markers. X position is
+    // TIME-based (see TimeFrac), not index-based, so the line always sits at its real place in the
+    // fixed 60s window and simply grows in from the right rather than stretching to fill the plot.
     private static (string Line, string Area, double[] Norm) BuildPaths(IReadOnlyList<double> data, double max)
     {
         const double W = 1000, H = 300;
@@ -569,7 +509,6 @@
 
         // Headroom at the top so a peak at max doesn't touch the card edge.
         const double PadTopFrac = 0.08;
-        double dx = W / (n - 1);
 
         var norm = new double[n];
         var pts = new (double X, double Y)[n];
@@ -577,7 +516,7 @@
         {
             double frac = max <= 0 ? 0 : Math.Clamp(data[i] / max, 0, 1);
             norm[i] = PadTopFrac + (1 - frac) * (1 - PadTopFrac);
-            pts[i] = (i * dx, norm[i] * H);
+            pts[i] = (TimeFrac(i, n) * W, norm[i] * H);
         }
 
         var sb = new StringBuilder();
@@ -632,7 +571,11 @@
         _ => v.ToString("0.##", CultureInfo.InvariantCulture),
     };
 
-    private double HoverPct => _activeHistory.Count < 2 ? 0 : _hover * 100.0 / (_activeHistory.Count - 1);
+    // With 0/1 samples there is nothing valid to index into _connNorm/_exchNorm (BuildPaths returns
+    // an empty array below 2 points) — everything hover-related must check this before touching them.
+    private bool HasHoverData => _hover >= 0 && _hover < _connNorm.Length && _hover < _exchNorm.Length;
+
+    private double HoverPct => HasHoverData ? TimeFrac(_hover, _activeHistory.Count) * 100 : 0;
     private double HoverX => HoverPct * 10; // 0..1000 viewBox units
 
     private string HoverLabel
@@ -673,31 +616,6 @@
         NicType.MqttWirepas => "RF Wirepas",
         NicType.MqttKmesh => "RF Kimbal Mesh",
         _ => nic.ToString(),
-    };
-
-    private List<ChartSeries<double>> RejectionSeries => new()
-    {
-        new ChartSeries<double>
-        {
-            Name = "Count",
-            Data = new double[]
-            {
-                _snap.TotalRejectedCollision,
-                _snap.TotalRejectedMaxConnections,
-                _snap.TotalRejectedBatchNotRunning,
-                _snap.TotalRejectedNoTemplate,
-                _snap.TotalIdleTimeouts,
-                _snap.TotalDroppedMailboxFull,
-                _snap.TotalMalformedPackets,
-                _snap.TotalFragmentTimeouts,
-            },
-        },
-    };
-
-    private string[] RejectionLabels => new[]
-    {
-        "Collision", "Max conn", "Not running", "No template", "Idle t/o",
-        "Mailbox full", "Malformed", "Frag t/o",
     };
 
     private double CapacityPercent => _maxConns > 0 ? (double)_snap.ActiveConnections / _maxConns * 100 : 0;

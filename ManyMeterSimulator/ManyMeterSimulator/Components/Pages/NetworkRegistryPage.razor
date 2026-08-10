@@ -9,15 +9,12 @@
 @using ManyMeterSimulator.Networking.Nic
 @using ManyMeterSimulator.Networking.Registry
 @using ManyMeterSimulator.Provisioning
-@using Microsoft.AspNetCore.Components.Forms
 @inject NetworkRegistry Network
 @inject MeterRegistry MeterRegistry
 @inject EndpointProber Prober
 @inject NetworkHealthMonitor Health
-@inject ConfigBundleService ConfigBundles
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
-@inject IJSRuntime JS
 @implements IDisposable
 
 <PageTitle>MAYA - Network Setup</PageTitle>
@@ -36,23 +33,6 @@
                    StartIcon="@Icons.Material.Filled.Hub" OnClick="OpenAddBroker">Add broker</MudButton>
         <MudButton Variant="Variant.Filled" Color="Color.Primary"
                    StartIcon="@Icons.Material.Filled.CallReceived" OnClick="OpenAddPushTarget">Add push target</MudButton>
-
-        <MudSpacer />
-
-        @* Network config only (brokers + push targets). Migrating a whole fleet? Import this on the
-           destination BEFORE the batches file, so bindings resolve as batches land. *@
-        <MudButton Variant="Variant.Outlined" Color="Color.Default"
-                   StartIcon="@Icons.Material.Filled.Download" OnClick="ExportConfig">
-            Export network
-        </MudButton>
-        @* Native InputFile + a label that targets it by id. MudFileUpload's ActivatorContent slot
-           does not bind in MudBlazor 9.7 (it falls back to a default "Browse files" button), so the
-           import control is built from the primitives that do work. *@
-        <InputFile id="network-import-input" OnChange="OnConfigFileSelected" accept=".json" class="d-none" />
-        <MudButton HtmlTag="label" for="network-import-input" Variant="Variant.Outlined" Color="Color.Default"
-                   StartIcon="@Icons.Material.Filled.Upload">
-            Import network
-        </MudButton>
     </div>
 }
 
@@ -377,77 +357,6 @@ else
     public void Dispose() => _refresh?.Dispose();
 
     // ── Import / export whole config ───────────────────────────────────────────────────────────
-
-    /// <summary>Largest config bundle we will read. Batches are lightweight (ranges, not per-meter rows).</summary>
-    private const long MaxConfigBytes = 16 * 1024 * 1024;
-
-    private async Task ExportConfig()
-    {
-        if (!IsAdmin)
-        {
-            return;
-        }
-
-        // The endpoint is admin-gated and sets the filename; the browser downloads it directly.
-        await JS.InvokeVoidAsync("mayaDownload", "/config/network.json");
-    }
-
-    private async Task OnConfigFileSelected(InputFileChangeEventArgs e)
-    {
-        IBrowserFile? file = e.FileCount > 0 ? e.File : null;
-        if (!IsAdmin || file is null)
-        {
-            return;
-        }
-
-        string json;
-        try
-        {
-            await using Stream stream = file.OpenReadStream(MaxConfigBytes);
-            using var reader = new StreamReader(stream);
-            json = await reader.ReadToEndAsync();
-        }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Could not read the file: {ex.Message}", Severity.Error);
-            return;
-        }
-
-        // Peek first (also rejects a wrong-kind file), then confirm — import REPLACES every broker
-        // and push target, so it is not something to do by half.
-        int brokers, pushTargets;
-        try
-        {
-            (brokers, pushTargets) = ConfigBundles.PreviewNetwork(json);
-        }
-        catch (ArgumentException ex)
-        {
-            Snackbar.Add(ex.Message, Severity.Error);
-            return;
-        }
-
-        bool? confirmed = await DialogService.ShowMessageBoxAsync(
-            "Replace all network endpoints?",
-            $"This file holds {brokers} broker(s) and {pushTargets} push target(s). Importing REPLACES " +
-            "every current broker and push target. Broker passwords in the file are re-encrypted under " +
-            "this host. Batches keep their bindings by name. This cannot be undone.",
-            yesText: "Replace endpoints", cancelText: "Cancel");
-
-        if (confirmed != true)
-        {
-            return;
-        }
-
-        try
-        {
-            (int b, int p) = ConfigBundles.ImportNetwork(json);
-            Snackbar.Add($"Imported {b} broker(s) and {p} push target(s).", Severity.Success);
-        }
-        catch (ArgumentException ex)
-        {
-            Snackbar.Add(ex.Message, Severity.Error);
-        }
-    }
 
     // ── Add ──────────────────────────────────────────────────────────────────────────────────
 
