@@ -41,7 +41,8 @@ public class PushDestinationTests
             NullLogger<MeterSessionManager>.Instance);
 
         var tcpPush = new ManyMeterSimulator.Networking.Push.TcpPushSender(
-            NullLogger<ManyMeterSimulator.Networking.Push.TcpPushSender>.Instance);
+            NullLogger<ManyMeterSimulator.Networking.Push.TcpPushSender>.Instance,
+            Options.Create(new PushOptions()));
         var mqtt = new StubPushPublisher();
         var push = new PushCoordinator(
             batches, sessions, network, tcpPush, mqtt, new NicCodecFactory(),

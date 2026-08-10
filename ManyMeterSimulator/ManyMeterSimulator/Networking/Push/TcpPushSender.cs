@@ -1,10 +1,12 @@
 using System.Net;
 using System.Net.Sockets;
+using ManyMeterSimulator.Brain;
+using Microsoft.Extensions.Options;
 
 namespace ManyMeterSimulator.Networking.Push;
 
 /// <summary>
-/// Sends a TCP meter's push payloads to the HES push listener.
+/// Sends a TCP meter's push payloads from the sim server to the HES push server.
 ///
 /// <para>
 /// This is the transport half of push that used to live inside the DLMS session: the session now
@@ -14,19 +16,28 @@ namespace ManyMeterSimulator.Networking.Push;
 /// </para>
 ///
 /// <para>
-/// The socket originates from the meter's OWN address so HES correlates the push to the right meter
-/// by source IP — a push from meter ABC leaves from ABC's IP, the same IP HES pulls from. When that
-/// address cannot reach the destination (a ULA dev prefix pushing to an external HES: the private
-/// source has no route out), it falls back to the host's default source so a test push still lands,
-/// warning that source-IP correlation is then unavailable. In production the meter prefix is really
-/// routed, so the bound source is used and there is no fallback.
+/// The socket binds its local endpoint to the METER's own assigned IP, because on TCP that source
+/// address is the ONLY identity the push carries — it is how the HES push server knows whose data
+/// this is. A push from meter ABC leaves from ABC's IP, the same IP HES pulls from.
+/// </para>
+///
+/// <para>
+/// If the meter's own address cannot reach the destination, the push FAILS by default
+/// (<see cref="PushOptions.RequireMeterSourceIp"/>) rather than quietly going out from the sim
+/// server's default address — that would arrive attributed to the wrong meter, with every meter
+/// looking identical. The fallback exists only as an explicit opt-in for bring-up.
 /// </para>
 /// </summary>
 public sealed class TcpPushSender
 {
     private readonly ILogger<TcpPushSender> _logger;
+    private readonly PushOptions _options;
 
-    public TcpPushSender(ILogger<TcpPushSender> logger) => _logger = logger;
+    public TcpPushSender(ILogger<TcpPushSender> logger, IOptions<PushOptions> options)
+    {
+        _logger = logger;
+        _options = options.Value;
+    }
 
     /// <summary>
     /// Sends every payload for one meter to <paramref name="destination"/> ("ip", "ip:port" or
@@ -69,30 +80,40 @@ public sealed class TcpPushSender
 
     private bool SendOne(string meterNo, IPAddress? source, string host, int port, byte[] payload)
     {
-        // Preferred: originate from the meter's own address. Tried once, not per-retry — if that
-        // address cannot reach this destination it never will (it times out, it is not transient),
-        // so retrying it only delays the fallback.
+        // The meter's OWN assigned IP is the identity of a TCP push — it is the only thing telling
+        // the HES push server which meter sent the data. Tried once, not per-retry: if that address
+        // cannot reach this destination it never will (it times out, it is not transient).
         bool canBindSource = CanBindSource(source, host);
         if (canBindSource && TryConnectAndWrite(meterNo, source, host, port, payload, bindSource: true))
         {
             return true;
         }
 
-        // Fallback: the host's default (routable) source. Production never gets here — the meter
-        // prefix is really routed, so the bound send above succeeds. This exists for testing against
-        // an external HES from a ULA dev prefix, where the private source has no route out.
+        // Strict (default): never deliver a push the HES push server would attribute to the wrong
+        // meter. A push from the sim server's own address is worse than no push — every meter looks
+        // identical and the data lands against the wrong meter, silently.
+        if (_options.RequireMeterSourceIp)
+        {
+            _logger.LogWarning(
+                "Push {Meter}: NOT sent. Its own address {Source} could not reach {Host}:{Port}, and " +
+                "Push:RequireMeterSourceIp is on — a push from the sim server's default address would " +
+                "reach the HES push server with the wrong source IP, which is how it identifies the " +
+                "meter. Fix the path for the meter prefix (route + firewall/security-group ingress for " +
+                "the prefix on the HES push server side), or set Push:RequireMeterSourceIp=false to " +
+                "accept unattributable pushes for bring-up.",
+                meterNo, source is null ? "(none assigned)" : source, host, port);
+            return false;
+        }
+
+        // Opt-in fallback: the sim server's default source. The push lands but carries no meter
+        // identity, so it is warned on every meter, every time — this is a bring-up crutch only.
         if (TryConnectAndWrite(meterNo, source, host, port, payload, bindSource: false))
         {
-            if (canBindSource)
-            {
-                _logger.LogWarning(
-                    "Push {Meter}: reached {Host}:{Port} from the host's default address, not the " +
-                    "meter's own {Source} — HES cannot correlate this push by source IP. The meter " +
-                    "prefix is not routable to this destination from here (expected when a ULA dev " +
-                    "prefix pushes to an external server; in production the prefix is really routed).",
-                    meterNo, host, port, source);
-            }
-
+            _logger.LogWarning(
+                "Push {Meter}: delivered to {Host}:{Port} from the sim server's default address, NOT " +
+                "the meter's own {Source} — the HES push server cannot tell which meter this is. " +
+                "Push:RequireMeterSourceIp is off.",
+                meterNo, host, port, source is null ? "(none assigned)" : source);
             return true;
         }
 

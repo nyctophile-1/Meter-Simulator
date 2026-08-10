@@ -72,11 +72,22 @@ else
   echo "==> Swap already present, skipping"
 fi
 
-# ── 3. IPv6 forwarding ────────────────────────────────────────────────────────
-# Required for the instance to accept traffic addressed to IPs that are not its own.
-echo "==> Enabling IPv6 forwarding"
+# ── 3. IPv6 forwarding + non-local bind ───────────────────────────────────────
+# forwarding: required for the instance to accept traffic addressed to IPs that are not its own
+#   (inbound PULL — HES dials a meter address and the wildcard listener answers).
+#
+# ip_nonlocal_bind: required for outbound PUSH. The meter addresses are covered by a `local` route
+#   but are not individually assigned to the interface, so binding one as a socket's SOURCE fails
+#   with EADDRNOTAVAIL unless this is on. Without it push either fails or silently leaves from the
+#   host's own address — and the source IP is the ONLY thing telling the HES push server which meter
+#   sent the data.
+#
+#   Note pull works fine without this, so no amount of pull load testing surfaces it: accepting an
+#   inbound connection needs the local route only, never a source bind.
+echo "==> Enabling IPv6 forwarding and non-local bind"
 cat > /etc/sysctl.d/99-maya-forwarding.conf <<'EOF'
 net.ipv6.conf.all.forwarding = 1
+net.ipv6.ip_nonlocal_bind = 1
 EOF
 
 # ── 4. Scale-final kernel tuning ──────────────────────────────────────────────
