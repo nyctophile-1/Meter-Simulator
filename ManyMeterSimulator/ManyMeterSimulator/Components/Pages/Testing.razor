@@ -22,589 +22,884 @@
 
 <PageTitle>MAYA - Testing</PageTitle>
 
-@* Active-run status banner *@
+<style>
+    @@keyframes spin { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }
+    @@keyframes shimmer { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
+    @@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+    /* ── Layout guards: MudBlazor tab panels don't constrain width by default ── */
+    .mud-tabs-panels, .mud-tab-panel { min-width:0 !important; max-width:100% !important; }
+    .tab-content { width:100%; max-width:100%; min-width:0; overflow-x:hidden; box-sizing:border-box; padding:24px 2px 8px; }
+    .tab-content * { box-sizing:border-box; }
+    .mud-tabs-toolbar { margin-bottom:4px; }
+
+    /* ── Section heading ── */
+    .sec-head { display:flex; align-items:baseline; justify-content:space-between; gap:12px; flex-wrap:wrap; margin:0 0 14px; }
+    .sec-title { font-size:.95rem; font-weight:700; letter-spacing:-.01em; }
+    .sec-sub { font-size:.76rem; color:var(--mud-palette-text-secondary); }
+    .sec-gap { margin-top:28px; }
+
+    .wf-card { border:1px solid var(--mud-palette-lines-default); border-radius:8px; overflow:hidden; max-width:100%; width:100%; box-sizing:border-box; }
+    .wf-header { padding:13px 16px; background:var(--mud-palette-background-grey); border-bottom:1px solid var(--mud-palette-lines-default); display:flex; align-items:center; gap:12px; flex-wrap:wrap; min-width:0; overflow:hidden; }
+    .wf-title { font-weight:600; font-size:.9rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .wf-actions { display:flex; gap:6px; flex-shrink:0; flex-wrap:wrap; justify-content:flex-end; }
+    .wf-meta { font-size:.75rem; color:var(--mud-palette-text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+    .job-row { padding:10px 14px; border-top:1px solid var(--mud-palette-lines-default); display:flex; align-items:flex-start; gap:10px; position:relative; min-width:0; overflow:hidden; }
+    .job-row.running { background:color-mix(in srgb,var(--mud-palette-primary) 4%,transparent); }
+    .job-row:first-child { border-top:none; }
+
+    .job-icon { width:20px; height:20px; flex-shrink:0; display:flex; align-items:center; justify-content:center; margin-top:2px; }
+    .icon-spin { width:16px; height:16px; border:2.5px solid color-mix(in srgb,var(--mud-palette-primary) 25%,transparent); border-top-color:var(--mud-palette-primary); border-radius:50%; animation:spin .75s linear infinite; }
+    .icon-ring { width:14px; height:14px; border:2px solid var(--mud-palette-lines-default); border-radius:50%; }
+    .icon-ok { width:16px; height:16px; border-radius:50%; background:var(--mud-palette-success); display:flex; align-items:center; justify-content:center; }
+    .icon-ok::after { content:''; width:4px; height:7px; border:2px solid #fff; border-top:none; border-left:none; transform:rotate(45deg) translate(-1px,-1px); }
+
+    .job-body { flex:1; min-width:0; overflow:hidden; }
+    .job-name { font-size:.84rem; font-weight:600; display:flex; align-items:center; gap:7px; flex-wrap:wrap; min-width:0; }
+    .job-sub { font-size:.72rem; color:var(--mud-palette-text-secondary); margin-top:3px; font-family:ui-monospace,monospace; overflow-wrap:break-word; word-break:break-word; }
+
+    .job-track { margin-top:7px; height:3px; background:var(--mud-palette-lines-default); border-radius:2px; overflow:hidden; }
+    .job-fill { height:100%; border-radius:2px; transition:width .8s ease; }
+    .job-fill.running { background:linear-gradient(90deg,var(--mud-palette-primary) 0%,color-mix(in srgb,var(--mud-palette-primary) 50%,white) 50%,var(--mud-palette-primary) 100%); background-size:200% 100%; animation:shimmer 1.6s linear infinite; }
+    .job-fill.done { background:var(--mud-palette-success); }
+
+    .job-dur { font-size:.72rem; color:var(--mud-palette-text-secondary); font-family:ui-monospace,monospace; white-space:nowrap; flex-shrink:0; padding-left:8px; }
+
+    .tbadge { display:inline-flex; align-items:center; padding:1px 7px; border-radius:4px; font-size:.65rem; font-weight:700; letter-spacing:.05em; text-transform:uppercase; }
+    .tbadge-push { background:color-mix(in srgb,var(--mud-palette-primary) 15%,transparent); color:var(--mud-palette-primary); }
+    .tbadge-pull { background:color-mix(in srgb,var(--mud-palette-secondary) 15%,transparent); color:var(--mud-palette-secondary); }
+    .tbadge-burst { background:color-mix(in srgb,var(--mud-palette-warning) 20%,transparent); color:color-mix(in srgb,var(--mud-palette-warning) 80%,black); }
+
+    .add-job { padding:10px 16px; border-top:1px solid var(--mud-palette-lines-default); display:flex; align-items:center; gap:7px; font-size:.8rem; color:var(--mud-palette-primary); cursor:pointer; user-select:none; }
+    .add-job:hover { background:color-mix(in srgb,var(--mud-palette-primary) 5%,transparent); }
+
+    .metrics-strip { display:grid; grid-template-columns:repeat(auto-fill,minmax(110px,1fr)); gap:1px; background:var(--mud-palette-lines-default); border:1px solid var(--mud-palette-lines-default); border-radius:8px; overflow:hidden; margin-bottom:16px; }
+    .metric-cell { padding:13px 14px; background:var(--mud-palette-surface); }
+    .metric-val { font-size:1.35rem; font-weight:800; font-family:ui-monospace,monospace; line-height:1.2; }
+    .metric-key { font-size:.65rem; text-transform:uppercase; letter-spacing:.06em; color:var(--mud-palette-text-secondary); margin-top:2px; }
+
+    .result-row { padding:10px 14px; border-bottom:1px solid var(--mud-palette-lines-default); display:flex; align-items:center; gap:10px; cursor:pointer; transition:background .12s; min-width:0; width:100%; box-sizing:border-box; border-left:3px solid transparent; }
+    .result-row:last-child { border-bottom:none; }
+    .result-row:hover { background:var(--mud-palette-background-grey); }
+    .result-row.sel { background:color-mix(in srgb,var(--mud-palette-primary) 6%,transparent); border-left-color:var(--mud-palette-primary); }
+    .result-check { width:14px; flex-shrink:0; font-size:.75rem; color:var(--mud-palette-primary); font-weight:800; line-height:1; }
+    .result-info { flex:1 1 auto; min-width:0; overflow:hidden; }
+    .result-name { font-size:.84rem; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .result-meta { font-size:.7rem; color:var(--mud-palette-text-secondary); display:flex; align-items:center; gap:5px; flex-wrap:wrap; margin-top:2px; }
+    /* fixed-width score columns keep every row's numbers on the same vertical line */
+    .result-scores { display:flex; gap:6px; flex:0 0 auto; align-items:center; }
+    .result-score { width:62px; text-align:right; }
+    .result-score.wide { width:74px; }
+    .result-score-val { font-family:ui-monospace,monospace; font-weight:700; font-size:.88rem; line-height:1.2; }
+    /* column headers live once at the top, not repeated on every row */
+    .result-head { display:flex; align-items:center; gap:10px; padding:8px 14px; border-bottom:1px solid var(--mud-palette-lines-default); border-left:3px solid transparent; background:var(--mud-palette-background-grey); font-size:.62rem; text-transform:uppercase; letter-spacing:.07em; font-weight:700; color:var(--mud-palette-text-secondary); }
+    .result-head .result-check { visibility:hidden; }
+    .result-status { flex:0 0 auto; font-size:.68rem; padding:2px 8px; border-radius:4px; font-weight:600; white-space:nowrap; }
+    /* drop the least important columns first rather than clipping */
+    @@media (max-width:860px) { .result-status { display:none; } }
+    @@media (max-width:700px) { .result-score.opt { display:none; } }
+
+    .lb-row { display:flex; align-items:center; gap:12px; padding:10px 16px; border-bottom:1px solid var(--mud-palette-lines-default); border-left:3px solid transparent; cursor:pointer; transition:background .12s; }
+    .lb-row:last-child { border-bottom:none; }
+    .lb-row:hover { background:var(--mud-palette-background-grey); }
+    .lb-row.sel { background:color-mix(in srgb,var(--mud-palette-primary) 6%,transparent); border-left-color:var(--mud-palette-primary); }
+    .lb-rank { font-family:ui-monospace,monospace; font-weight:800; font-size:.85rem; width:28px; flex-shrink:0; color:var(--mud-palette-text-secondary); }
+    .lb-rank.gold { color:#f5c842; }
+    .lb-rank.silver { color:#aab4c0; }
+    .lb-rank.bronze { color:#cd8a5c; }
+    .lb-bar-wrap { flex:1; min-width:60px; }
+    .lb-bar { height:4px; border-radius:2px; background:var(--mud-palette-primary); opacity:.6; }
+    .lb-bar.gold { opacity:1; }
+
+    .view-toggle { display:flex; gap:0; border:1px solid var(--mud-palette-lines-default); border-radius:6px; overflow:hidden; margin-bottom:16px; width:fit-content; }
+    .view-toggle-btn { padding:6px 16px; font-size:.78rem; font-weight:600; cursor:pointer; user-select:none; border:none; background:transparent; color:var(--mud-palette-text-secondary); transition:background .12s,color .12s; }
+    .view-toggle-btn.active { background:var(--mud-palette-primary); color:#fff; }
+    .view-toggle-btn + .view-toggle-btn { border-left:1px solid var(--mud-palette-lines-default); }
+
+    .score-big { font-size:2.2rem; font-weight:800; font-family:ui-monospace,monospace; line-height:1; }
+    .score-norm { font-size:.95rem; font-weight:600; font-family:ui-monospace,monospace; color:var(--mud-palette-text-secondary); }
+
+    /* ── Comparison: ONE grid template shared by header + every row so columns line up ── */
+    /* with 3+ runs the table can exceed the viewport — it scrolls itself, page never does */
+    .cmp-scroll { overflow-x:auto; max-width:100%; padding-bottom:2px; }
+    .cmp-table { border:1px solid var(--mud-palette-lines-default); border-radius:8px; overflow:hidden; width:100%; }
+    .cmp-grid { display:grid; grid-template-columns:minmax(120px,1.1fr) minmax(0,1fr) minmax(0,1fr); align-items:stretch; }
+    .cmp-grid > * { min-width:0; overflow:hidden; }
+
+    .cmp-head-row { background:var(--mud-palette-background-grey); border-bottom:1px solid var(--mud-palette-lines-default); }
+    .cmp-corner { padding:14px 16px; border-right:1px solid var(--mud-palette-lines-default); display:flex; align-items:flex-end; font-size:.66rem; text-transform:uppercase; letter-spacing:.07em; font-weight:700; color:var(--mud-palette-text-secondary); }
+    .cmp-head-cell { padding:14px 16px; border-right:1px solid var(--mud-palette-lines-default); }
+    .cmp-head-cell:last-child { border-right:none; }
+    .cmp-head-name { font-size:.8rem; font-weight:700; display:flex; align-items:center; gap:7px; flex-wrap:wrap; overflow-wrap:anywhere; }
+    .cmp-head-meta { font-size:.68rem; color:var(--mud-palette-text-secondary); margin-top:3px; overflow-wrap:anywhere; }
+    .cmp-head-score { margin-top:10px; display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
+
+    .cmp-row { border-bottom:1px solid var(--mud-palette-lines-default); }
+    .cmp-row:last-child { border-bottom:none; }
+    .cmp-row:hover { background:color-mix(in srgb,var(--mud-palette-text-primary) 3%,transparent); }
+    .cmp-label { padding:10px 16px; font-size:.76rem; color:var(--mud-palette-text-secondary); border-right:1px solid var(--mud-palette-lines-default); display:flex; align-items:center; overflow-wrap:anywhere; }
+    .cmp-cell { padding:10px 16px; font-family:ui-monospace,monospace; font-size:.85rem; border-right:1px solid var(--mud-palette-lines-default); display:flex; align-items:center; overflow-wrap:anywhere; }
+    .cmp-cell:last-child { border-right:none; }
+    .cmp-cell.best { color:var(--mud-palette-success); font-weight:700; }
+    .cmp-section { grid-column:1 / -1; padding:7px 16px; font-size:.66rem; text-transform:uppercase; letter-spacing:.07em; font-weight:700; color:var(--mud-palette-text-secondary); background:var(--mud-palette-background-grey); border-top:1px solid var(--mud-palette-lines-default); border-bottom:1px solid var(--mud-palette-lines-default); }
+
+    .env-chip { display:inline-flex; align-items:center; padding:2px 8px; border-radius:4px; font-size:.7rem; border:1px solid var(--mud-palette-lines-default); margin-right:4px; cursor:pointer; user-select:none; transition:background .12s; }
+    .env-chip.active { background:color-mix(in srgb,var(--mud-palette-primary) 12%,transparent); border-color:var(--mud-palette-primary); color:var(--mud-palette-primary); font-weight:600; }
+
+    .mono { font-family:ui-monospace,monospace; }
+    .cancel-btn-sm { display:inline-flex; align-items:center; justify-content:center; padding:4px 12px; border-radius:5px; border:1px solid var(--mud-palette-error); color:var(--mud-palette-error); font-size:.78rem; font-weight:600; cursor:pointer; background:transparent; transition:background .12s; }
+    .cancel-btn-sm:hover { background:color-mix(in srgb,var(--mud-palette-error) 8%,transparent); }
+
+    @@media (max-width:700px) {
+        .cmp-grid { grid-template-columns:minmax(90px,1fr) minmax(0,1fr) minmax(0,1fr); }
+        .cmp-label, .cmp-cell, .cmp-corner, .cmp-head-cell { padding-left:10px; padding-right:10px; }
+        .cmp-cell { font-size:.78rem; }
+        .result-scores { gap:8px; }
+    }
+</style>
+
+@* ─── Active run: GitHub-style pipeline ─── *@
 @if (_activeRun is { } run)
 {
-    <MudPaper Elevation="2" Class="pa-4 mb-4"
-              Style="@($"border-left:4px solid var(--mud-palette-{RunStatusColor(run.Status)})")">
-        <div class="d-flex align-center justify-space-between flex-wrap" style="gap:8px;">
-            <div>
-                <MudText Typo="Typo.subtitle1">
-                    <strong>@run.PlanName</strong>
-                    <MudChip T="string" Size="Size.Small" Color="@RunStatusMudColor(run.Status)"
-                             Variant="Variant.Filled" Class="ml-2">@run.Status</MudChip>
-                </MudText>
+    string elapsed = FormatDuration((DateTimeOffset.UtcNow - (run.ActualStartUtc ?? run.ScheduledStartUtc)));
+    <div style="overflow-x:hidden;max-width:100%;">
+    <div class="wf-card mb-5">
+        <div class="wf-header">
+            <div style="flex:1;min-width:0;">
+                <div class="wf-title">
+                    @(string.IsNullOrWhiteSpace(run.RunLabel) ? run.PlanName : run.RunLabel)
+                    <span style="margin-left:6px;@(run.Status==TestRunStatus.Running?"color:var(--mud-palette-success)":"color:var(--mud-palette-text-secondary)")">
+                        ● @run.Status
+                    </span>
+                </div>
                 @if (run.Status == TestRunStatus.Scheduled)
                 {
-                    <MudText Typo="Typo.body2" Class="mud-text-secondary">
-                        Starts @RelativeTime(run.ScheduledStartUtc)
-                    </MudText>
+                    <div class="wf-meta">Starts @RelativeTime(run.ScheduledStartUtc)</div>
                 }
-                else if (run.Status == TestRunStatus.Running)
+                else
                 {
-                    <MudText Typo="Typo.body2" Class="mud-text-secondary">
-                        Tick @run.CompletedTicks / @run.ExpectedTicks
-                        @if (run.NextTickUtc is not null) { <text> &mdash; next tick @RelativeTime(run.NextTickUtc)</text> }
-                    </MudText>
-                    @if (run.LastTickSummary is not null)
-                    {
-                        <MudText Typo="Typo.caption" Class="mud-text-secondary">@run.LastTickSummary</MudText>
-                    }
+                    <div class="wf-meta">@run.PlanName &nbsp;·&nbsp; elapsed @elapsed &nbsp;/&nbsp; @run.TotalDurationMinutes min</div>
+                }
+                @if (run.LastSummary is not null)
+                {
+                    <div class="wf-meta" style="margin-top:2px;">@run.LastSummary</div>
                 }
             </div>
-            <div class="d-flex align-center" style="gap:8px;">
-                @if (run.Status is TestRunStatus.Running or TestRunStatus.Scheduled)
+            <div style="display:flex;align-items:center;gap:10px;">
+                @if (run.Status is TestRunStatus.Scheduled or TestRunStatus.Running)
                 {
-                    <MudProgressLinear Value="@run.ElapsedPct" Color="Color.Primary"
-                                       Style="width:160px;" Rounded="true" Size="Size.Small" />
-                    <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Error"
-                               OnClick="CancelRun">Cancel</MudButton>
+                    <div style="width:120px;">
+                        <div style="height:4px;background:var(--mud-palette-lines-default);border-radius:2px;overflow:hidden;">
+                            <div style="height:100%;width:@run.ElapsedPct.ToString("F0")%;border-radius:2px;background:var(--mud-palette-primary);transition:width 1s ease;"></div>
+                        </div>
+                    </div>
+                    <button class="cancel-btn-sm" @onclick="CancelRun">Cancel</button>
                 }
             </div>
         </div>
-    </MudPaper>
+        @foreach (TestTask task in ActivePlan?.Tasks ?? (IList<TestTask>)Array.Empty<TestTask>())
+        {
+            TaskPhase phase = GetTaskPhase(task, run);
+            double pct = GetTaskPct(task, run);
+            <div class="job-row @(phase == TaskPhase.Running ? "running" : "")">
+                <div class="job-icon">
+                    @if (phase == TaskPhase.Running) { <div class="icon-spin"></div> }
+                    else if (phase == TaskPhase.Done) { <div class="icon-ok"></div> }
+                    else { <div class="icon-ring"></div> }
+                </div>
+                <div class="job-body">
+                    <div class="job-name">
+                        @task.DisplayLabel
+                        <span class="tbadge @TaskBadgeClass(task.Type)">@task.Type</span>
+                        @if (task.OffsetMinutes > 0)
+                        {
+                            <span style="font-size:.7rem;color:var(--mud-palette-text-secondary);font-weight:400;">+@(task.OffsetMinutes)m offset</span>
+                        }
+                    </div>
+                    <div class="job-sub">
+                        @if (phase == TaskPhase.Waiting) { <text>waiting&nbsp;·&nbsp;starts in @(task.OffsetMinutes) min</text> }
+                        else if (phase == TaskPhase.Running) { <text>running&nbsp;·&nbsp;@task.DurationMinutes min window&nbsp;·&nbsp;@(pct.ToString("F0"))% complete</text> }
+                        else { <text>done</text> }
+                    </div>
+                    @if (phase != TaskPhase.Waiting)
+                    {
+                        <div class="job-track">
+                            <div class="job-fill @(phase == TaskPhase.Running ? "running" : "done")" style="width:@pct.ToString("F0")%"></div>
+                        </div>
+                    }
+                </div>
+                <div class="job-dur">@task.DurationMinutes min</div>
+            </div>
+        }
+    </div>
+    </div>
 }
 
-<MudTabs Elevation="0" Rounded="false" ApplyEffectsToContainer="false" PanelClass="pt-4">
+<MudTabs Elevation="0" ApplyEffectsToContainer="false" PanelClass="pt-4" @bind-ActivePanelIndex="_activeTab">
 
-    @* ============ Tab 1 - Push ============ *@
-    <MudTabPanel Text="Push">
-        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
-            Ad-hoc checks against a live batch. Export/import of the loop-push schedule lives on the
-            <MudLink Href="/config">Configuration</MudLink> page.
-        </MudText>
+@* ═══ Plans (default) ═══ *@
+<MudTabPanel Text="Plans">
+<div class="tab-content">
+    <div class="sec-head">
+        <div style="min-width:0;">
+            <div class="sec-title">Test plans</div>
+            <div class="sec-sub">Jobs inside a plan run concurrently. Session length = latest job end time. Max 2 environments per plan.</div>
+        </div>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="OpenAddPlan">New plan</MudButton>
+    </div>
 
-        <MudPaper Elevation="1" Class="pa-4 mb-6">
-            <div class="d-flex align-center justify-space-between flex-wrap" style="gap:12px;">
-                <div>
-                    <MudText Typo="Typo.h6">On-demand push</MudText>
-                    <MudText Typo="Typo.body2" Class="mud-text-secondary">
-                        Pushes every meter in a batch right now.
-                    </MudText>
+    @foreach (TestPlan plan in _plans)
+    {
+        <div class="wf-card mb-4">
+            <div class="wf-header">
+                <div style="flex:1;min-width:0;">
+                    <div class="wf-title">
+                        @plan.DisplayName
+                        @if (plan.IsBasePlan)
+                        {
+                            <span style="margin-left:6px;font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--mud-palette-primary);">base</span>
+                        }
+                    </div>
+                    <div class="wf-meta" style="margin-top:3px;">
+                        @plan.Tasks.Count job(s) &nbsp;·&nbsp; @plan.TotalDurationMinutes min session
+                        @if (plan.EnvironmentKeys.Count > 0) { <text>&nbsp;·&nbsp; @string.Join(", ", plan.EnvironmentKeys)</text> }
+                    </div>
                 </div>
-                <MudButton Variant="Variant.Filled" Color="Color.Secondary"
-                           StartIcon="@Icons.Material.Filled.Loop" OnClick="OpenLoopDialog"
-                           Disabled="@_testRunActive">
-                    Configure loop push
-                </MudButton>
+                <div class="wf-actions">
+                    <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Success"
+                               Disabled="@(_testRunActive||plan.Tasks.Count==0)"
+                               OnClick="@(()=>OpenRunDialog(plan))">Run</MudButton>
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                               OnClick="@(()=>OpenEditPlan(plan))">Edit</MudButton>
+                    @if (!plan.IsBasePlan)
+                    {
+                        <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Error"
+                                   OnClick="@(()=>DeletePlan(plan))">Delete</MudButton>
+                    }
+                </div>
             </div>
 
-            @if (_scheduleState.IntervalMinutes > 0)
+            @if (plan.Tasks.Count == 0)
             {
-                <MudAlert Severity="@(_scheduleState.IsRunning ? Severity.Info : Severity.Normal)"
-                          Variant="Variant.Outlined" Dense="true" Class="mt-3">
-                    @if (_scheduleState.IsRunning)
-                    {
-                        <text>
-                            Looping push every @_scheduleState.IntervalMinutes min over @_scheduleState.BatchIds.Count batch(es).
-                            Next run @RelativeTime(_scheduleState.NextRunUtc).
-                        </text>
-                    }
-                    else
-                    {
-                        <text>Loop push stopped.</text>
-                    }
-                    @if (_scheduleState.LastSummary is not null)
-                    {
-                        <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mt-1">
-                            Last run @RelativeTime(_scheduleState.LastRunUtc): @_scheduleState.LastSummary
-                        </MudText>
-                    }
-                    @if (_scheduleState.IsRunning)
-                    {
-                        <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Error" Class="mt-1"
-                                   OnClick="StopLoop">Stop loop</MudButton>
-                    }
-                </MudAlert>
-            }
-
-            @if (_testRunActive)
-            {
-                <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Class="mt-3">
-                    A test run is active &mdash; on-demand push is disabled until it completes.
-                </MudAlert>
-            }
-
-            @if (_batches.Count == 0)
-            {
-                <MudText Typo="Typo.body2" Class="mud-text-secondary mt-3">No batches yet.</MudText>
+                <div class="job-row"><span class="wf-meta">No jobs yet — click Edit to add.</span></div>
             }
             else
             {
-                <MudSimpleTable Hover="true" Dense="true" Bordered="false" Class="batch-table mt-3">
-                    <thead>
-                        <tr>
-                            <th>NIC</th>
-                            <th class="col-flex">Name</th>
-                            <th style="text-align:right">Count</th>
-                            <th>Status</th>
-                            <th style="text-align:right">Action</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (MeterBatch b in _batches)
-                        {
-                            <tr class="batch-row @StatusRowClass(b.Status)">
-                                <td><MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@NicLabel(b.NicType)</MudChip></td>
-                                <td class="col-flex">
-                                    @b.Name
-                                    @if (_scheduleState.IsRunning && _scheduleState.BatchIds.Contains(b.Id))
-                                    {
-                                        <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Secondary" Class="ml-2">looping</MudChip>
-                                    }
-                                </td>
-                                <td style="text-align:right">@b.Count.ToString("N0")</td>
-                                <td>
-                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Filled" Color="@StatusColor(b.Status)">
-                                        @b.Status
-                                    </MudChip>
-                                </td>
-                                <td style="text-align:right">
-                                    <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
-                                               StartIcon="@Icons.Material.Filled.Send"
-                                               Disabled="@(_pushingBatchIds.Contains(b.Id) || _testRunActive)"
-                                               OnClick="@(() => SendPushAsync(b.Id))">
-                                        @(_pushingBatchIds.Contains(b.Id) ? "Sending..." : "Send Push")
-                                    </MudButton>
-                                </td>
-                            </tr>
-                        }
-                    </tbody>
-                </MudSimpleTable>
+                @foreach (TestTask task in plan.Tasks)
+                {
+                    <div class="job-row">
+                        <div class="job-icon"><div class="icon-ring"></div></div>
+                        <div class="job-body">
+                            <div class="job-name">
+                                @task.DisplayLabel
+                                <span class="tbadge @TaskBadgeClass(task.Type)">@task.Type</span>
+                            </div>
+                            <div class="job-sub">
+                                @TaskDetails(task)
+                                &nbsp;·&nbsp; @(task.OffsetMinutes==0?"immediate":$"+{task.OffsetMinutes} min offset")
+                                &nbsp;·&nbsp; @task.DurationMinutes min
+                            </div>
+                        </div>
+                    </div>
+                }
             }
-        </MudPaper>
-    </MudTabPanel>
-
-    @* ============ Tab 2 - Test Plans ============ *@
-    <MudTabPanel Text="Test Plans">
-        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
-            Structured benchmark runs. The <strong>Base Plan</strong> uses a fixed 5-min push cadence
-            and 15-min collection window &mdash; the common baseline every team measures against.
-            Export/import lives on the <MudLink Href="/config">Configuration</MudLink> page.
-        </MudText>
-
-        <div class="d-flex justify-end mb-3">
-            <MudButton Variant="Variant.Filled" Color="Color.Primary"
-                       StartIcon="@Icons.Material.Filled.Add" OnClick="OpenAddPlan">
-                Add plan
-            </MudButton>
         </div>
+    }
+</div>
+</MudTabPanel>
 
-        @if (_plans.Count == 0)
-        {
-            <MudText Typo="Typo.body2" Class="mud-text-secondary">No plans yet.</MudText>
-        }
-        else
-        {
-            <MudSimpleTable Hover="true" Dense="true" Bordered="false" Class="batch-table">
-                <thead>
-                    <tr>
-                        <th class="col-flex">Name</th>
-                        <th>Push interval</th>
-                        <th>Duration</th>
-                        <th>Environments</th>
-                        <th>Batches</th>
-                        <th style="text-align:right">Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (TestPlan plan in _plans)
-                    {
-                        <tr class="batch-row is-idle">
-                            <td class="col-flex">
-                                <strong>@plan.DisplayName</strong>
-                                @if (plan.IsBasePlan)
-                                {
-                                    <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Text" Class="ml-1">base</MudChip>
-                                }
-                            </td>
-                            <td>
-                                @(plan.PushIntervalSec / 60) min
-                                @if (plan.IsFieldLocked(nameof(TestPlan.PushIntervalSec)))
-                                {
-                                    <MudIcon Icon="@Icons.Material.Filled.Lock" Size="Size.Small" Class="ml-1 mud-text-secondary" Style="vertical-align:middle;font-size:14px;" />
-                                }
-                            </td>
-                            <td>
-                                @plan.CollectionDurationMin min
-                                @if (plan.IsFieldLocked(nameof(TestPlan.CollectionDurationMin)))
-                                {
-                                    <MudIcon Icon="@Icons.Material.Filled.Lock" Size="Size.Small" Class="ml-1 mud-text-secondary" Style="vertical-align:middle;font-size:14px;" />
-                                }
-                            </td>
-                            <td>
-                                @if (plan.EnvironmentKeys.Count == 0)
-                                {
-                                    <span class="mud-text-secondary">all</span>
-                                }
-                                else
-                                {
-                                    @foreach (string key in plan.EnvironmentKeys)
-                                    {
-                                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Class="mr-1">@key</MudChip>
-                                    }
-                                }
-                            </td>
-                            <td>
-                                @{
-                                    var names = plan.BatchIds
-                                        .Select(id => _batches.FirstOrDefault(b => b.Id == id)?.Name)
-                                        .Where(n => n is not null).ToList();
-                                }
-                                @if (names.Count == 0)
-                                {
-                                    <span class="mud-text-secondary">none</span>
-                                }
-                                else
-                                {
-                                    @foreach (string? name in names)
-                                    {
-                                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Class="mr-1">@name</MudChip>
-                                    }
-                                }
-                            </td>
-                            <td style="text-align:right">
-                                <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Success"
-                                           StartIcon="@Icons.Material.Filled.PlayArrow"
-                                           Disabled="@_testRunActive"
-                                           OnClick="@(() => OpenRunDialog(plan))">Run</MudButton>
-                                <MudButton Size="Size.Small" Variant="Variant.Outlined" Class="ml-1"
-                                           OnClick="@(() => OpenEditPlan(plan))">Edit</MudButton>
-                                @if (!plan.IsBasePlan)
-                                {
-                                    <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Error" Class="ml-1"
-                                               OnClick="@(() => DeletePlan(plan))">Delete</MudButton>
-                                }
-                            </td>
-                        </tr>
-                    }
-                </tbody>
-            </MudSimpleTable>
-        }
-    </MudTabPanel>
+@* ═══ Results ═══ *@
+<MudTabPanel Text="Results">
+<div class="tab-content">
 
-    @* ============ Tab 3 - Results ============ *@
-    <MudTabPanel Text="Results">
-        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
-            Every completed run is saved here. Select two or more to compare side by side.
-            <strong>BenchScore</strong> = throughput / (1 + P95 latency sec) &times; success%.
-            Higher is better.
-        </MudText>
+    @PlanFilterBar
 
-        @if (_reports.Count == 0)
-        {
-            <MudAlert Severity="Severity.Normal" Variant="Variant.Outlined">
-                No results yet. Run a test plan from the Test Plans tab.
-            </MudAlert>
-        }
-        else
-        {
-            @* Run list *@
-            <MudSimpleTable Hover="true" Dense="true" Bordered="false" Class="batch-table mb-6">
-                <thead>
-                    <tr>
-                        <th style="width:36px;"></th>
-                        <th>Date</th>
-                        <th class="col-flex">Plan</th>
-                        <th>Environments</th>
-                        <th style="text-align:right">BenchScore</th>
-                        <th style="text-align:right">Success</th>
-                        <th>Status</th>
-                        <th style="text-align:right">Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (TestRunReport r in _reports)
-                    {
-                        bool sel = _selectedRunIds.Contains(r.RunId);
-                        <tr class="batch-row @(r.FinalStatus == TestRunStatus.Completed ? "is-idle" : "is-stopped")"
-                            style="cursor:pointer;" @onclick="@(() => ToggleRunSelection(r.RunId))">
-                            <td @onclick:stopPropagation="true">
-                                <MudCheckBox T="bool" Value="@sel"
-                                             ValueChanged="@(_ => ToggleRunSelection(r.RunId))"
-                                             Size="Size.Small" />
-                            </td>
-                            <td style="white-space:nowrap;">
-                                <MudText Typo="Typo.caption">@r.StartUtc.LocalDateTime.ToString("MM/dd HH:mm")</MudText>
-                            </td>
-                            <td class="col-flex"><strong>@r.PlanName</strong></td>
-                            <td>
-                                @foreach (string ek in r.EnvironmentKeys)
-                                {
-                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Class="mr-1">@ek</MudChip>
-                                }
-                            </td>
-                            <td style="text-align:right;">
-                                <span style="font-size:1.15em;font-weight:700;color:var(--mud-palette-success);">
-                                    @r.BenchScore.ToString("N0")
-                                </span>
-                                <MudText Typo="Typo.caption" Class="mud-text-secondary">pts</MudText>
-                            </td>
-                            <td style="text-align:right;">@r.SuccessRatePct.ToString("F1")%</td>
-                            <td>
-                                <MudChip T="string" Size="Size.Small"
-                                         Color="@(r.FinalStatus == TestRunStatus.Completed ? Color.Success : Color.Default)"
-                                         Variant="Variant.Filled">@r.FinalStatus</MudChip>
-                            </td>
-                            <td style="text-align:right;" @onclick:stopPropagation="true">
-                                <MudButton Size="Size.Small" Variant="Variant.Outlined"
-                                           OnClick="@(() => DownloadReport(r.RunId))">Download</MudButton>
-                            </td>
-                        </tr>
-                    }
-                </tbody>
-            </MudSimpleTable>
-
-            @* Compare button *@
-            @if (_selectedRunIds.Count >= 2)
+    @if (_reports.Count == 0)
+    {
+        <MudAlert Severity="Severity.Normal" Variant="Variant.Outlined">No results yet. Run a plan from the Plans tab.</MudAlert>
+    }
+    else
+    {
+        @* History list *@
+        <div class="sec-head">
+            <span class="sec-title">Run history</span>
+            <span class="sec-sub">select 1 for detail &nbsp;·&nbsp; 2&ndash;@MaxCompare to compare &nbsp;·&nbsp; 20 kept per plan</span>
+        </div>
+        <div class="wf-card mb-4">
+            <div class="result-head">
+                <div class="result-check"></div>
+                <div class="result-info">Run</div>
+                <div class="result-scores">
+                    <div class="result-score">Raw</div>
+                    <div class="result-score">Norm</div>
+                    <div class="result-score wide opt">Success</div>
+                </div>
+                <span class="result-status" style="background:transparent;">Status</span>
+            </div>
+            @foreach (TestRunReport r in VisibleReports())
             {
-                <div class="d-flex align-center mb-4" style="gap:12px;">
-                    <MudButton Variant="Variant.Filled" Color="Color.Primary"
-                               StartIcon="@Icons.Material.Filled.Compare"
-                               OnClick="@(() => _comparing = !_comparing)">
-                        @(_comparing ? "Hide comparison" : $"Compare {_selectedRunIds.Count} runs")
-                    </MudButton>
-                    <MudButton Variant="Variant.Text" OnClick="@(() => _selectedRunIds.Clear())">Clear selection</MudButton>
+                bool sel = _selectedIds.Contains(r.RunId);
+                <div class="result-row @(sel?"sel":"")" @onclick="@(()=>ToggleSelect(r.RunId))">
+                    <div class="result-check">@(sel ? "✓" : "")</div>
+                    <div class="result-info">
+                        <div class="result-name">@(string.IsNullOrWhiteSpace(r.RunLabel) ? r.PlanName : r.RunLabel)</div>
+                        <div class="result-meta">
+                            <span>@r.StartUtc.LocalDateTime.ToString("MM/dd HH:mm")</span>
+                            @if (!string.IsNullOrWhiteSpace(r.RunLabel)) { <span>·</span><span>@r.PlanName</span> }
+                            @foreach (TaskRunReport t in r.Tasks.Take(3)) { <span class="tbadge @TaskBadgeClass(t.TaskType)">@ShortType(t.TaskType)</span> }
+                        </div>
+                    </div>
+                    <div class="result-scores">
+                        <div class="result-score">
+                            <div class="result-score-val" style="color:var(--mud-palette-success);">@r.RawBenchScore.ToString("N0")</div>
+                        </div>
+                        <div class="result-score">
+                            <div class="result-score-val" style="color:var(--mud-palette-text-secondary);font-weight:500;">@r.NormalizedBenchScore.ToString("N0")</div>
+                        </div>
+                        <div class="result-score wide opt">
+                            <div class="result-score-val" style="font-size:.8rem;">@r.OverallSuccessRatePct.ToString("F1")%</div>
+                        </div>
+                    </div>
+                    <span class="result-status" style="background:color-mix(in srgb,@(r.FinalStatus==TestRunStatus.Completed?"var(--mud-palette-success)":"var(--mud-palette-default)") 15%,transparent);color:@(r.FinalStatus==TestRunStatus.Completed?"var(--mud-palette-success)":"var(--mud-palette-text-secondary)");">@r.FinalStatus</span>
                 </div>
             }
+        </div>
+    }
+</div>
+</MudTabPanel>
 
-            @* Side-by-side comparison *@
-            @if (_comparing && _selectedRunIds.Count >= 2)
-            {
-                var selected = _reports.Where(r => _selectedRunIds.Contains(r.RunId)).ToList();
-                int bestScore = selected.Max(r => r.BenchScore);
+@* ═══ Leaderboard ═══ *@
+<MudTabPanel Text="Leaderboard">
+<div class="tab-content">
+    @PlanFilterBar
 
-                <MudPaper Elevation="2" Class="pa-4 mb-4">
-                    <MudText Typo="Typo.h6" Class="mb-3">Benchmark comparison</MudText>
-
-                    @* Score cards - prominent like a benchmarking tool *@
-                    <div class="d-flex flex-wrap mb-4" style="gap:16px;">
-                        @foreach (TestRunReport r in selected)
-                        {
-                            bool winner = r.BenchScore == bestScore && selected.Count(x => x.BenchScore == bestScore) == 1;
-                            <MudPaper Elevation="1" Class="pa-3 flex-grow-1"
-                                      Style="@($"border:2px solid {(winner ? "var(--mud-palette-success)" : "var(--mud-palette-lines-default)")}; text-align:center; min-width:140px;")">
-                                @if (winner)
-                                {
-                                    <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Filled" Class="mb-1">Winner</MudChip>
-                                }
-                                <div style="font-size:2rem;font-weight:800;color:var(--mud-palette-@(winner ? "success" : "text-primary"));">
-                                    @r.BenchScore.ToString("N0")
-                                </div>
-                                <MudText Typo="Typo.caption" Class="mud-text-secondary">pts</MudText>
-                                <MudText Typo="Typo.body2" Class="mt-1"><strong>@r.PlanName</strong></MudText>
-                                <MudText Typo="Typo.caption" Class="mud-text-secondary">@r.StartUtc.LocalDateTime.ToString("MM/dd HH:mm")</MudText>
-                            </MudPaper>
-                        }
-                    </div>
-
-                    @* Metrics table *@
-                    <div style="overflow-x:auto;">
-                        <table class="mud-table mud-table-hover" style="width:100%;border-collapse:collapse;">
-                            <thead>
-                                <tr style="border-bottom:1px solid var(--mud-palette-lines-default);">
-                                    <th style="text-align:left;padding:8px 12px;width:180px;">Metric</th>
-                                    @foreach (TestRunReport r in selected)
-                                    {
-                                        bool winner = r.BenchScore == bestScore && selected.Count(x => x.BenchScore == bestScore) == 1;
-                                        <th style="text-align:right;padding:8px 12px;@(winner ? "color:var(--mud-palette-success);" : "")">
-                                            @r.StartUtc.LocalDateTime.ToString("MM/dd HH:mm")
-                                        </th>
-                                    }
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @CompareRow("BenchScore (pts)", selected, r => r.BenchScore.ToString("N0"), r => (double)r.BenchScore, highIsGood: true, bold: true)
-                                @CompareRow("Throughput (m/min)", selected, r => r.ThroughputPerMin.ToString("F1"), r => r.ThroughputPerMin, highIsGood: true)
-                                @CompareRow("Success rate", selected, r => r.SuccessRatePct.ToString("F2") + "%", r => r.SuccessRatePct, highIsGood: true)
-                                @CompareRow("P95 latency (ms)", selected, r => r.P95PushDurationMs.ToString("F0"), r => r.P95PushDurationMs, highIsGood: false)
-                                @CompareRow("Median latency (ms)", selected, r => r.MedianPushDurationMs.ToString("F0"), r => r.MedianPushDurationMs, highIsGood: false)
-                                @CompareRow("Total pushed", selected, r => r.TotalMetersPushed.ToString("N0"), r => (double)r.TotalMetersPushed, highIsGood: true)
-                                @CompareRow("Failed", selected, r => r.TotalMetersFailed.ToString("N0"), r => (double)r.TotalMetersFailed, highIsGood: false)
-                                @CompareRow("Ticks completed", selected, r => r.TotalTicks.ToString(), r => (double)r.TotalTicks, highIsGood: true)
-                            </tbody>
-                        </table>
-                    </div>
-
-                    @* Per-environment breakdown if any run has multiple envs *@
-                    @{
-                        var allEnvKeys = selected
-                            .SelectMany(r => r.Environments.Select(e => e.EnvironmentKey))
-                            .Distinct(StringComparer.OrdinalIgnoreCase)
-                            .ToList();
-                    }
-                    @if (allEnvKeys.Count > 1 || (allEnvKeys.Count == 1 && selected.Any(r => r.Environments.Count > 0)))
-                    {
-                        <MudText Typo="Typo.subtitle2" Class="mt-4 mb-2">Per-environment BenchScore</MudText>
-                        <div style="overflow-x:auto;">
-                            <table class="mud-table" style="width:100%;border-collapse:collapse;">
-                                <thead>
-                                    <tr style="border-bottom:1px solid var(--mud-palette-lines-default);">
-                                        <th style="text-align:left;padding:8px 12px;">Environment</th>
-                                        @foreach (TestRunReport r in selected)
-                                        {
-                                            <th style="text-align:right;padding:8px 12px;">@r.StartUtc.LocalDateTime.ToString("MM/dd HH:mm")</th>
-                                        }
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @foreach (string envKey in allEnvKeys)
-                                    {
-                                        <tr style="border-bottom:1px solid var(--mud-palette-lines-default);">
-                                            <td style="padding:8px 12px;"><MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@envKey</MudChip></td>
-                                            @foreach (TestRunReport r in selected)
-                                            {
-                                                var env = r.Environments.FirstOrDefault(e => string.Equals(e.EnvironmentKey, envKey, StringComparison.OrdinalIgnoreCase));
-                                                <td style="text-align:right;padding:8px 12px;">
-                                                    @if (env is not null)
-                                                    {
-                                                        <strong>@env.BenchScore.ToString("N0")</strong>
-                                                        <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">@env.SuccessRatePct.ToString("F1")% success</MudText>
-                                                    }
-                                                    else
-                                                    {
-                                                        <span class="mud-text-secondary">--</span>
-                                                    }
-                                                </td>
-                                            }
-                                        </tr>
-                                    }
-                                </tbody>
-                            </table>
+    @if (_reports.Count == 0)
+    {
+        <MudAlert Severity="Severity.Normal" Variant="Variant.Outlined">No results yet. Run a plan first.</MudAlert>
+    }
+    else
+    {
+        <div class="sec-head">
+            <span class="sec-title">Leaderboard</span>
+            <span class="sec-sub">ranked by raw score &nbsp;·&nbsp; click a row to inspect or compare</span>
+        </div>
+        @* "Global" spans all plans — it has no meaning once a plan filter is on *@
+        @if (_filterPlans.Count == 0)
+        {
+            <div class="wf-card mb-4">
+                <div class="wf-header"><span class="wf-title">Global &mdash; top 10</span></div>
+                @{ int gi2 = 0; }
+                @foreach (TestRunReport r in GlobalTop())
+                {
+                    int rank = ++gi2;
+                    string rankCls = rank == 1 ? "gold" : rank == 2 ? "silver" : rank == 3 ? "bronze" : "";
+                    int gMax = GlobalTopMax();
+                    double barPct = gMax > 0 ? (double)r.RawBenchScore / gMax * 100 : 0;
+                    <div class="lb-row @(_selectedIds.Contains(r.RunId) ? "sel" : "")" @onclick="@(()=>ToggleSelect(r.RunId))">
+                        <div class="lb-rank @rankCls">#@rank</div>
+                        <div style="flex:1;min-width:0;">
+                            <div style="font-size:.84rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">@(string.IsNullOrWhiteSpace(r.RunLabel)?r.PlanName:r.RunLabel)</div>
+                            <div style="font-size:.7rem;color:var(--mud-palette-text-secondary);">@r.PlanName &nbsp;·&nbsp; @r.StartUtc.LocalDateTime.ToString("MM/dd HH:mm") &nbsp;·&nbsp; @r.OverallSuccessRatePct.ToString("F1")%</div>
+                            <div style="margin-top:5px;height:3px;background:var(--mud-palette-lines-default);border-radius:2px;overflow:hidden;">
+                                <div class="lb-bar @rankCls" style="width:@barPct.ToString("F0")%"></div>
+                            </div>
                         </div>
-                    }
-                </MudPaper>
-            }
+                        <div style="text-align:right;flex-shrink:0;padding-left:14px;">
+                            <div style="font-family:ui-monospace,monospace;font-weight:800;font-size:.95rem;color:var(--mud-palette-success);">@r.RawBenchScore.ToString("N0")</div>
+                            <div style="font-size:.68rem;color:var(--mud-palette-text-secondary);font-family:ui-monospace,monospace;">@r.NormalizedBenchScore.ToString("N0") norm</div>
+                        </div>
+                    </div>
+                }
+            </div>
         }
-    </MudTabPanel>
-</MudTabs>
+        @foreach (var pg in PerPlanGroups())
+        {
+            int pMax = pg.Top.Count > 0 ? pg.Top[0].RawBenchScore : 1;
+            <div class="wf-card mb-3">
+                <div class="wf-header"><span class="wf-title">@pg.PlanName</span><span class="wf-meta">top @pg.Top.Count &nbsp;·&nbsp; 20/plan</span></div>
+                @{ int pi2 = 0; }
+                @foreach (TestRunReport r in pg.Top)
+                {
+                    int rank = ++pi2;
+                    string rankCls = rank == 1 ? "gold" : rank == 2 ? "silver" : rank == 3 ? "bronze" : "";
+                    double barPct = pMax > 0 ? (double)r.RawBenchScore / pMax * 100 : 0;
+                    <div class="lb-row @(_selectedIds.Contains(r.RunId) ? "sel" : "")" @onclick="@(()=>ToggleSelect(r.RunId))">
+                        <div class="lb-rank @rankCls">#@rank</div>
+                        <div style="flex:1;min-width:0;">
+                            <div style="font-size:.84rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">@(string.IsNullOrWhiteSpace(r.RunLabel)?r.PlanName:r.RunLabel)</div>
+                            <div style="font-size:.7rem;color:var(--mud-palette-text-secondary);">@r.StartUtc.LocalDateTime.ToString("MM/dd HH:mm") &nbsp;·&nbsp; @r.OverallSuccessRatePct.ToString("F1")%</div>
+                            <div style="margin-top:5px;height:3px;background:var(--mud-palette-lines-default);border-radius:2px;overflow:hidden;">
+                                <div class="lb-bar @rankCls" style="width:@barPct.ToString("F0")%"></div>
+                            </div>
+                        </div>
+                        <div style="text-align:right;flex-shrink:0;padding-left:14px;">
+                            <div style="font-family:ui-monospace,monospace;font-weight:800;font-size:.95rem;color:var(--mud-palette-success);">@r.RawBenchScore.ToString("N0")</div>
+                            <div style="font-size:.68rem;color:var(--mud-palette-text-secondary);font-family:ui-monospace,monospace;">@r.NormalizedBenchScore.ToString("N0") norm</div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    }
+</div>
+</MudTabPanel>
 
-@* ---------- Configure loop push dialog ---------- *@
-<MudDialog @bind-Visible="_loopDialogOpen" Options="_loopDialogOptions">
-    <TitleContent><MudText Typo="Typo.h6">Configure loop push</MudText></TitleContent>
-    <DialogContent>
-        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
-            Pushes the selected batches on a repeating timer, starting immediately.
-        </MudText>
-        <MudSelect T="int" @bind-SelectedValues="_loopBatchIds" Label="Batches" MultiSelection="true"
-                   Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-4">
+@* ═══ Push ═══ *@
+<MudTabPanel Text="Push">
+<div class="tab-content">
+    <div class="sec-head">
+        <div style="min-width:0;">
+            <div class="sec-title">On-demand push</div>
+            <div class="sec-sub">Ad-hoc checks against a live batch. For a scored, comparable one-shot push, run the <b>Quick Push</b> plan instead.</div>
+        </div>
+        <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Loop"
+                   OnClick="OpenLoopDialog" Disabled="@_testRunActive">Loop push</MudButton>
+    </div>
+
+    @if (_scheduleState.IntervalMinutes > 0)
+    {
+        <MudAlert Severity="@(_scheduleState.IsRunning ? Severity.Info : Severity.Normal)" Variant="Variant.Outlined" Dense="true" Class="mb-3">
+            @if (_scheduleState.IsRunning)
+            {
+                <text>Loop every @_scheduleState.IntervalMinutes min over @_scheduleState.BatchIds.Count batch(es) · next @RelativeTime(_scheduleState.NextRunUtc)</text>
+                <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Error" Class="ml-2" OnClick="StopLoop">Stop</MudButton>
+            }
+            else { <text>Loop stopped.</text> }
+            @if (_scheduleState.LastSummary is not null)
+            {
+                <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mt-1">
+                    Last @RelativeTime(_scheduleState.LastRunUtc): @_scheduleState.LastSummary
+                </MudText>
+            }
+        </MudAlert>
+    }
+
+    @if (_testRunActive)
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Class="mb-3">
+            A test run is active &mdash; on-demand push is disabled until it completes.
+        </MudAlert>
+    }
+
+    @if (_batches.Count == 0)
+    {
+        <MudAlert Severity="Severity.Normal" Variant="Variant.Outlined">No batches yet.</MudAlert>
+    }
+    else
+    {
+        <div class="wf-card">
+            <div class="result-head">
+                <div class="result-info">Batch</div>
+                <div style="width:90px;text-align:right;flex-shrink:0;">Count</div>
+                <div style="width:90px;flex-shrink:0;">Status</div>
+                <div style="width:110px;flex-shrink:0;"></div>
+            </div>
             @foreach (MeterBatch b in _batches)
             {
-                <MudSelectItem T="int" Value="@b.Id">@b.Name (@NicLabel(b.NicType), @b.Count.ToString("N0") meters)</MudSelectItem>
+                <div class="result-row" style="cursor:default;">
+                    <div class="result-info">
+                        <div class="result-name">@b.Name</div>
+                        <div class="result-meta">
+                            <span class="tbadge tbadge-push">@NicLabel(b.NicType)</span>
+                            @if (_scheduleState.IsRunning && _scheduleState.BatchIds.Contains(b.Id)) { <span>· looping</span> }
+                        </div>
+                    </div>
+                    <div class="mono" style="width:90px;text-align:right;flex-shrink:0;font-size:.85rem;">@b.Count.ToString("N0")</div>
+                    <div style="width:90px;flex-shrink:0;">
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Filled" Color="@StatusColor(b.Status)">@b.Status</MudChip>
+                    </div>
+                    <div style="width:110px;flex-shrink:0;text-align:right;">
+                        <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
+                                   Disabled="@(_pushingBatchIds.Contains(b.Id) || _testRunActive)"
+                                   OnClick="@(() => SendPushAsync(b.Id))">
+                            @(_pushingBatchIds.Contains(b.Id) ? "Sending..." : "Send")
+                        </MudButton>
+                    </div>
+                </div>
             }
-        </MudSelect>
-        <MudSelect T="int" @bind-Value="_loopIntervalMinutes" Label="Every"
-                   Variant="Variant.Outlined" Margin="Margin.Dense">
-            @foreach (int minutes in PushScheduleService.AllowedIntervalMinutes)
+        </div>
+    }
+</div>
+</MudTabPanel>
+</MudTabs>
+
+@* ─── Selection detail / comparison — shared by Results + Leaderboard ─── *@
+@if (_activeTab is 1 or 2)
+{
+    @* ─── Single run detail ─── *@
+    @if (_reports.Count > 0 && _selectedIds.Count == 1)
+    {
+        TestRunReport? r = _reports.FirstOrDefault(x => _selectedIds.Contains(x.RunId));
+        if (r is not null)
+        {
+                <div style="margin-bottom:32px;">
+                    <div class="sec-head sec-gap">
+                        <div style="min-width:0;">
+                            <div class="sec-title">@(string.IsNullOrWhiteSpace(r.RunLabel) ? r.PlanName : r.RunLabel)</div>
+                            <div class="sec-sub">@r.StartUtc.LocalDateTime.ToString("yyyy-MM-dd HH:mm") &nbsp;·&nbsp; @r.PlanName &nbsp;·&nbsp; @FormatDuration(r.EndUtc - r.StartUtc)</div>
+                        </div>
+                        <a href="/reports/@(r.RunId).json" style="font-size:.75rem;color:var(--mud-palette-primary);text-decoration:none;white-space:nowrap;" @onclick="@(async()=>await DownloadReport(r.RunId))" @onclick:preventDefault>
+                            ↓ download json
+                        </a>
+                    </div>
+
+                    <div class="metrics-strip">
+                        @MetricCell("RAW SCORE", r.RawBenchScore.ToString("N0"), "var(--mud-palette-success)")
+                        @MetricCell("NORM SCORE", r.NormalizedBenchScore.ToString("N0"), null)
+                        @MetricCell("SUCCESS", r.OverallSuccessRatePct.ToString("F1") + "%", null)
+                        @MetricCell("THROUGHPUT /min", r.OverallThroughputPerMin.ToString("F0"), null)
+                        @MetricCell("P95 ms", r.OverallP95Ms.ToString("F0"), null)
+                        @MetricCell("MEDIAN ms", r.OverallMedianMs.ToString("F0"), null)
+                        @MetricCell("AVG CPU %", r.AvgCpuPct.ToString("F1") + "%", null)
+                        @MetricCell("PEAK RAM MB", r.PeakRamMb.ToString("N0"), null)
+                    </div>
+
+                    @* Task breakdown *@
+                    @if (r.Tasks.Count > 0)
+                    {
+                        <div class="wf-card mb-3">
+                            <div class="wf-header"><span class="wf-title">Job breakdown</span></div>
+                            @foreach (TaskRunReport t in r.Tasks)
+                            {
+                                <div class="job-row">
+                                    <div class="job-icon"><div class="icon-ok"></div></div>
+                                    <div class="job-body">
+                                        <div class="job-name">
+                                            @t.TaskLabel
+                                            <span class="tbadge @TaskBadgeClass(t.TaskType)">@t.TaskType</span>
+                                            <span style="font-size:.72rem;color:var(--mud-palette-text-secondary);font-weight:400;">score @t.TaskScore.ToString("N0")</span>
+                                        </div>
+                                        <div class="job-sub">
+                                            @if (t.TaskType == TestTaskType.PullListener)
+                                            {
+                                                <text>pulls @t.PullsAnswered / @t.PullsReceived</text>
+                                                @if (t.PeakConcurrentSessions > 0)
+                                                {
+                                                    <text> &nbsp;·&nbsp; peak @t.PeakConcurrentSessions concurrent &nbsp;·&nbsp; avg @t.AvgConcurrentSessions.ToString("F1") &nbsp;·&nbsp; @t.SessionRatePerMin.ToString("F2")/min session rate</text>
+                                                }
+                                            }
+                                            else
+                                            {
+                                                <text>pushed @t.TotalPushed.ToString("N0") &nbsp;·&nbsp; @t.SuccessRatePct.ToString("F1")% success &nbsp;·&nbsp; @t.ThroughputPerMin.ToString("F0")/min &nbsp;·&nbsp; P95 @t.P95Ms.ToString("F0")ms</text>
+                                                @if (t.TotalActiveMs > 0)
+                                                {
+                                                    <text> &nbsp;·&nbsp; @((t.TotalActiveMs/1000.0).ToString("F1"))s active</text>
+                                                }
+                                            }
+                                        </div>
+                                    </div>
+                                    <div class="job-dur">@t.DurationMinutes min</div>
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    @* Per-environment *@
+                    @if (r.Environments.Where(e => _filterEnvs.Count == 0 || _filterEnvs.Contains(e.EnvironmentKey)).ToList() is { Count: > 0 } envs)
+                    {
+                        <div class="wf-card">
+                            <div class="wf-header"><span class="wf-title">Per environment</span></div>
+                            @foreach (EnvironmentRunReport env in envs)
+                            {
+                                <div class="job-row">
+                                    <div class="job-body">
+                                        <div class="job-name">@env.EnvironmentKey</div>
+                                        <div class="job-sub">
+                                            score @env.BenchScore.ToString("N0") &nbsp;·&nbsp;
+                                            @env.SuccessRatePct.ToString("F1")% success &nbsp;·&nbsp;
+                                            @env.ThroughputPerMin.ToString("F0")/min &nbsp;·&nbsp;
+                                            P95 @env.P95Ms.ToString("F0")ms
+                                        </div>
+                                    </div>
+                                    <div class="job-dur mono" style="font-size:.82rem;font-weight:700;color:var(--mud-palette-success);">@env.BenchScore.ToString("N0")</div>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        }
+
+    @* ─── N-way comparison (2–5 runs) ─── *@
+    @if (_reports.Count > 0 && _selectedIds.Count >= 2)
+    {
+        // preserve selection order so columns match the order the user clicked
+        var runs = _selectedIds
+            .Select(id => _reports.FirstOrDefault(r => r.RunId == id))
+            .Where(r => r is not null).Select(r => r!)
+            .ToList();
+
+        if (runs.Count >= 2)
+        {
+            int bestIdx = runs.IndexOf(runs.OrderByDescending(r => r.RawBenchScore).First());
+            string gridCols = $"minmax(110px,1.1fr) repeat({runs.Count},minmax(0,1fr))";
+            var envKeys = runs
+                .SelectMany(r => r.Environments.Select(e => e.EnvironmentKey))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(k => k)
+                .ToList();
+            var metrics = new (string Label, Func<TestRunReport,double> Val, bool HighGood, Func<TestRunReport,string> Fmt)[]
             {
-                <MudSelectItem T="int" Value="@minutes">@minutes min</MudSelectItem>
-            }
+                ("Raw score", r=>r.RawBenchScore, true, r=>r.RawBenchScore.ToString("N0")),
+                ("Norm score", r=>r.NormalizedBenchScore, true, r=>r.NormalizedBenchScore.ToString("N0")),
+                ("Success %", r=>r.OverallSuccessRatePct, true, r=>r.OverallSuccessRatePct.ToString("F2")+"%"),
+                ("Throughput /min", r=>r.OverallThroughputPerMin, true, r=>r.OverallThroughputPerMin.ToString("F1")),
+                ("P95 latency ms", r=>r.OverallP95Ms, false, r=>r.OverallP95Ms.ToString("F0")),
+                ("Median latency ms", r=>r.OverallMedianMs, false, r=>r.OverallMedianMs.ToString("F0")),
+                ("Total pushed", r=>r.TotalMetersPushed, true, r=>r.TotalMetersPushed.ToString("N0")),
+                ("Failed", r=>r.TotalMetersFailed, false, r=>r.TotalMetersFailed.ToString("N0")),
+                ("Avg CPU %", r=>r.AvgCpuPct, false, r=>r.AvgCpuPct.ToString("F1")+"%"),
+                ("Peak RAM MB", r=>r.PeakRamMb, false, r=>r.PeakRamMb.ToString("N0")),
+            };
+
+            <div class="sec-head sec-gap">
+                <span class="sec-title">Comparison &mdash; @runs.Count runs</span>
+                <span class="sec-sub">green = best value in the row &nbsp;·&nbsp; up to @MaxCompare selectable</span>
+            </div>
+
+            <div class="cmp-scroll mb-4">
+            <div class="cmp-table" style="min-width:@(160 + runs.Count * 150)px;">
+                @* Header uses the same grid template as every row below, so columns line up *@
+                <div class="cmp-grid cmp-head-row" style="grid-template-columns:@gridCols;">
+                    <div class="cmp-corner">Metric</div>
+                    @for (int ci = 0; ci < runs.Count; ci++)
+                    {
+                        var r = runs[ci];
+                        bool wins = ci == bestIdx;
+                        <div class="cmp-head-cell">
+                            <div class="cmp-head-name">
+                                @(string.IsNullOrWhiteSpace(r.RunLabel) ? r.PlanName : r.RunLabel)
+                                @if (wins) { <span style="font-size:.62rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--mud-palette-success);">best</span> }
+                            </div>
+                            <div class="cmp-head-meta">@r.StartUtc.LocalDateTime.ToString("MM/dd HH:mm") &nbsp;·&nbsp; @r.PlanName</div>
+                            <div class="cmp-head-score">
+                                <span class="score-big" style="color:@(wins ? "var(--mud-palette-success)" : "inherit");">@r.RawBenchScore.ToString("N0")</span>
+                                <span class="score-norm">/ @r.NormalizedBenchScore.ToString("N0")</span>
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                @foreach (var (label, valFn, highGood, fmtFn) in metrics)
+                {
+                    var vals = runs.Select(valFn).ToList();
+                    double target = highGood ? vals.Max() : vals.Min();
+                    bool allTied = Math.Abs(vals.Max() - vals.Min()) < 0.001;
+                    <div class="cmp-grid cmp-row" style="grid-template-columns:@gridCols;">
+                        <div class="cmp-label">@label</div>
+                        @for (int ci = 0; ci < runs.Count; ci++)
+                        {
+                            bool best = !allTied && Math.Abs(vals[ci] - target) < 0.001;
+                            <div class="cmp-cell @(best ? "best" : "")">@fmtFn(runs[ci])</div>
+                        }
+                    </div>
+                }
+
+                @if (envKeys.Count > 0)
+                {
+                    <div class="cmp-grid" style="grid-template-columns:@gridCols;"><div class="cmp-section">Per environment &mdash; score</div></div>
+                    @foreach (string ek in envKeys)
+                    {
+                        var scores = runs
+                            .Select(r => r.Environments.FirstOrDefault(e => string.Equals(e.EnvironmentKey, ek, StringComparison.OrdinalIgnoreCase))?.BenchScore)
+                            .ToList();
+                        int? envBest = scores.Where(s => s.HasValue).Select(s => s!.Value).DefaultIfEmpty().Max();
+                        bool envTied = scores.Where(s => s.HasValue).Select(s => s!.Value).Distinct().Count() <= 1;
+                        <div class="cmp-grid cmp-row" style="grid-template-columns:@gridCols;">
+                            <div class="cmp-label">@ek</div>
+                            @for (int ci = 0; ci < runs.Count; ci++)
+                            {
+                                bool best = !envTied && scores[ci].HasValue && scores[ci] == envBest;
+                                <div class="cmp-cell @(best ? "best" : "")">@(scores[ci]?.ToString("N0") ?? "--")</div>
+                            }
+                        </div>
+                    }
+                }
+            </div>
+            </div>
+        }
+    }
+}
+
+@* ─── Loop push dialog ─── *@
+<MudDialog @bind-Visible="_loopOpen" Options="@(new DialogOptions{MaxWidth=MaxWidth.Small,FullWidth=true})">
+    <TitleContent><MudText Typo="Typo.h6">Loop push</MudText></TitleContent>
+    <DialogContent>
+        <MudSelect T="int" @bind-SelectedValues="_loopBatchIds" Label="Batches" MultiSelection="true" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-4">
+            @foreach (MeterBatch b in _batches) { <MudSelectItem T="int" Value="@b.Id">@b.Name (@NicLabel(b.NicType))</MudSelectItem> }
+        </MudSelect>
+        <MudSelect T="int" @bind-Value="_loopIntervalMin" Label="Interval" Variant="Variant.Outlined" Margin="Margin.Dense">
+            @foreach (int m in PushScheduleService.AllowedIntervalMinutes) { <MudSelectItem T="int" Value="@m">Every @m min</MudSelectItem> }
         </MudSelect>
     </DialogContent>
     <DialogActions>
-        <MudButton OnClick="@(() => _loopDialogOpen = false)">Cancel</MudButton>
-        <MudButton Variant="Variant.Filled" Color="Color.Primary"
-                   Disabled="@(!_loopBatchIds.Any())" OnClick="StartLoop">
-            Start loop
-        </MudButton>
+        <MudButton OnClick="@(()=>_loopOpen=false)">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(!_loopBatchIds.Any())" OnClick="StartLoop">Start</MudButton>
     </DialogActions>
 </MudDialog>
 
-@* ---------- Add / Edit plan dialog ---------- *@
-<MudDialog @bind-Visible="_planDialogOpen" Options="_planDialogOptions">
-    <TitleContent>
-        <MudText Typo="Typo.h6">@(_editingPlan ? "Edit plan" : "New test plan")</MudText>
-    </TitleContent>
+@* ─── Run dialog ─── *@
+<MudDialog @bind-Visible="_runOpen" Options="@(new DialogOptions{MaxWidth=MaxWidth.Small,FullWidth=true})">
+    <TitleContent><MudText Typo="Typo.h6">Run &mdash; @_runPlan?.DisplayName</MudText></TitleContent>
     <DialogContent>
-        @* Selects at top so their dropdown opens downward into content, not toward the footer *@
-        <MudGrid>
-            <MudItem xs="12">
-                <MudSelect T="string" @bind-SelectedValues="_planEnvKeys" Label="Environments (empty = all)"
-                           MultiSelection="true" Variant="Variant.Outlined" Margin="Margin.Dense">
-                    @foreach (var env in Network.Environments)
-                    {
-                        <MudSelectItem T="string" Value="@env.Key">@env.DisplayName</MudSelectItem>
-                    }
-                </MudSelect>
-            </MudItem>
-            <MudItem xs="12">
-                <MudSelect T="int" @bind-SelectedValues="_planBatchIds" Label="Batches"
-                           MultiSelection="true" Variant="Variant.Outlined" Margin="Margin.Dense">
-                    @foreach (MeterBatch b in _batches)
-                    {
-                        <MudSelectItem T="int" Value="@b.Id">@b.Name (@NicLabel(b.NicType), @b.Count.ToString("N0") meters)</MudSelectItem>
-                    }
-                </MudSelect>
-            </MudItem>
-            <MudItem xs="12">
-                <MudTextField T="string" @bind-Value="_planName" Label="Name" Immediate="true"
-                              Variant="Variant.Outlined" Margin="Margin.Dense"
-                              Disabled="@_editingBasePlan" />
-            </MudItem>
-            <MudItem xs="6">
-                <MudNumericField T="int" @bind-Value="_planPushIntervalSec" Label="Push interval (sec)"
-                                 Variant="Variant.Outlined" Margin="Margin.Dense" Min="60" Max="3600"
-                                 Disabled="@_planPushIntervalLocked" />
-                @if (_planPushIntervalLocked)
-                {
-                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Locked on base plan</MudText>
-                }
-            </MudItem>
-            <MudItem xs="6">
-                <MudNumericField T="int" @bind-Value="_planDurationMin" Label="Duration (min)"
-                                 Variant="Variant.Outlined" Margin="Margin.Dense" Min="1" Max="240"
-                                 Disabled="@_planDurationLocked" />
-                @if (_planDurationLocked)
-                {
-                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Locked on base plan</MudText>
-                }
-            </MudItem>
-        </MudGrid>
-
-        @if (_planError is not null)
+        <MudTextField T="string" @bind-Value="_runLabel" Label="Run label" Immediate="true"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-3"
+                      HelperText="Appears in results and the downloaded filename." />
+        <MudNumericField T="int" @bind-Value="_runDelay" Label="Start delay (min)" Variant="Variant.Outlined" Margin="Margin.Dense" Min="0" Max="120" />
+        @if (_runPlan is not null)
         {
-            <MudAlert Severity="Severity.Error" Dense="true" Variant="Variant.Outlined" Class="mt-3">@_planError</MudAlert>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary mt-2 d-block">
+                @_runPlan.Tasks.Count job(s) &nbsp;·&nbsp; @_runPlan.TotalDurationMinutes min session
+            </MudText>
         }
     </DialogContent>
     <DialogActions>
-        <MudButton OnClick="@(() => _planDialogOpen = false)">Cancel</MudButton>
+        <MudButton OnClick="@(()=>_runOpen=false)">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="StartRun">Start</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@* ─── Plan dialog ─── *@
+<MudDialog @bind-Visible="_planOpen" Options="@(new DialogOptions{MaxWidth=MaxWidth.Medium,FullWidth=true})">
+    <TitleContent><MudText Typo="Typo.h6">@(_editingPlan?"Edit plan":"New plan")</MudText></TitleContent>
+    <DialogContent>
+        <MudGrid Class="mb-3">
+            <MudItem xs="12">
+                <MudTextField T="string" @bind-Value="_planName" Label="Name" Immediate="true"
+                              Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@(_editingBase || _planLocked)" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudSelect T="string" @bind-SelectedValues="_planEnvs" Label="Environments (max 2, empty = all)" MultiSelection="true" Variant="Variant.Outlined" Margin="Margin.Dense">
+                    @foreach (var env in Network.Environments) { <MudSelectItem T="string" Value="@env.Key">@env.DisplayName</MudSelectItem> }
+                </MudSelect>
+            </MudItem>
+        </MudGrid>
+
+        @if (_planLocked)
+        {
+            <MudAlert Severity="Severity.Info" Dense="true" Variant="Variant.Outlined" Class="mb-3">
+                Plan shape is locked so re-runs stay comparable. You can change environments and each job's batches &mdash; not the job list, timings, or type. Create a new plan for a different shape.
+            </MudAlert>
+        }
+
+        <div class="d-flex align-center justify-space-between mb-1">
+            <span style="font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--mud-palette-text-secondary);">Jobs</span>
+        </div>
+        <div class="wf-card mb-2">
+            @if (_planTasks.Count == 0)
+            {
+                <div class="job-row"><span class="wf-meta">No jobs yet.</span></div>
+            }
+            else
+            {
+                @foreach (TestTask t in _planTasks)
+                {
+                    <div class="job-row">
+                        <div class="job-icon"><div class="icon-ring"></div></div>
+                        <div class="job-body">
+                            <div class="job-name">@t.DisplayLabel <span class="tbadge @TaskBadgeClass(t.Type)">@t.Type</span></div>
+                            <div class="job-sub">@TaskDetails(t) &nbsp;·&nbsp; @(t.OffsetMinutes==0?"immediate":$"+{t.OffsetMinutes}m offset") &nbsp;·&nbsp; @t.DurationMinutes min</div>
+                        </div>
+                        <div style="display:flex;gap:2px;flex-shrink:0;">
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="@(()=>OpenEditTask(t))" />
+                            @if (!_planLocked)
+                            {
+                                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(()=>_planTasks.Remove(t))" />
+                            }
+                        </div>
+                    </div>
+                }
+            }
+            @if (!_planLocked)
+            {
+                <div class="add-job" @onclick="OpenAddTask">
+                    <MudIcon Icon="@Icons.Material.Filled.Add" Size="Size.Small" />
+                    Add job
+                </div>
+            }
+        </div>
+
+        @if (_planError is not null)
+        {
+            <MudAlert Severity="Severity.Error" Dense="true" Variant="Variant.Outlined">@_planError</MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(()=>_planOpen=false)">Cancel</MudButton>
         <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SavePlan">Save</MudButton>
     </DialogActions>
 </MudDialog>
 
-@* ---------- Run plan dialog ---------- *@
-<MudDialog @bind-Visible="_runDialogOpen" Options="_runDialogOptions">
-    <TitleContent><MudText Typo="Typo.h6">Run &mdash; @(_runPlan?.DisplayName)</MudText></TitleContent>
+@* ─── Task dialog ─── *@
+<MudDialog @bind-Visible="_taskOpen" Options="@(new DialogOptions{MaxWidth=MaxWidth.Small,FullWidth=true})">
+    <TitleContent><MudText Typo="Typo.h6">@(_taskEditing?"Edit job":"Add job")</MudText></TitleContent>
     <DialogContent>
-        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
-            Pushes every @(_runPlan?.PushIntervalSec ?? 300)s for @(_runPlan?.CollectionDurationMin ?? 15) min.
-            Immediate push buttons are disabled while the run is active.
-        </MudText>
-
-        @if (_runBatchIds.Count == 0 && _runPlan is not null)
-        {
-            <MudAlert Severity="Severity.Warning" Dense="true" Variant="Variant.Outlined" Class="mb-3">
-                No batches configured. Add batches via Edit first.
-            </MudAlert>
-        }
-
-        <MudSelect T="int" @bind-SelectedValues="_runBatchIds" Label="Batches to push"
-                   MultiSelection="true" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-4">
-            @foreach (MeterBatch b in _batches)
+        <MudGrid>
+            @if (!_taskEditing)
             {
-                <MudSelectItem T="int" Value="@b.Id">@b.Name (@NicLabel(b.NicType), @b.Count.ToString("N0") meters)</MudSelectItem>
+                <MudItem xs="12">
+                    <MudSelect T="TestTaskType" @bind-Value="_taskType" Label="Job type" Variant="Variant.Outlined" Margin="Margin.Dense">
+                        <MudSelectItem T="TestTaskType" Value="TestTaskType.PushLoop">Push Loop &mdash; repeating push every N sec</MudSelectItem>
+                        <MudSelectItem T="TestTaskType" Value="TestTaskType.PullListener">Pull Listener &mdash; monitor inbound sessions</MudSelectItem>
+                        <MudSelectItem T="TestTaskType" Value="TestTaskType.BurstPush">Burst Push &mdash; N back-to-back pushes</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
             }
-        </MudSelect>
+            @if (_planLocked)
+            {
+                <MudItem xs="12">
+                    <MudAlert Severity="Severity.Info" Dense="true" Variant="Variant.Outlined">
+                        Only batches can be changed on an existing plan &mdash; timings and type are locked to keep runs comparable.
+                    </MudAlert>
+                </MudItem>
+            }
+            <MudItem xs="12">
+                <MudTextField T="string" @bind-Value="_taskLabel" Label="Label (optional)" Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@_planLocked" />
+            </MudItem>
+            <MudItem xs="6">
+                <MudNumericField T="int" @bind-Value="_taskOffset" Label="Offset (min)" Variant="Variant.Outlined" Margin="Margin.Dense" Min="0" Max="240" Disabled="@_planLocked" />
+            </MudItem>
+            <MudItem xs="6">
+                <MudNumericField T="int" @bind-Value="_taskDuration" Label="Duration (min)" Variant="Variant.Outlined" Margin="Margin.Dense" Min="1" Max="480" Disabled="@_planLocked" />
+            </MudItem>
 
-        <MudNumericField T="int" @bind-Value="_runDelayMinutes" Label="Start delay (minutes)"
-                         Variant="Variant.Outlined" Margin="Margin.Dense" Min="0" Max="120" />
-        <MudText Typo="Typo.caption" Class="mud-text-secondary mt-1">0 = start immediately.</MudText>
+            @if (_taskType == TestTaskType.PushLoop)
+            {
+                <MudItem xs="12">
+                    <MudNumericField T="int" @bind-Value="_taskInterval" Label="Push interval (sec)" Variant="Variant.Outlined" Margin="Margin.Dense" Min="30" Max="3600" Disabled="@_planLocked" />
+                </MudItem>
+                <MudItem xs="12">
+                    <MudSelect T="int" @bind-SelectedValues="_taskBatches" Label="Batches" MultiSelection="true" Variant="Variant.Outlined" Margin="Margin.Dense">
+                        @foreach (MeterBatch b in _batches) { <MudSelectItem T="int" Value="@b.Id">@b.Name (@NicLabel(b.NicType), @b.Count.ToString("N0"))</MudSelectItem> }
+                    </MudSelect>
+                </MudItem>
+            }
+            else if (_taskType == TestTaskType.BurstPush)
+            {
+                <MudItem xs="12">
+                    <MudNumericField T="int" @bind-Value="_taskBursts" Label="Burst count" Variant="Variant.Outlined" Margin="Margin.Dense" Min="1" Max="20" Disabled="@_planLocked" />
+                </MudItem>
+                <MudItem xs="12">
+                    <MudSelect T="int" @bind-SelectedValues="_taskBatches" Label="Batches" MultiSelection="true" Variant="Variant.Outlined" Margin="Margin.Dense">
+                        @foreach (MeterBatch b in _batches) { <MudSelectItem T="int" Value="@b.Id">@b.Name (@NicLabel(b.NicType), @b.Count.ToString("N0"))</MudSelectItem> }
+                    </MudSelect>
+                </MudItem>
+            }
+            else
+            {
+                <MudItem xs="12">
+                    <MudAlert Severity="Severity.Info" Dense="true" Variant="Variant.Outlined">
+                        Monitors inbound TCP sessions during its window. Score weight is 1.3× higher than push tasks.
+                    </MudAlert>
+                </MudItem>
+            }
+        </MudGrid>
     </DialogContent>
     <DialogActions>
-        <MudButton OnClick="@(() => _runDialogOpen = false)">Cancel</MudButton>
-        <MudButton Variant="Variant.Filled" Color="Color.Success"
-                   Disabled="@(!_runBatchIds.Any())"
-                   OnClick="StartRun">Start</MudButton>
+        <MudButton OnClick="@(()=>_taskOpen=false)">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveTask">@(_taskEditing?"Update":"Add")</MudButton>
     </DialogActions>
 </MudDialog>
 
@@ -612,46 +907,71 @@
     private IReadOnlyList<MeterBatch> _batches = Array.Empty<MeterBatch>();
     private IReadOnlyList<TestPlan> _plans = Array.Empty<TestPlan>();
     private IReadOnlyList<TestRunReport> _reports = Array.Empty<TestRunReport>();
-    private readonly HashSet<int> _pushingBatchIds = new();
-    private System.Threading.Timer? _timer;
-    private bool _testRunActive;
-    private TestRunState? _activeRun;
-
     private PushScheduleState _scheduleState = PushScheduleState.Idle;
+    private TestRunState? _activeRun;
+    private bool _testRunActive;
+    private System.Threading.Timer? _timer;
+    private readonly HashSet<int> _pushingBatchIds = new();
 
-    // Loop push dialog
-    private bool _loopDialogOpen;
-    private readonly DialogOptions _loopDialogOptions = new() { MaxWidth = MaxWidth.Small, FullWidth = true };
+    // Results
+    private List<string> _selectedIds = new(2);
+    private readonly HashSet<string> _filterEnvs = new();
+    private List<string> _allEnvKeys = new();
+    private const int MaxCompare = 5;
+    private int _activeTab;                                  // 0 Plans · 1 Results · 2 Leaderboard
+    private readonly HashSet<string> _filterPlans = new();   // PlanIds; empty = all
+    private List<(string Id, string Name)> _allPlans = new();
+
+    private RenderFragment PlanFilterBar => @<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:22px;">
+        @if (_allPlans.Count > 1)
+        {
+            <span style="font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;color:var(--mud-palette-text-secondary);white-space:nowrap;">Plan</span>
+            @foreach (var p in _allPlans)
+            {
+                bool active = _filterPlans.Count == 0 || _filterPlans.Contains(p.Id);
+                <span class="env-chip @(active ? "active" : "")" @onclick="@(() => TogglePlanFilter(p.Id))">@p.Name</span>
+            }
+        }
+    </div>;
+
+    // Loop dialog
+    private bool _loopOpen;
     private IReadOnlyCollection<int> _loopBatchIds = Array.Empty<int>();
-    private int _loopIntervalMinutes = PushScheduleService.AllowedIntervalMinutes[0];
+    private int _loopIntervalMin = PushScheduleService.AllowedIntervalMinutes[0];
 
     // Run dialog
-    private bool _runDialogOpen;
-    private readonly DialogOptions _runDialogOptions = new() { MaxWidth = MaxWidth.Small, FullWidth = true };
+    private bool _runOpen;
     private TestPlan? _runPlan;
-    private IReadOnlyCollection<int> _runBatchIds = Array.Empty<int>();
-    private int _runDelayMinutes;
+    private string _runLabel = "";
+    private int _runDelay;
 
     // Plan dialog
-    private bool _planDialogOpen;
-    private readonly DialogOptions _planDialogOptions = new() { MaxWidth = MaxWidth.Small, FullWidth = true };
+    private bool _planOpen;
     private bool _editingPlan;
-    private bool _editingBasePlan;
+    private bool _editingBase;
+    /// <summary>True while editing an existing plan: its shape is frozen so re-runs stay
+    /// apples-to-apples. Only environments and per-job batch selection may change.</summary>
+    private bool _planLocked;
     private string? _planId;
     private string _planName = "";
-    private int _planPushIntervalSec = 300;
-    private int _planDurationMin = 15;
-    private IReadOnlyCollection<string> _planEnvKeys = Array.Empty<string>();
-    private IReadOnlyCollection<int> _planBatchIds = Array.Empty<int>();
-    private bool _planPushIntervalLocked;
-    private bool _planDurationLocked;
+    private IReadOnlyCollection<string> _planEnvs = Array.Empty<string>();
+    private List<TestTask> _planTasks = new();
     private string? _planError;
 
-    // Results / comparison
-    private readonly HashSet<string> _selectedRunIds = new();
-    private bool _comparing;
+    // Task dialog
+    private bool _taskOpen;
+    private bool _taskEditing;
+    private TestTask? _taskTarget;
+    private TestTaskType _taskType = TestTaskType.PushLoop;
+    private string _taskLabel = "";
+    private int _taskOffset;
+    private int _taskDuration = 15;
+    private int _taskInterval = 300;
+    private int _taskBursts = 3;
+    private IReadOnlyCollection<int> _taskBatches = Array.Empty<int>();
 
-    private const long MaxConfigBytes = 4 * 1024 * 1024;
+    private TestPlan? ActivePlan =>
+        _activeRun is not null ? _plans.FirstOrDefault(p => p.Id == _activeRun.PlanId) : null;
 
     protected override void OnInitialized()
     {
@@ -671,379 +991,200 @@
         _activeRun = RunEngine.ActiveRun;
         _testRunActive = RunEngine.IsActive;
         _reports = RunStore.LoadAll();
+        _allEnvKeys = _reports
+            .SelectMany(r => r.Environments.Select(e => e.EnvironmentKey))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(k => k).ToList();
+        _allPlans = _reports
+            .GroupBy(r => r.PlanId)
+            .Select(g => (Id: g.Key, Name: g.First().PlanName))
+            .OrderBy(p => p.Name).ToList();
     }
 
     private void OnScheduleChanged() => InvokeAsync(() => { _scheduleState = Schedule.State; StateHasChanged(); });
     private void OnPlansChanged() => InvokeAsync(() => { _plans = TestPlans.Plans; StateHasChanged(); });
-    private void OnRunChanged() => InvokeAsync(() =>
+    private void OnRunChanged() => InvokeAsync(() => { _activeRun = RunEngine.ActiveRun; _testRunActive = RunEngine.IsActive; StateHasChanged(); });
+    private void OnRunCompleted(TestRunReport report) => InvokeAsync(() =>
     {
-        _activeRun = RunEngine.ActiveRun;
-        _testRunActive = RunEngine.IsActive;
-        StateHasChanged();
-    });
-    private void OnRunCompleted(TestRunReport report) => InvokeAsync(async () =>
-    {
-        _activeRun = RunEngine.ActiveRun;
-        _testRunActive = false;
-        _reports = RunStore.LoadAll();
-        StateHasChanged();
-        Snackbar.Add($"Run complete &mdash; BenchScore {report.BenchScore:N0}. Downloading report...", Severity.Success);
-        await JS.InvokeVoidAsync("mayaDownload", $"/reports/{report.RunId}.json");
+        _activeRun = RunEngine.ActiveRun; _testRunActive = false;
+        Refresh(); StateHasChanged();
+        // no auto-download — the report is in Results, download it from there if wanted
+        Snackbar.Add($"Run complete — Raw {report.RawBenchScore:N0} / Norm {report.NormalizedBenchScore:N0}", Severity.Success);
     });
 
-    // On-demand push
-
+    // Push
     private async Task SendPushAsync(int batchId)
     {
         _pushingBatchIds.Add(batchId);
         try
         {
-            PushBatchResult result = await Push.PushBatchAsync(batchId);
-            if (!result.Ok)
-                Snackbar.Add(result.Error ?? "Push failed.", Severity.Error);
-            else if (result.Failed == 0)
-                Snackbar.Add($"Pushed {result.Sent} of {result.Total} meter(s).", Severity.Success);
-            else
-                Snackbar.Add($"Pushed {result.Sent}/{result.Total}; {result.Failed} failed.", Severity.Warning);
+            PushBatchResult r = await Push.PushBatchAsync(batchId);
+            if (!r.Ok) Snackbar.Add(r.Error ?? "Push failed.", Severity.Error);
+            else if (r.Failed == 0) Snackbar.Add($"Pushed {r.Sent}/{r.Total}.", Severity.Success);
+            else Snackbar.Add($"Pushed {r.Sent}/{r.Total}; {r.Failed} failed.", Severity.Warning);
         }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Push error: {ex.Message}", Severity.Error);
-        }
-        finally
-        {
-            _pushingBatchIds.Remove(batchId);
-        }
+        catch (Exception ex) { Snackbar.Add($"Error: {ex.Message}", Severity.Error); }
+        finally { _pushingBatchIds.Remove(batchId); }
     }
 
-    // Loop push
+    private void OpenLoopDialog() { _loopBatchIds = _scheduleState.BatchIds.ToList(); _loopIntervalMin = _scheduleState.IntervalMinutes > 0 ? _scheduleState.IntervalMinutes : PushScheduleService.AllowedIntervalMinutes[0]; _loopOpen = true; }
+    private void StartLoop() { try { Schedule.Start(_loopBatchIds.ToList(), _loopIntervalMin); _loopOpen = false; } catch (ArgumentException ex) { Snackbar.Add(ex.Message, Severity.Error); } }
+    private void StopLoop() { Schedule.Stop(); }
 
-    private void OpenLoopDialog()
-    {
-        _loopBatchIds = _scheduleState.BatchIds.ToList();
-        _loopIntervalMinutes = _scheduleState.IntervalMinutes > 0
-            ? _scheduleState.IntervalMinutes
-            : PushScheduleService.AllowedIntervalMinutes[0];
-        _loopDialogOpen = true;
-    }
-
-    private void StartLoop()
-    {
-        try
-        {
-            Schedule.Start(_loopBatchIds.ToList(), _loopIntervalMinutes);
-            _loopDialogOpen = false;
-            Snackbar.Add($"Loop push started - every {_loopIntervalMinutes} min.", Severity.Success);
-        }
-        catch (ArgumentException ex)
-        {
-            Snackbar.Add(ex.Message, Severity.Error);
-        }
-    }
-
-    private void StopLoop()
-    {
-        Schedule.Stop();
-        Snackbar.Add("Loop push stopped.", Severity.Info);
-    }
-
-    // Test run
-
-    private void OpenRunDialog(TestPlan plan)
-    {
-        _runPlan = plan;
-        _runBatchIds = plan.BatchIds.Where(id => _batches.Any(b => b.Id == id)).ToList();
-        _runDelayMinutes = 0;
-        _runDialogOpen = true;
-    }
-
+    // Run
+    private void OpenRunDialog(TestPlan plan) { _runPlan = plan; _runLabel = ""; _runDelay = 0; _runOpen = true; }
     private void StartRun()
     {
-        if (_runPlan is null || !_runBatchIds.Any()) return;
-
-        DateTimeOffset startAt = _runDelayMinutes > 0
-            ? DateTimeOffset.UtcNow.AddMinutes(_runDelayMinutes)
-            : DateTimeOffset.UtcNow;
-
-        try
-        {
-            RunEngine.ScheduleRun(_runPlan, _runBatchIds.ToList(), startAt);
-            _runDialogOpen = false;
-            Snackbar.Add(_runDelayMinutes > 0
-                ? $"Run scheduled to start in {_runDelayMinutes} min."
-                : "Run started.", Severity.Info);
-        }
-        catch (Exception ex)
-        {
-            Snackbar.Add(ex.Message, Severity.Error);
-        }
+        if (_runPlan is null) return;
+        DateTimeOffset at = _runDelay > 0 ? DateTimeOffset.UtcNow.AddMinutes(_runDelay) : DateTimeOffset.UtcNow;
+        try { RunEngine.ScheduleRun(_runPlan, _runLabel, at); _runOpen = false; Snackbar.Add("Run started.", Severity.Info); }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
     }
+    private void CancelRun() { RunEngine.Cancel(); }
 
-    private void CancelRun()
-    {
-        RunEngine.Cancel();
-        Snackbar.Add("Run cancelled.", Severity.Warning);
-    }
-
-    // Test plans
-
-    private void OpenAddPlan()
-    {
-        _editingPlan = false;
-        _editingBasePlan = false;
-        _planId = null;
-        _planName = "";
-        _planPushIntervalSec = 300;
-        _planDurationMin = 15;
-        _planEnvKeys = Array.Empty<string>();
-        _planBatchIds = Array.Empty<int>();
-        _planPushIntervalLocked = false;
-        _planDurationLocked = false;
-        _planError = null;
-        _planDialogOpen = true;
-    }
-
-    private void OpenEditPlan(TestPlan plan)
-    {
-        _editingPlan = true;
-        _editingBasePlan = plan.IsBasePlan;
-        _planId = plan.Id;
-        _planName = plan.Name;
-        _planPushIntervalSec = plan.PushIntervalSec;
-        _planDurationMin = plan.CollectionDurationMin;
-        _planEnvKeys = plan.EnvironmentKeys.ToList();
-        _planBatchIds = plan.BatchIds.ToList();
-        _planPushIntervalLocked = plan.IsFieldLocked(nameof(TestPlan.PushIntervalSec));
-        _planDurationLocked = plan.IsFieldLocked(nameof(TestPlan.CollectionDurationMin));
-        _planError = null;
-        _planDialogOpen = true;
-    }
+    // Plans
+    private void OpenAddPlan() { _editingPlan = false; _editingBase = false; _planLocked = false; _planId = null; _planName = ""; _planEnvs = Array.Empty<string>(); _planTasks = new(); _planError = null; _planOpen = true; }
+    private void OpenEditPlan(TestPlan p) { _editingPlan = true; _editingBase = p.IsBasePlan; _planLocked = true; _planId = p.Id; _planName = p.Name; _planEnvs = p.EnvironmentKeys.ToList(); _planTasks = p.Tasks.ToList(); _planError = null; _planOpen = true; }
 
     private void SavePlan()
     {
         _planError = null;
-
-        if (string.IsNullOrWhiteSpace(_planName) && !_editingBasePlan)
-        {
-            _planError = "Name is required.";
-            return;
-        }
-
+        if (!_editingBase && string.IsNullOrWhiteSpace(_planName)) { _planError = "Name is required."; return; }
+        if (_planEnvs.Count > 2) { _planError = "Max 2 environments per plan."; return; }
         try
         {
             if (_editingPlan && _planId is not null)
             {
-                TestPlan? existing = TestPlans.Plan(_planId);
-                if (existing is null) { _planError = "Plan not found."; return; }
-
-                var updated = new TestPlan
-                {
-                    Id = existing.Id,
-                    Name = _editingBasePlan ? existing.Name : _planName,
-                    IsBasePlan = existing.IsBasePlan,
-                    PushIntervalSec = _planPushIntervalSec,
-                    CollectionDurationMin = _planDurationMin,
-                    EnvironmentKeys = _planEnvKeys.ToList(),
-                    BatchIds = _planBatchIds.ToList(),
-                    LockedFields = existing.LockedFields,
-                };
-                TestPlans.UpdatePlan(updated);
+                TestPlan? ex = TestPlans.Plan(_planId);
+                if (ex is null) { _planError = "Not found."; return; }
+                TestPlans.UpdatePlan(new TestPlan { Id = ex.Id, Name = _editingBase ? ex.Name : _planName, IsBasePlan = ex.IsBasePlan, EnvironmentKeys = _planEnvs.ToList(), Tasks = _planTasks.ToList(), LockedFields = ex.LockedFields, CreatedAtUtc = ex.CreatedAtUtc });
             }
             else
             {
-                TestPlans.AddPlan(new TestPlan
-                {
-                    Name = _planName,
-                    PushIntervalSec = _planPushIntervalSec,
-                    CollectionDurationMin = _planDurationMin,
-                    EnvironmentKeys = _planEnvKeys.ToList(),
-                    BatchIds = _planBatchIds.ToList(),
-                });
+                TestPlans.AddPlan(new TestPlan { Name = _planName, EnvironmentKeys = _planEnvs.ToList(), Tasks = _planTasks.ToList() });
             }
-
-            _planDialogOpen = false;
-            Snackbar.Add("Plan saved.", Severity.Success);
+            _planOpen = false;
         }
-        catch (ArgumentException ex)
-        {
-            _planError = ex.Message;
-        }
+        catch (ArgumentException ex) { _planError = ex.Message; }
     }
 
-    private void DeletePlan(TestPlan plan)
+    private void DeletePlan(TestPlan p) { if (!TestPlans.DeletePlan(p.Id, out string e)) Snackbar.Add(e, Severity.Error); }
+
+    // Tasks
+    private void OpenAddTask() { _taskEditing = false; _taskTarget = null; _taskType = TestTaskType.PushLoop; _taskLabel = ""; _taskOffset = 0; _taskDuration = 15; _taskInterval = 300; _taskBursts = 3; _taskBatches = Array.Empty<int>(); _taskOpen = true; }
+    private void OpenEditTask(TestTask t) { _taskEditing = true; _taskTarget = t; _taskType = t.Type; _taskLabel = t.Label; _taskOffset = t.OffsetMinutes; _taskDuration = t.DurationMinutes; _taskInterval = t is PushLoopTask pl ? pl.PushIntervalSec : 300; _taskBursts = t is BurstPushTask bt ? bt.BurstCount : 3; _taskBatches = t is PushLoopTask pl2 ? pl2.BatchIds.ToList() : t is BurstPushTask bt2 ? bt2.BatchIds.ToList() : Array.Empty<int>(); _taskOpen = true; }
+
+    private void SaveTask()
     {
-        if (!TestPlans.DeletePlan(plan.Id, out string error))
-            Snackbar.Add(error, Severity.Error);
+        TestTask n = _taskType switch
+        {
+            TestTaskType.PushLoop => new PushLoopTask { Label = _taskLabel, OffsetMinutes = _taskOffset, DurationMinutes = _taskDuration, PushIntervalSec = _taskInterval, BatchIds = _taskBatches.ToList() },
+            TestTaskType.BurstPush => new BurstPushTask { Label = _taskLabel, OffsetMinutes = _taskOffset, DurationMinutes = _taskDuration, BurstCount = _taskBursts, BatchIds = _taskBatches.ToList() },
+            _ => new PullListenerTask { Label = _taskLabel, OffsetMinutes = _taskOffset, DurationMinutes = _taskDuration },
+        };
+        if (_taskEditing && _taskTarget is not null) { int i = _planTasks.IndexOf(_taskTarget); if (i >= 0) _planTasks[i] = n; }
+        else _planTasks.Add(n);
+        _taskOpen = false;
     }
 
     // Results
-
-    private void ToggleRunSelection(string runId)
+    private void ToggleSelect(string id)
     {
-        if (!_selectedRunIds.Remove(runId))
-            _selectedRunIds.Add(runId);
-        if (_selectedRunIds.Count < 2)
-            _comparing = false;
+        if (_selectedIds.Contains(id)) { _selectedIds.Remove(id); return; }
+        if (_selectedIds.Count >= MaxCompare) _selectedIds.RemoveAt(0);   // oldest drops out
+        _selectedIds.Add(id);
     }
 
-    private async Task DownloadReport(string runId) =>
-        await JS.InvokeVoidAsync("mayaDownload", $"/reports/{runId}.json");
+    private void TogglePlanFilter(string planId) { if (!_filterPlans.Remove(planId)) _filterPlans.Add(planId); }
+    private bool PlanVisible(TestRunReport r) => _filterPlans.Count == 0 || _filterPlans.Contains(r.PlanId);
+    private async Task DownloadReport(string id) => await JS.InvokeVoidAsync("mayaDownload", $"/reports/{id}.json");
 
-    private RenderFragment CompareRow(
-        string label,
-        List<TestRunReport> runs,
-        Func<TestRunReport, string> fmt,
-        Func<TestRunReport, double> val,
-        bool highIsGood,
-        bool bold = false) => builder =>
+    private IEnumerable<TestRunReport> VisibleReports() => _reports.Where(PlanVisible);
+
+    private IList<TestRunReport> GlobalTop() =>
+        _reports.Where(PlanVisible).OrderByDescending(r => r.RawBenchScore).Take(10).ToList();
+
+    private int GlobalTopMax()
     {
-        double best = highIsGood ? runs.Max(val) : runs.Min(val);
-        builder.OpenElement(0, "tr");
-        builder.AddAttribute(1, "style", "border-bottom:1px solid var(--mud-palette-lines-default);");
+        var vis = _reports.Where(PlanVisible).ToList();
+        return vis.Count > 0 ? Math.Max(1, vis.Max(r => r.RawBenchScore)) : 1;
+    }
 
-        builder.OpenElement(2, "td");
-        builder.AddAttribute(3, "style", "padding:8px 12px;");
-        if (bold)
-        {
-            builder.OpenElement(4, "strong");
-            builder.AddContent(5, label);
-            builder.CloseElement();
-        }
-        else
-        {
-            builder.AddContent(6, label);
-        }
-        builder.CloseElement();
+    private record PlanGroup(string PlanName, IList<TestRunReport> Top);
+    private IList<PlanGroup> PerPlanGroups() =>
+        _reports
+            .Where(PlanVisible)
+            .GroupBy(r => r.PlanId)
+            .Select(g => new PlanGroup(g.First().PlanName, g.OrderByDescending(r => r.RawBenchScore).Take(5).ToList()))
+            .OrderBy(g => g.PlanName).ToList();
 
-        int seq = 10;
-        foreach (var r in runs)
-        {
-            double v = val(r);
-            bool isBest = Math.Abs(v - best) < 0.0001;
-            string color = isBest && runs.Count(x => Math.Abs(val(x) - best) < 0.0001) == 1
-                ? "var(--mud-palette-success)"
-                : "inherit";
+    // Pipeline helpers
+    private enum TaskPhase { Waiting, Running, Done }
 
-            builder.OpenElement(seq++, "td");
-            builder.AddAttribute(seq++, "style", $"text-align:right;padding:8px 12px;color:{color};{(bold ? "font-weight:700;font-size:1.05em;" : "")}");
-            builder.AddContent(seq++, fmt(r));
-            builder.CloseElement();
-        }
+    private static TaskPhase GetTaskPhase(TestTask task, TestRunState run)
+    {
+        if (run.Status == TestRunStatus.Scheduled || run.ActualStartUtc is null) return TaskPhase.Waiting;
+        double elapsed = (DateTimeOffset.UtcNow - run.ActualStartUtc.Value).TotalMinutes;
+        if (elapsed < task.OffsetMinutes) return TaskPhase.Waiting;
+        if (elapsed >= task.EndsAtMinute) return TaskPhase.Done;
+        return TaskPhase.Running;
+    }
 
+    private static double GetTaskPct(TestTask task, TestRunState run)
+    {
+        if (run.ActualStartUtc is null) return 0;
+        double elapsed = (DateTimeOffset.UtcNow - run.ActualStartUtc.Value).TotalMinutes - task.OffsetMinutes;
+        return elapsed < 0 ? 0 : Math.Min(100, elapsed / task.DurationMinutes * 100);
+    }
+
+    // Render helpers
+    private RenderFragment MetricCell(string label, string val, string? color) => builder =>
+    {
+        builder.OpenElement(0, "div"); builder.AddAttribute(1, "class", "metric-cell");
+        builder.OpenElement(2, "div"); builder.AddAttribute(3, "class", "metric-val");
+        if (color is not null) builder.AddAttribute(4, "style", $"color:{color};");
+        builder.AddContent(5, val); builder.CloseElement();
+        builder.OpenElement(6, "div"); builder.AddAttribute(7, "class", "metric-key");
+        builder.AddContent(8, label); builder.CloseElement();
         builder.CloseElement();
     };
 
-    // Config import / export
-
-    private async Task ExportTesting() => await JS.InvokeVoidAsync("mayaDownload", "/config/testing.json");
-
-    private async Task OnTestingFileSelected(InputFileChangeEventArgs e)
+    private static string TaskDetails(TestTask t) => t switch
     {
-        IBrowserFile? file = e.FileCount > 0 ? e.File : null;
-        if (file is null) return;
+        PushLoopTask pl => $"every {pl.PushIntervalSec}s · {pl.BatchIds.Count} batch(es)",
+        BurstPushTask bt => $"{bt.BurstCount}× burst · {bt.BatchIds.Count} batch(es)",
+        _ => "monitors inbound sessions",
+    };
 
-        string json;
-        try
-        {
-            await using Stream stream = file.OpenReadStream(MaxConfigBytes);
-            using var reader = new StreamReader(stream);
-            json = await reader.ReadToEndAsync();
-        }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Could not read the file: {ex.Message}", Severity.Error);
-            return;
-        }
+    private static string TaskBadgeClass(TestTaskType t) => t switch
+    {
+        TestTaskType.PushLoop => "tbadge-push",
+        TestTaskType.PullListener => "tbadge-pull",
+        TestTaskType.BurstPush => "tbadge-burst",
+        _ => "",
+    };
 
-        TestingFile preview;
-        try { preview = ConfigBundles.PreviewTesting(json); }
-        catch (ArgumentException ex) { Snackbar.Add(ex.Message, Severity.Error); return; }
-
-        try
-        {
-            TestingImportResult applied = ConfigBundles.ImportTesting(json);
-            string missing = applied.Missing.Count > 0
-                ? $" ({applied.Missing.Count} not found here: {string.Join(", ", applied.Missing)})"
-                : string.Empty;
-            Snackbar.Add(
-                $"Loop push started - {applied.Resolved} batch(es) every {preview.IntervalMinutes} min.{missing}",
-                applied.Missing.Count > 0 ? Severity.Warning : Severity.Success);
-        }
-        catch (ArgumentException ex)
-        {
-            Snackbar.Add(ex.Message, Severity.Error);
-        }
-    }
-
-    // Presentation helpers
+    private static string ShortType(TestTaskType t) => t switch
+    {
+        TestTaskType.PushLoop => "loop",
+        TestTaskType.PullListener => "pull",
+        TestTaskType.BurstPush => "burst",
+        _ => t.ToString(),
+    };
 
     private static string RelativeTime(DateTimeOffset? when)
     {
         if (when is null) return "--";
-        TimeSpan delta = when.Value - DateTimeOffset.UtcNow;
-        return delta.TotalSeconds switch
-        {
-            > 0 and < 60 => $"in {delta.TotalSeconds:F0}s",
-            > 0 => $"in {delta.TotalMinutes:F0}m",
-            _ => delta.TotalSeconds switch
-            {
-                > -60 => $"{-delta.TotalSeconds:F0}s ago",
-                _ => $"{-delta.TotalMinutes:F0}m ago",
-            },
-        };
+        TimeSpan d = when.Value - DateTimeOffset.UtcNow;
+        return d.TotalSeconds switch { > 0 and < 60 => $"in {d.TotalSeconds:F0}s", > 0 => $"in {d.TotalMinutes:F0}m", > -60 => $"{-d.TotalSeconds:F0}s ago", _ => $"{-d.TotalMinutes:F0}m ago" };
     }
 
-    private static string RunStatusColor(TestRunStatus s) => s switch
-    {
-        TestRunStatus.Running => "success",
-        TestRunStatus.Scheduled => "info",
-        TestRunStatus.Completed => "success",
-        TestRunStatus.Cancelled => "default",
-        TestRunStatus.Failed => "error",
-        _ => "default",
-    };
+    private static string FormatDuration(TimeSpan t) =>
+        t.TotalHours >= 1 ? $"{(int)t.TotalHours}h {t.Minutes}m" : $"{t.Minutes}m {t.Seconds}s";
 
-    private static Color RunStatusMudColor(TestRunStatus s) => s switch
-    {
-        TestRunStatus.Running => Color.Success,
-        TestRunStatus.Scheduled => Color.Info,
-        TestRunStatus.Completed => Color.Success,
-        TestRunStatus.Failed => Color.Error,
-        _ => Color.Default,
-    };
+    private static Color StatusColor(BatchStatus s) => s switch { BatchStatus.Running => Color.Success, BatchStatus.Starting => Color.Info, BatchStatus.Stopped => Color.Error, _ => Color.Default };
+    private static string StatusRowClass(BatchStatus s) => s switch { BatchStatus.Running => "is-running", BatchStatus.Starting => "is-starting", BatchStatus.Stopped => "is-stopped", _ => "is-idle" };
+    private static string NicLabel(NicType n) => n switch { NicType.Tcp4G => "4G TCP", NicType.Mqtt4G => "4G MQTT", NicType.Mqtt4GImg => "4G IMG", NicType.MqttWirepas => "RF Wirepas", NicType.MqttKmesh => "RF Kmesh", _ => n.ToString() };
 
-    private static Color StatusColor(BatchStatus status) => status switch
-    {
-        BatchStatus.Running => Color.Success,
-        BatchStatus.Starting => Color.Info,
-        BatchStatus.Stopped => Color.Error,
-        _ => Color.Default,
-    };
-
-    private static string StatusRowClass(BatchStatus status) => status switch
-    {
-        BatchStatus.Running => "is-running",
-        BatchStatus.Starting => "is-starting",
-        BatchStatus.Stopped => "is-stopped",
-        _ => "is-idle",
-    };
-
-    private static string NicLabel(NicType nic) => nic switch
-    {
-        NicType.Tcp4G => "4G TCP",
-        NicType.Mqtt4G => "4G MQTT",
-        NicType.Mqtt4GImg => "4G IMG MQTT",
-        NicType.MqttWirepas => "RF Wirepas",
-        NicType.MqttKmesh => "RF Kimbal Mesh",
-        _ => nic.ToString(),
-    };
-
-    public void Dispose()
-    {
-        Schedule.Changed -= OnScheduleChanged;
-        TestPlans.Changed -= OnPlansChanged;
-        RunEngine.Changed -= OnRunChanged;
-        RunEngine.RunCompleted -= OnRunCompleted;
-        _timer?.Dispose();
-    }
+    public void Dispose() { Schedule.Changed -= OnScheduleChanged; TestPlans.Changed -= OnPlansChanged; RunEngine.Changed -= OnRunChanged; RunEngine.RunCompleted -= OnRunCompleted; _timer?.Dispose(); }
 }

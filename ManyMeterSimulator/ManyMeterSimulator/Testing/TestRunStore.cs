@@ -5,13 +5,10 @@ using ManyMeterSimulator.Provisioning;
 
 namespace ManyMeterSimulator.Testing;
 
-/// <summary>
-/// Saves and loads completed <see cref="TestRunReport"/>s from disk.
-/// Each run is one JSON file: <c>../data/reports/&lt;runId&gt;.json</c>.
-/// An index file keeps the list of run IDs for the Results viewer.
-/// </summary>
 public sealed class TestRunStore
 {
+    private const int MaxPerPlan = 20;
+
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
         WriteIndented = true,
@@ -36,27 +33,22 @@ public sealed class TestRunStore
 
     public void Save(TestRunReport report)
     {
-        string path = ReportPath(report.RunId);
+        string path = ReportPath(report);
         File.WriteAllText(path, JsonSerializer.Serialize(report, JsonOpts));
+        EnforceLimit();
     }
 
     public TestRunReport? Load(string runId)
     {
-        string path = ReportPath(runId);
-        if (!File.Exists(path)) return null;
+        // try exact name first, then scan (label may differ)
+        string exact = Path.Combine(_folder, $"{runId}.json");
+        string? found = File.Exists(exact) ? exact : FindFileByRunId(runId);
+        if (found is null) return null;
 
-        try
-        {
-            return JsonSerializer.Deserialize<TestRunReport>(File.ReadAllText(path), JsonOpts);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to load report {RunId}", runId);
-            return null;
-        }
+        try { return JsonSerializer.Deserialize<TestRunReport>(File.ReadAllText(found), JsonOpts); }
+        catch (Exception ex) { _logger.LogError(ex, "Failed to load report {RunId}", runId); return null; }
     }
 
-    /// <summary>Returns all saved reports, newest first.</summary>
     public IReadOnlyList<TestRunReport> LoadAll()
     {
         return Directory.GetFiles(_folder, "*.json")
@@ -71,7 +63,63 @@ public sealed class TestRunStore
             .ToList();
     }
 
-    public string ReportPath(string runId) => Path.Combine(_folder, $"{runId}.json");
+    /// <summary>
+    /// Returns the filename that would be used for a new save — useful for the download endpoint
+    /// which needs to reconstruct the file path from just the runId.
+    /// </summary>
+    public string? FindFileByRunId(string runId)
+    {
+        return Directory.GetFiles(_folder, $"*{runId}*.json").FirstOrDefault();
+    }
 
-    public bool Exists(string runId) => File.Exists(ReportPath(runId));
+    private void EnforceLimit()
+    {
+        try
+        {
+            var toDelete = Directory.GetFiles(_folder, "*.json")
+                .Select(p => (path: p, report: TryDeserialize(p)))
+                .Where(x => x.report is not null)
+                .Select(x => (x.path, Report: x.report!))
+                .GroupBy(x => x.Report.PlanId)
+                .SelectMany(g => g.OrderByDescending(x => x.Report.StartUtc).Skip(MaxPerPlan))
+                .Select(x => x.path)
+                .ToList();
+
+            foreach (string path in toDelete)
+                File.Delete(path);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to enforce {Max} per-plan result limit", MaxPerPlan);
+        }
+    }
+
+    private TestRunReport? TryDeserialize(string path)
+    {
+        try { return JsonSerializer.Deserialize<TestRunReport>(File.ReadAllText(path), JsonOpts); }
+        catch { return null; }
+    }
+
+    public string ReportPath(TestRunReport report)
+    {
+        string ts = report.StartUtc.LocalDateTime.ToString("yyyyMMddHHmm");
+        string envPart = report.EnvironmentKeys.Count > 0
+            ? "_" + string.Join("+", report.EnvironmentKeys.Select(e => Slugify(e)[..Math.Min(12, Slugify(e).Length)]))
+            : "";
+        string labelPart = string.IsNullOrWhiteSpace(report.RunLabel) ? "" : Slugify(report.RunLabel) + "_";
+        return Path.Combine(_folder, $"{labelPart}{envPart}_{ts}_{report.RunId}.json");
+    }
+
+    // Keep for backward-compat (e.g. Load uses FindFileByRunId which scans by runId)
+    public string ReportPath(string runId, string? label = null)
+    {
+        string slug = string.IsNullOrWhiteSpace(label) ? runId : $"{Slugify(label)}-{runId}";
+        return Path.Combine(_folder, $"{slug}.json");
+    }
+
+    private static string Slugify(string s) =>
+        new string(s.ToLowerInvariant()
+            .Select(c => char.IsLetterOrDigit(c) ? c : '-')
+            .ToArray())
+        .Trim('-')[..Math.Min(40, s.Length)];
 }

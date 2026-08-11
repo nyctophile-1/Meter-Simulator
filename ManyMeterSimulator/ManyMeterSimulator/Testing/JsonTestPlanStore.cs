@@ -11,6 +11,9 @@ public sealed class JsonTestPlanStore : ITestPlanStore
     {
         WriteIndented = true,
         Converters = { new JsonStringEnumConverter() },
+        // TestTask uses [JsonPolymorphic] — STJ resolves it from the class attribute,
+        // but needs TypeInfoResolver to be set when using Converters together.
+        TypeInfoResolver = new System.Text.Json.Serialization.Metadata.DefaultJsonTypeInfoResolver(),
     };
 
     private readonly string _path;

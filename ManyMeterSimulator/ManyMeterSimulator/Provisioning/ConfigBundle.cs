@@ -209,11 +209,9 @@ public sealed class ConfigBundleService
             Id = p.Id,
             Name = p.Name,
             IsBasePlan = p.IsBasePlan,
-            PushIntervalSec = p.PushIntervalSec,
-            CollectionDurationMin = p.CollectionDurationMin,
             EnvironmentKeys = p.EnvironmentKeys.ToList(),
-            BatchNames = p.BatchIds.Where(nameById.ContainsKey).Select(id => nameById[id]).ToList(),
             LockedFields = p.LockedFields.ToHashSet(),
+            Tasks = p.Tasks.Select(t => ToPortableTask(t, nameById)).ToList(),
         }).ToList();
 
         return Serialize(TestPlansKind, from, portable);
@@ -221,10 +219,6 @@ public sealed class ConfigBundleService
 
     public int PreviewTestPlans(string json) => Parse<List<PortableTestPlan>>(json, TestPlansKind).Count;
 
-    /// <summary>
-    /// Imports test plans, resolving batch names to IDs on this deployment. Non-base plans that
-    /// have batches not found here still import — they just won't have those batch bindings.
-    /// </summary>
     public (int Imported, int Missing) ImportTestPlans(string json)
     {
         var registry = _testPlans ?? throw new InvalidOperationException("TestPlanRegistry is not registered.");
@@ -236,34 +230,60 @@ public sealed class ConfigBundleService
         int missingTotal = 0;
         var resolved = portable.Select(p =>
         {
-            var batchIds = new List<int>();
-            foreach (string name in p.BatchNames)
-            {
-                if (idByName.TryGetValue(name, out int id))
-                {
-                    batchIds.Add(id);
-                }
-                else
-                {
-                    missingTotal++;
-                }
-            }
-
+            var tasks = p.Tasks.Select(t => FromPortableTask(t, idByName, ref missingTotal)).ToList();
             return new TestPlan
             {
                 Id = p.Id,
                 Name = p.Name,
                 IsBasePlan = p.IsBasePlan,
-                PushIntervalSec = p.PushIntervalSec,
-                CollectionDurationMin = p.CollectionDurationMin,
                 EnvironmentKeys = p.EnvironmentKeys,
-                BatchIds = batchIds,
+                Tasks = tasks,
                 LockedFields = p.LockedFields,
             };
         }).ToList();
 
         registry.ImportSnapshot(resolved);
         return (resolved.Count, missingTotal);
+    }
+
+    private static PortableTestTask ToPortableTask(TestTask t, Dictionary<int, string> nameById) => t switch
+    {
+        PushLoopTask loop => new PortableTestTask
+        {
+            TaskId = loop.TaskId, TypeName = "PushLoop", Label = loop.Label,
+            OffsetMinutes = loop.OffsetMinutes, DurationMinutes = loop.DurationMinutes,
+            PushIntervalSec = loop.PushIntervalSec,
+            BatchNames = loop.BatchIds.Where(nameById.ContainsKey).Select(id => nameById[id]).ToList(),
+        },
+        BurstPushTask burst => new PortableTestTask
+        {
+            TaskId = burst.TaskId, TypeName = "BurstPush", Label = burst.Label,
+            OffsetMinutes = burst.OffsetMinutes, DurationMinutes = burst.DurationMinutes,
+            BurstCount = burst.BurstCount,
+            BatchNames = burst.BatchIds.Where(nameById.ContainsKey).Select(id => nameById[id]).ToList(),
+        },
+        _ => new PortableTestTask
+        {
+            TaskId = t.TaskId, TypeName = "PullListener", Label = t.Label,
+            OffsetMinutes = t.OffsetMinutes, DurationMinutes = t.DurationMinutes,
+        },
+    };
+
+    private static TestTask FromPortableTask(PortableTestTask p, Dictionary<string, int> idByName, ref int missing)
+    {
+        var batchIds = new List<int>();
+        foreach (string name in p.BatchNames)
+        {
+            if (idByName.TryGetValue(name, out int id)) batchIds.Add(id);
+            else missing++;
+        }
+
+        return p.TypeName switch
+        {
+            "PushLoop" => new PushLoopTask { TaskId = p.TaskId, Label = p.Label, OffsetMinutes = p.OffsetMinutes, DurationMinutes = p.DurationMinutes, PushIntervalSec = p.PushIntervalSec, BatchIds = batchIds },
+            "BurstPush" => new BurstPushTask { TaskId = p.TaskId, Label = p.Label, OffsetMinutes = p.OffsetMinutes, DurationMinutes = p.DurationMinutes, BurstCount = p.BurstCount, BatchIds = batchIds },
+            _ => new PullListenerTask { TaskId = p.TaskId, Label = p.Label, OffsetMinutes = p.OffsetMinutes, DurationMinutes = p.DurationMinutes },
+        };
     }
 
     // ── Shared ───────────────────────────────────────────────────────────────────────────────────
@@ -387,9 +407,22 @@ public sealed record PortableTestPlan
     public string Id { get; init; } = "";
     public string Name { get; init; } = "";
     public bool IsBasePlan { get; init; }
-    public int PushIntervalSec { get; init; } = 300;
-    public int CollectionDurationMin { get; init; } = 15;
     public List<string> EnvironmentKeys { get; init; } = new();
-    public List<string> BatchNames { get; init; } = new();
     public HashSet<string> LockedFields { get; init; } = new();
+    public List<PortableTestTask> Tasks { get; init; } = new();
+}
+
+public sealed record PortableTestTask
+{
+    public string TaskId { get; init; } = "";
+    public string TypeName { get; init; } = "PushLoop";
+    public string Label { get; init; } = "";
+    public int OffsetMinutes { get; init; }
+    public int DurationMinutes { get; init; } = 15;
+    // PushLoop
+    public int PushIntervalSec { get; init; } = 300;
+    // BurstPush
+    public int BurstCount { get; init; } = 3;
+    // PushLoop + BurstPush
+    public List<string> BatchNames { get; init; } = new();
 }

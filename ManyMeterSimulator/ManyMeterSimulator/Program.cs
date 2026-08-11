@@ -230,6 +230,31 @@ MeterSimulator.Diagnostics.CoreLog.Configure(
                 "Bound {Count} pre-registry MQTT batch(es) to broker '{Broker}'. Change them on the Network page.",
                 migrated, defaultKey);
     }
+
+    // Restore materialized meter sessions for batches that were running before restart.
+    // The batch status is restored from disk but meters are not in memory, so we reload them now.
+    var sessionManager = app.Services.GetRequiredService<MeterSessionManager>();
+    var runningBatches = meterRegistry.Batches.Where(b => b.Status == BatchStatus.Running).ToList();
+    if (runningBatches.Count > 0)
+    {
+        var logger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("ManyMeterSimulator.Startup");
+        _ = Task.Run(async () =>
+        {
+            foreach (var batch in runningBatches)
+            {
+                try
+                {
+                    await sessionManager.MaterializeBatchAsync(batch);
+                    logger.LogInformation("Reloaded {Count} meter sessions for batch {BatchId} ({BatchName}) on startup",
+                        batch.Count, batch.Id, batch.Name);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Failed to reload batch {BatchId} ({BatchName}) on startup", batch.Id, batch.Name);
+                }
+            }
+        });
+    }
 }
 
 if (!app.Environment.IsDevelopment())

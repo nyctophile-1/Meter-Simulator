@@ -22,7 +22,8 @@ public static class TestReportEndpoints
                 if (report is null) return Results.NotFound();
 
                 string json = JsonSerializer.Serialize(report, JsonOpts);
-                string fileName = $"bench-{report.PlanName.Replace(" ", "-").ToLowerInvariant()}-{report.RunId}.json";
+                string label = string.IsNullOrWhiteSpace(report.RunLabel) ? report.PlanName : report.RunLabel;
+                string fileName = $"bench-{label.Replace(" ", "-").ToLowerInvariant()}-{report.RunId}.json";
                 return Results.File(Encoding.UTF8.GetBytes(json), "application/json", fileName);
             })
             .RequireAuthorization(policy => policy.RequireRole(AppRoles.Admin));
