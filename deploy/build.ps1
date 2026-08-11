@@ -131,8 +131,10 @@ try {
 
     Write-Host "`nBuilt $Tarball  for '$Target'  (${sizeMb} MB, $templates templates)" -ForegroundColor Green
     Write-Host "`nNext:" -ForegroundColor Yellow
+    Write-Host '  cd = "C:\Users\ayush\OneDrive\Documents\Development\Sinhal Repos\Meter-Simulator"'
+    Write-Host '  cd = "C:\repos\Simulator\Meter-Simulator"'
     Write-Host '  $KEY = "C:\Users\ayush\OneDrive\Documents\Development\Sinhal Repos\all_creds\maya-sim-test.pem"'
-    Write-Host '  cd "C:\Users\ayush\OneDrive\Documents\Development\Sinhal Repos\Meter-Simulator"'
+    Write-Host '  $KEY = "C:\repos\Creds\ehes-dev2.pem"'
     Write-Host "  scp -i `$KEY publish\maya-sim.tar.gz deploy\host-prep.sh deploy\deploy.sh ubuntu@$($T.SshHost):/tmp/"
     Write-Host "  ssh -i `$KEY ubuntu@$($T.SshHost)"
     # host-prep takes the prefix as an argument now, so the host route always matches the
