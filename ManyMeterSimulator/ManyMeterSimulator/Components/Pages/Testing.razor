@@ -588,6 +588,9 @@
                         @MetricCell("MEDIAN ms", r.OverallMedianMs.ToString("F0"), null)
                         @MetricCell("AVG CPU %", r.AvgCpuPct.ToString("F1") + "%", null)
                         @MetricCell("PEAK RAM MB", r.PeakRamMb.ToString("N0"), null)
+                        @MetricCell("HES REACHED", r.TotalInboundConnections.ToString("N0"), "var(--mud-palette-secondary)")
+                        @MetricCell("HES EXCHANGES", r.TotalInboundExchanges.ToString("N0"), null)
+                        @MetricCell("HES LATENCY ms", r.AvgInboundLatencyMs.ToString("F0"), null)
                     </div>
 
                     @* Task breakdown *@
@@ -686,6 +689,9 @@
                 ("Failed", r=>r.TotalMetersFailed, false, r=>r.TotalMetersFailed.ToString("N0")),
                 ("Avg CPU %", r=>r.AvgCpuPct, false, r=>r.AvgCpuPct.ToString("F1")+"%"),
                 ("Peak RAM MB", r=>r.PeakRamMb, false, r=>r.PeakRamMb.ToString("N0")),
+                ("HES reached (meters)", r=>r.TotalInboundConnections, true, r=>r.TotalInboundConnections.ToString("N0")),
+                ("HES exchanges", r=>r.TotalInboundExchanges, true, r=>r.TotalInboundExchanges.ToString("N0")),
+                ("HES latency ms", r=>r.AvgInboundLatencyMs, false, r=>r.AvgInboundLatencyMs.ToString("F0")),
             };
 
             <div class="sec-head sec-gap">

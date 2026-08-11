@@ -35,6 +35,13 @@ public sealed class TestRunReport
     public double OverallMedianMs { get; init; }
     public double OverallP95Ms { get; init; }
 
+    // HES-side counters captured across the whole run (delta of SimulatorMetrics between
+    // start and end) — cover pull traffic that happens concurrently with a push, which the
+    // per-task push metrics can't see.
+    public long TotalInboundConnections { get; init; }
+    public long TotalInboundExchanges { get; init; }
+    public double AvgInboundLatencyMs { get; init; }
+
     // Per-task breakdown
     public List<TaskRunReport> Tasks { get; init; } = new();
 

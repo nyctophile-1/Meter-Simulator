@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using ManyMeterSimulator.Brain;
+using ManyMeterSimulator.Diagnostics;
 using ManyMeterSimulator.Networking.Nic;
 using ManyMeterSimulator.Networking.Registry;
 using ManyMeterSimulator.Provisioning;
@@ -16,6 +17,7 @@ public sealed class TestRunEngine : IAsyncDisposable
     private readonly NetworkRegistry _network;
     private readonly PushCoordinator _push;
     private readonly MeterSessionManager _sessions;
+    private readonly SimulatorMetrics _simMetrics;
     private readonly TestRunStore _store;
     private readonly ILogger<TestRunEngine> _logger;
 
@@ -29,6 +31,7 @@ public sealed class TestRunEngine : IAsyncDisposable
         NetworkRegistry network,
         PushCoordinator push,
         MeterSessionManager sessions,
+        SimulatorMetrics simMetrics,
         TestRunStore store,
         ILogger<TestRunEngine> logger)
     {
@@ -36,6 +39,7 @@ public sealed class TestRunEngine : IAsyncDisposable
         _network = network;
         _push = push;
         _sessions = sessions;
+        _simMetrics = simMetrics;
         _store = store;
         _logger = logger;
     }
@@ -103,7 +107,7 @@ public sealed class TestRunEngine : IAsyncDisposable
         if (waitFor > TimeSpan.FromSeconds(2))
         {
             try { await Task.Delay(waitFor, ct); }
-            catch (OperationCanceledException) { Finalize(state, Array.Empty<TaskRunResult>(), plan, runLabel, 0, 0, startAt); return; }
+            catch (OperationCanceledException) { Finalize(state, Array.Empty<TaskRunResult>(), plan, runLabel, 0, 0, startAt, _simMetrics.Snapshot(_sessions.LiveMeterCount)); return; }
         }
 
         DateTimeOffset actualStart = DateTimeOffset.UtcNow;
@@ -114,6 +118,10 @@ public sealed class TestRunEngine : IAsyncDisposable
         }
         Changed?.Invoke();
 
+        // Snapshot HES-side counters so we can compute the run-wide delta at finalize —
+        // this is what tells us "how much did HES actually touch us during this run".
+        SimulatorMetricsSnapshot inboundBaseline = _simMetrics.Snapshot(_sessions.LiveMeterCount);
+
         // Launch CPU sampler + all tasks concurrently
         using var cpuSampler = new CpuSampler();
         var taskTasks = plan.Tasks.Select(task => RunTaskAsync(task, actualStart, state, ct)).ToList();
@@ -122,7 +130,7 @@ public sealed class TestRunEngine : IAsyncDisposable
         double avgCpu = cpuSampler.AveragePct;
         double peakRam = GetPeakRamMb();
 
-        Finalize(state, taskResults, plan, runLabel, avgCpu, peakRam, actualStart);
+        Finalize(state, taskResults, plan, runLabel, avgCpu, peakRam, actualStart, inboundBaseline);
     }
 
     private async Task<TaskRunResult> RunTaskAsync(TestTask task, DateTimeOffset runStart, TestRunState state, CancellationToken ct)
@@ -204,13 +212,15 @@ public sealed class TestRunEngine : IAsyncDisposable
 
     private async Task<TaskRunResult> RunPullListenerAsync(PullListenerTask task, DateTimeOffset end, TestRunState state, CancellationToken ct)
     {
-        // Monitor inbound TCP sessions during the window as a proxy for pull activity.
-        int baselineSessions = _sessions.LiveMeterCount;
-        int peakSessions = baselineSessions;
-        int prevLive = baselineSessions;
+        // Real HES activity comes from SimulatorMetrics: TotalAccepted = connections HES opened,
+        // TotalExchanges = DLMS request/response pairs. LiveMeterCount only tracks materialized
+        // session objects which barely move — that's why the old readings were all zero.
+        SimulatorMetricsSnapshot baseline = _simMetrics.Snapshot(_sessions.LiveMeterCount);
+        long baseAccepted = baseline.TotalAccepted;
+        long baseExchanges = baseline.TotalExchanges;
+        int peakConcurrent = _sessions.LiveMeterCount;
         long sumLive = 0;
         int sampleCount = 0;
-        long newSessionsOpened = 0;
         DateTimeOffset taskStart = DateTimeOffset.UtcNow;
         var pollInterval = TimeSpan.FromSeconds(5);
 
@@ -220,27 +230,36 @@ public sealed class TestRunEngine : IAsyncDisposable
             catch (OperationCanceledException) { break; }
 
             int live = _sessions.LiveMeterCount;
-            if (live > peakSessions) peakSessions = live;
+            if (live > peakConcurrent) peakConcurrent = live;
             sumLive += live;
             sampleCount++;
-            // count sessions that newly connected since last sample
-            if (live > prevLive) newSessionsOpened += live - prevLive;
-            prevLive = live;
 
+            SimulatorMetricsSnapshot poll = _simMetrics.Snapshot(live);
+            long connsSoFar = poll.TotalAccepted - baseAccepted;
+            long reqsSoFar = poll.TotalExchanges - baseExchanges;
             lock (_lock)
-                state.LastSummary = $"[{task.DisplayLabel}] {live} active sessions (peak: {peakSessions})";
+                state.LastSummary = $"[{task.DisplayLabel}] {connsSoFar} conn · {reqsSoFar} req (avg {poll.AvgBridgeLatency.TotalMilliseconds:F0}ms) · {live} live";
             Changed?.Invoke();
         }
 
-        double elapsedMin = Math.Max(0.1, (DateTimeOffset.UtcNow - taskStart).TotalMinutes);
-        double avgConcurrent = sampleCount > 0 ? (double)sumLive / sampleCount : baselineSessions;
-        double sessionRate = newSessionsOpened / elapsedMin;
+        SimulatorMetricsSnapshot endSnap = _simMetrics.Snapshot(_sessions.LiveMeterCount);
+        long deltaAccepted = Math.Max(0, endSnap.TotalAccepted - baseAccepted);
+        long deltaExchanges = Math.Max(0, endSnap.TotalExchanges - baseExchanges);
 
-        int pullsReceived = Math.Max(0, peakSessions - baselineSessions);
+        double elapsedMin = Math.Max(0.1, (DateTimeOffset.UtcNow - taskStart).TotalMinutes);
+        double avgConcurrent = sampleCount > 0 ? (double)sumLive / sampleCount : peakConcurrent;
+        double sessionRate = deltaAccepted / elapsedMin;
+
+        // Bridge latency is a lifetime average — for a window-scoped p95-ish figure, use it as-is when
+        // the window's traffic dominates; if virtually nothing happened before this task, this is
+        // already the window's number. Better than the old 0.
+        double avgLatencyMs = endSnap.AvgBridgeLatency.TotalMilliseconds;
+
         return new TaskRunResult(task,
-            pullsReceived: pullsReceived,
-            pullsAnswered: pullsReceived,
-            peakConcurrent: peakSessions,
+            pullsReceived: (int)Math.Min(int.MaxValue, deltaAccepted),
+            pullsAnswered: (int)Math.Min(int.MaxValue, deltaExchanges),
+            pullP95Ms: avgLatencyMs,
+            peakConcurrent: peakConcurrent,
             avgConcurrent: avgConcurrent,
             sessionRatePerMin: sessionRate);
     }
@@ -314,7 +333,8 @@ public sealed class TestRunEngine : IAsyncDisposable
         string runLabel,
         double avgCpu,
         double peakRam,
-        DateTimeOffset startUtc)
+        DateTimeOffset startUtc,
+        SimulatorMetricsSnapshot inboundBaseline)
     {
         DateTimeOffset endUtc = DateTimeOffset.UtcNow;
         TestRunStatus finalStatus;
@@ -332,6 +352,12 @@ public sealed class TestRunEngine : IAsyncDisposable
 
         double elapsedMin = Math.Max(1, (endUtc - startUtc).TotalMinutes);
         double systemFactor = ComputeSystemFactor(avgCpu);
+
+        // HES-side delta across the whole run: how much did HES actually touch us?
+        SimulatorMetricsSnapshot inboundEnd = _simMetrics.Snapshot(_sessions.LiveMeterCount);
+        long inboundConns = Math.Max(0, inboundEnd.TotalAccepted - inboundBaseline.TotalAccepted);
+        long inboundExchanges = Math.Max(0, inboundEnd.TotalExchanges - inboundBaseline.TotalExchanges);
+        double inboundLatencyMs = inboundEnd.AvgBridgeLatency.TotalMilliseconds;
 
         // Build per-task reports
         var taskReports = taskResults.Select(r => BuildTaskReport(r, elapsedMin)).ToList();
@@ -352,7 +378,10 @@ public sealed class TestRunEngine : IAsyncDisposable
         double overallMedian = Percentile(allDurations, 50);
         double overallP95 = Percentile(allDurations, 95);
 
-        int rawScore = (int)Math.Round(taskReports.Sum(t => t.TaskScore) * systemFactor);
+        // HES-side traffic factors into the score even for push-only plans: a HES that pulled
+        // ~500 exchanges/min while we pushed is doing real work and should show up on the board.
+        double inboundBonus = (inboundExchanges * 5.0) + (inboundConns * 15.0);
+        int rawScore = (int)Math.Round((taskReports.Sum(t => t.TaskScore) + inboundBonus) * systemFactor);
         int normalizedScore = taskReports.Count == 0 ? 0 : rawScore / taskReports.Count;
 
         // Per-environment aggregates
@@ -417,6 +446,9 @@ public sealed class TestRunEngine : IAsyncDisposable
             OverallThroughputPerMin = overallThroughput,
             OverallMedianMs = overallMedian,
             OverallP95Ms = overallP95,
+            TotalInboundConnections = inboundConns,
+            TotalInboundExchanges = inboundExchanges,
+            AvgInboundLatencyMs = Math.Round(inboundLatencyMs, 1),
             Tasks = taskReports,
             Environments = envReports,
         };
