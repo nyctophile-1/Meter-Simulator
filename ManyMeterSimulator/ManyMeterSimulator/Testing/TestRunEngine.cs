@@ -84,7 +84,10 @@ public sealed class TestRunEngine : IAsyncDisposable
         {
             cts = _cts;
             if (_active is { Status: TestRunStatus.Scheduled or TestRunStatus.Running } s)
+            {
                 s.Status = TestRunStatus.Cancelled;
+                s.EndUtc = DateTimeOffset.UtcNow;
+            }
         }
 
         cts?.Cancel();
@@ -322,6 +325,7 @@ public sealed class TestRunEngine : IAsyncDisposable
                 ? state.Status
                 : TestRunStatus.Completed;
             state.Status = finalStatus;
+            state.EndUtc ??= endUtc;
             _cts?.Dispose();
             _cts = null;
         }

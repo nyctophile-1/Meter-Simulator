@@ -63,6 +63,8 @@
     .job-fill { height:100%; border-radius:2px; transition:width .8s ease; }
     .job-fill.running { background:linear-gradient(90deg,var(--mud-palette-primary) 0%,color-mix(in srgb,var(--mud-palette-primary) 50%,white) 50%,var(--mud-palette-primary) 100%); background-size:200% 100%; animation:shimmer 1.6s linear infinite; }
     .job-fill.done { background:var(--mud-palette-success); }
+    .job-fill.stopped { background:var(--mud-palette-error); opacity:.75; }
+    .icon-stop { width:14px; height:14px; border-radius:3px; background:var(--mud-palette-error); opacity:.85; }
 
     .job-dur { font-size:.72rem; color:var(--mud-palette-text-secondary); font-family:ui-monospace,monospace; white-space:nowrap; flex-shrink:0; padding-left:8px; }
 
@@ -151,6 +153,24 @@
     .cancel-btn-sm { display:inline-flex; align-items:center; justify-content:center; padding:4px 12px; border-radius:5px; border:1px solid var(--mud-palette-error); color:var(--mud-palette-error); font-size:.78rem; font-weight:600; cursor:pointer; background:transparent; transition:background .12s; }
     .cancel-btn-sm:hover { background:color-mix(in srgb,var(--mud-palette-error) 8%,transparent); }
 
+    /* ── Run status pill + progress bar: bar & pill share a color so they read as one unit ── */
+    .run-status { display:inline-flex; align-items:center; gap:6px; padding:3px 10px; border-radius:11px; font-size:.68rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em; white-space:nowrap; }
+    .run-status .dot { width:7px; height:7px; border-radius:50%; background:currentColor; }
+    .run-status.running { color:var(--mud-palette-primary); background:color-mix(in srgb,var(--mud-palette-primary) 12%,transparent); }
+    .run-status.running .dot { animation:pulse 1.2s ease-in-out infinite; }
+    .run-status.scheduled { color:var(--mud-palette-text-secondary); background:color-mix(in srgb,var(--mud-palette-text-secondary) 12%,transparent); }
+    .run-status.completed { color:var(--mud-palette-success); background:color-mix(in srgb,var(--mud-palette-success) 14%,transparent); }
+    .run-status.cancelled, .run-status.failed { color:var(--mud-palette-error); background:color-mix(in srgb,var(--mud-palette-error) 12%,transparent); }
+
+    .run-bar-wrap { min-width:140px; max-width:220px; flex:1; }
+    .run-bar { height:6px; background:var(--mud-palette-lines-default); border-radius:3px; overflow:hidden; position:relative; }
+    .run-bar-fill { height:100%; border-radius:3px; transition:width .8s ease; }
+    .run-bar-fill.running { background:linear-gradient(90deg,var(--mud-palette-primary) 0%,color-mix(in srgb,var(--mud-palette-primary) 40%,white) 50%,var(--mud-palette-primary) 100%); background-size:200% 100%; animation:shimmer 1.6s linear infinite; }
+    .run-bar-fill.scheduled { background:var(--mud-palette-text-secondary); opacity:.35; }
+    .run-bar-fill.completed { background:var(--mud-palette-success); }
+    .run-bar-fill.cancelled, .run-bar-fill.failed { background:var(--mud-palette-error); opacity:.75; }
+    .run-bar-pct { display:flex; justify-content:space-between; font-size:.62rem; font-family:ui-monospace,monospace; color:var(--mud-palette-text-secondary); margin-top:3px; }
+
     @@media (max-width:700px) {
         .cmp-grid { grid-template-columns:minmax(90px,1fr) minmax(0,1fr) minmax(0,1fr); }
         .cmp-label, .cmp-cell, .cmp-corner, .cmp-head-cell { padding-left:10px; padding-right:10px; }
@@ -162,16 +182,25 @@
 @* ─── Active run: GitHub-style pipeline ─── *@
 @if (_activeRun is { } run)
 {
-    string elapsed = FormatDuration((DateTimeOffset.UtcNow - (run.ActualStartUtc ?? run.ScheduledStartUtc)));
+    DateTimeOffset elapsedUntil = run.EndUtc ?? DateTimeOffset.UtcNow;
+    string elapsed = FormatDuration(elapsedUntil - (run.ActualStartUtc ?? run.ScheduledStartUtc));
     <div style="overflow-x:hidden;max-width:100%;">
     <div class="wf-card mb-5">
+        @{
+            string statusCls = run.Status.ToString().ToLowerInvariant();
+            // Cancelled/Failed freeze the bar wherever it was; Completed pins it to 100.
+            double barPct = run.Status switch
+            {
+                TestRunStatus.Completed => 100,
+                TestRunStatus.Scheduled => 0,
+                _ => run.ElapsedPct,
+            };
+        }
         <div class="wf-header">
             <div style="flex:1;min-width:0;">
-                <div class="wf-title">
-                    @(string.IsNullOrWhiteSpace(run.RunLabel) ? run.PlanName : run.RunLabel)
-                    <span style="margin-left:6px;@(run.Status==TestRunStatus.Running?"color:var(--mud-palette-success)":"color:var(--mud-palette-text-secondary)")">
-                        ● @run.Status
-                    </span>
+                <div class="wf-title" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                    <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;">@(string.IsNullOrWhiteSpace(run.RunLabel) ? run.PlanName : run.RunLabel)</span>
+                    <span class="run-status @statusCls"><span class="dot"></span>@run.Status</span>
                 </div>
                 @if (run.Status == TestRunStatus.Scheduled)
                 {
@@ -186,17 +215,20 @@
                     <div class="wf-meta" style="margin-top:2px;">@run.LastSummary</div>
                 }
             </div>
-            <div style="display:flex;align-items:center;gap:10px;">
-                @if (run.Status is TestRunStatus.Scheduled or TestRunStatus.Running)
-                {
-                    <div style="width:120px;">
-                        <div style="height:4px;background:var(--mud-palette-lines-default);border-radius:2px;overflow:hidden;">
-                            <div style="height:100%;width:@run.ElapsedPct.ToString("F0")%;border-radius:2px;background:var(--mud-palette-primary);transition:width 1s ease;"></div>
-                        </div>
-                    </div>
-                    <button class="cancel-btn-sm" @onclick="CancelRun">Cancel</button>
-                }
+            @* Progress bar is ALWAYS shown so status pill + bar stay visually connected across every state. *@
+            <div class="run-bar-wrap">
+                <div class="run-bar">
+                    <div class="run-bar-fill @statusCls" style="width:@barPct.ToString("F0")%"></div>
+                </div>
+                <div class="run-bar-pct">
+                    <span>@barPct.ToString("F0")%</span>
+                    <span>@(run.Status == TestRunStatus.Completed ? "done" : run.Status == TestRunStatus.Cancelled ? "stopped" : run.Status == TestRunStatus.Failed ? "failed" : $"{run.TotalDurationMinutes}m total")</span>
+                </div>
             </div>
+            @if (run.Status is TestRunStatus.Scheduled or TestRunStatus.Running)
+            {
+                <button class="cancel-btn-sm" @onclick="CancelRun" style="flex-shrink:0;">Cancel</button>
+            }
         </div>
         @foreach (TestTask task in ActivePlan?.Tasks ?? (IList<TestTask>)Array.Empty<TestTask>())
         {
@@ -206,6 +238,7 @@
                 <div class="job-icon">
                     @if (phase == TaskPhase.Running) { <div class="icon-spin"></div> }
                     else if (phase == TaskPhase.Done) { <div class="icon-ok"></div> }
+                    else if (phase == TaskPhase.Stopped) { <div class="icon-stop"></div> }
                     else { <div class="icon-ring"></div> }
                 </div>
                 <div class="job-body">
@@ -220,12 +253,13 @@
                     <div class="job-sub">
                         @if (phase == TaskPhase.Waiting) { <text>waiting&nbsp;·&nbsp;starts in @(task.OffsetMinutes) min</text> }
                         else if (phase == TaskPhase.Running) { <text>running&nbsp;·&nbsp;@task.DurationMinutes min window&nbsp;·&nbsp;@(pct.ToString("F0"))% complete</text> }
+                        else if (phase == TaskPhase.Stopped) { <text>stopped&nbsp;·&nbsp;@(pct.ToString("F0"))% before cancel</text> }
                         else { <text>done</text> }
                     </div>
                     @if (phase != TaskPhase.Waiting)
                     {
                         <div class="job-track">
-                            <div class="job-fill @(phase == TaskPhase.Running ? "running" : "done")" style="width:@pct.ToString("F0")%"></div>
+                            <div class="job-fill @(phase == TaskPhase.Running ? "running" : phase == TaskPhase.Stopped ? "stopped" : "done")" style="width:@pct.ToString("F0")%"></div>
                         </div>
                     }
                 </div>
@@ -1119,21 +1153,30 @@
             .OrderBy(g => g.PlanName).ToList();
 
     // Pipeline helpers
-    private enum TaskPhase { Waiting, Running, Done }
+    private enum TaskPhase { Waiting, Running, Done, Stopped }
 
     private static TaskPhase GetTaskPhase(TestTask task, TestRunState run)
     {
         if (run.Status == TestRunStatus.Scheduled || run.ActualStartUtc is null) return TaskPhase.Waiting;
-        double elapsed = (DateTimeOffset.UtcNow - run.ActualStartUtc.Value).TotalMinutes;
-        if (elapsed < task.OffsetMinutes) return TaskPhase.Waiting;
+        // A cleanly completed run means every task ran to conclusion — burst tasks legitimately
+        // return early once their burst count is done, so wall-clock elapsed isn't the truth here.
+        if (run.Status == TestRunStatus.Completed) return TaskPhase.Done;
+
+        DateTimeOffset until = run.EndUtc ?? DateTimeOffset.UtcNow;
+        double elapsed = (until - run.ActualStartUtc.Value).TotalMinutes;
+        if (elapsed < task.OffsetMinutes)
+            return run.Status == TestRunStatus.Running ? TaskPhase.Waiting : TaskPhase.Stopped;
         if (elapsed >= task.EndsAtMinute) return TaskPhase.Done;
-        return TaskPhase.Running;
+        // Mid-task at the freeze point: running if still live, stopped if the run was cancelled/failed.
+        return run.Status == TestRunStatus.Running ? TaskPhase.Running : TaskPhase.Stopped;
     }
 
     private static double GetTaskPct(TestTask task, TestRunState run)
     {
         if (run.ActualStartUtc is null) return 0;
-        double elapsed = (DateTimeOffset.UtcNow - run.ActualStartUtc.Value).TotalMinutes - task.OffsetMinutes;
+        if (run.Status == TestRunStatus.Completed) return 100;
+        DateTimeOffset until = run.EndUtc ?? DateTimeOffset.UtcNow;
+        double elapsed = (until - run.ActualStartUtc.Value).TotalMinutes - task.OffsetMinutes;
         return elapsed < 0 ? 0 : Math.Min(100, elapsed / task.DurationMinutes * 100);
     }
 

@@ -135,6 +135,9 @@ public sealed class TestRunState
     public TestRunStatus Status { get; set; }
     public DateTimeOffset ScheduledStartUtc { get; init; }
     public DateTimeOffset? ActualStartUtc { get; set; }
+    /// <summary>Set when the run ends (completed, cancelled, or failed) so the header freezes at
+    /// the elapsed % it reached instead of ticking forever off wall-clock.</summary>
+    public DateTimeOffset? EndUtc { get; set; }
     public int TotalDurationMinutes { get; init; }
     public string? LastSummary { get; set; }
 
@@ -143,8 +146,9 @@ public sealed class TestRunState
         get
         {
             if (ActualStartUtc is null || TotalDurationMinutes <= 0) return 0;
+            DateTimeOffset until = EndUtc ?? DateTimeOffset.UtcNow;
             return Math.Min(100,
-                (DateTimeOffset.UtcNow - ActualStartUtc.Value).TotalMinutes * 100.0 / TotalDurationMinutes);
+                (until - ActualStartUtc.Value).TotalMinutes * 100.0 / TotalDurationMinutes);
         }
     }
 }
