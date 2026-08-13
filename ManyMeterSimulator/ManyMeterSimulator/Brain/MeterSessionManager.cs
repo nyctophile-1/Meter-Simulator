@@ -160,16 +160,17 @@ public sealed class MeterSessionManager
     public async Task<IReadOnlyList<(MeterRef Meter, DLMSServerSession Session)>> MaterializeBatchAsync(
         MeterBatch batch,
         IProgress<BatchMaterializationProgress>? progress = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        int? maximumMeters = null)
     {
         var result = new List<(MeterRef, DLMSServerSession)>();
-        long total = batch.EndIndex - batch.StartIndex + 1;
+        long total = Math.Min(batch.EndIndex - batch.StartIndex + 1, Math.Max(0, maximumMeters ?? int.MaxValue));
         long count = 0;
         int chunkSize = 500;
 
         await Task.Yield();
 
-        for (long index = batch.StartIndex; index <= batch.EndIndex; index++)
+        for (long index = batch.StartIndex; count < total; index++)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var meter = new MeterRef(index, batch.NicType);

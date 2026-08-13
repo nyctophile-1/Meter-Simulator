@@ -277,14 +277,12 @@
 <div class="tab-content">
     <div class="sec-head">
         <div style="min-width:0;">
-            <div class="sec-title">Test plans</div>
-            <div class="sec-sub">Jobs inside a plan run concurrently. Session length = latest job end time. Max 2 environments per plan.</div>
+            <div class="sec-title">Base tests</div>
+            <div class="sec-sub">The two standard benchmarks. Configure environment and batches before each run.</div>
         </div>
-        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
-                   StartIcon="@Icons.Material.Filled.Add" OnClick="OpenAddPlan">New plan</MudButton>
     </div>
 
-    @foreach (TestPlan plan in _plans)
+    @foreach (TestPlan plan in _plans.Where(p => p.IsBasePlan))
     {
         <div class="wf-card mb-4">
             <div class="wf-header">
@@ -300,18 +298,16 @@
                         @plan.Tasks.Count job(s) &nbsp;·&nbsp; @plan.TotalDurationMinutes min session
                         @if (plan.EnvironmentKeys.Count > 0) { <text>&nbsp;·&nbsp; @string.Join(", ", plan.EnvironmentKeys)</text> }
                     </div>
+                    <div class="wf-meta" style="margin-top:4px;">
+                        Environments: @(plan.EnvironmentKeys.Count == 0 ? "not configured" : string.Join(", ", plan.EnvironmentKeys))
+                    </div>
                 </div>
                 <div class="wf-actions">
                     <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Success"
-                               Disabled="@(_testRunActive||plan.Tasks.Count==0)"
+                               Disabled="@(_testRunActive||plan.Tasks.Count==0||BaseConfigurationError(plan) is not null)"
                                OnClick="@(()=>OpenRunDialog(plan))">Run</MudButton>
                     <MudButton Size="Size.Small" Variant="Variant.Outlined"
                                OnClick="@(()=>OpenEditPlan(plan))">Edit</MudButton>
-                    @if (!plan.IsBasePlan)
-                    {
-                        <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Error"
-                                   OnClick="@(()=>DeletePlan(plan))">Delete</MudButton>
-                    }
                 </div>
             </div>
 
@@ -332,12 +328,34 @@
                             </div>
                             <div class="job-sub">
                                 @TaskDetails(task)
+                                &nbsp;·&nbsp; batches: @BatchSummary(task)
                                 &nbsp;·&nbsp; @(task.OffsetMinutes==0?"immediate":$"+{task.OffsetMinutes} min offset")
                                 &nbsp;·&nbsp; @task.DurationMinutes min
                             </div>
                         </div>
                     </div>
                 }
+            }
+        </div>
+    }
+    <div class="sec-head" style="margin-top:28px;">
+        <div style="min-width:0;"><div class="sec-title">Custom plans</div><div class="sec-sub">Create ad-hoc scenarios. Their results remain visible, but Base tests are shown first.</div></div>
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenAddPlan">Add custom plan</MudButton>
+    </div>
+    @foreach (TestPlan plan in _plans.Where(p => !p.IsBasePlan))
+    {
+        <div class="wf-card mb-4">
+            <div class="wf-header">
+                <div style="flex:1;min-width:0;"><div class="wf-title">@plan.DisplayName</div></div>
+                <div class="wf-actions">
+                    <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Success" Disabled="@(_testRunActive||plan.Tasks.Count==0)" OnClick="@(()=>OpenRunDialog(plan))">Run</MudButton>
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="@(()=>OpenEditPlan(plan))">Edit</MudButton>
+                    <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Error" OnClick="@(()=>DeletePlan(plan))">Delete</MudButton>
+                </div>
+            </div>
+            @foreach (TestTask task in plan.Tasks)
+            {
+                <div class="job-row"><div class="job-icon"><div class="icon-ring"></div></div><div class="job-body"><div class="job-name">@task.DisplayLabel <span class="tbadge @TaskBadgeClass(task.Type)">@task.Type</span></div><div class="job-sub">@TaskDetails(task)</div></div></div>
             }
         </div>
     }
@@ -366,8 +384,8 @@
                 <div class="result-check"></div>
                 <div class="result-info">Run</div>
                 <div class="result-scores">
-                    <div class="result-score">Raw</div>
-                    <div class="result-score">Norm</div>
+                    <div class="result-score">Best min</div>
+                    <div class="result-score">Avg min</div>
                     <div class="result-score wide opt">Success</div>
                 </div>
                 <span class="result-status" style="background:transparent;">Status</span>
@@ -416,11 +434,11 @@
     else
     {
         <div class="sec-head">
-            <span class="sec-title">Leaderboard</span>
-            <span class="sec-sub">ranked by raw score &nbsp;·&nbsp; click a row to inspect or compare</span>
+            <span class="sec-title">Base leaderboards</span>
+            <span class="sec-sub">Test Pull and Test Push only &nbsp;·&nbsp; ranked by best one-minute score</span>
         </div>
         @* "Global" spans all plans — it has no meaning once a plan filter is on *@
-        @if (_filterPlans.Count == 0)
+        @if (false)
         {
             <div class="wf-card mb-4">
                 <div class="wf-header"><span class="wf-title">Global &mdash; top 10</span></div>
@@ -486,7 +504,7 @@
     <div class="sec-head">
         <div style="min-width:0;">
             <div class="sec-title">On-demand push</div>
-            <div class="sec-sub">Ad-hoc checks against a live batch. For a scored, comparable one-shot push, run the <b>Quick Push</b> plan instead.</div>
+            <div class="sec-sub">Ad-hoc checks against a live batch. Base results come from the <b>Test Push</b> plan.</div>
         </div>
         <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Loop"
                    OnClick="OpenLoopDialog" Disabled="@_testRunActive">Loop push</MudButton>
@@ -580,8 +598,8 @@
                     </div>
 
                     <div class="metrics-strip">
-                        @MetricCell("RAW SCORE", r.RawBenchScore.ToString("N0"), "var(--mud-palette-success)")
-                        @MetricCell("NORM SCORE", r.NormalizedBenchScore.ToString("N0"), null)
+                        @MetricCell("BEST MINUTE", r.BestMinuteScore.ToString("N0"), "var(--mud-palette-success)")
+                        @MetricCell("AVG MINUTE", r.AverageMinuteScore.ToString("N0"), null)
                         @MetricCell("SUCCESS", r.OverallSuccessRatePct.ToString("F1") + "%", null)
                         @MetricCell("THROUGHPUT /min", r.OverallThroughputPerMin.ToString("F0"), null)
                         @MetricCell("P95 ms", r.OverallP95Ms.ToString("F0"), null)
@@ -590,8 +608,17 @@
                         @MetricCell("PEAK RAM MB", r.PeakRamMb.ToString("N0"), null)
                         @MetricCell("HES REACHED", r.TotalInboundConnections.ToString("N0"), "var(--mud-palette-secondary)")
                         @MetricCell("HES EXCHANGES", r.TotalInboundExchanges.ToString("N0"), null)
+                        @MetricCell("HES AVG EPS", r.AverageInboundExchangesPerSecond.ToString("F2"), "var(--mud-palette-secondary)")
+                        @MetricCell("HES PEAK EPS", r.PeakInboundExchangesPerSecond.ToString("F2"), "var(--mud-palette-success)")
                         @MetricCell("HES LATENCY ms", r.AvgInboundLatencyMs.ToString("F0"), null)
                     </div>
+
+                    @if (r.OfficialBenchmarkProfileApplied)
+                    {
+                        <MudAlert Severity="Severity.Info" Dense="true" Variant="Variant.Outlined" Class="mb-3">
+                            Base profile: BadComm and non-comm disabled; network delay randomized from @r.NetworkDelayLowerMs–@r.NetworkDelayUpperMs ms. The previous runtime settings were restored after the run.
+                        </MudAlert>
+                    }
 
                     @* Task breakdown *@
                     @if (r.Tasks.Count > 0)
@@ -787,7 +814,6 @@
         <MudTextField T="string" @bind-Value="_runLabel" Label="Run label" Immediate="true"
                       Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-3"
                       HelperText="Appears in results and the downloaded filename." />
-        <MudNumericField T="int" @bind-Value="_runDelay" Label="Start delay (min)" Variant="Variant.Outlined" Margin="Margin.Dense" Min="0" Max="120" />
         @if (_runPlan is not null)
         {
             <MudText Typo="Typo.caption" Class="mud-text-secondary mt-2 d-block">
@@ -820,7 +846,7 @@
         @if (_planLocked)
         {
             <MudAlert Severity="Severity.Info" Dense="true" Variant="Variant.Outlined" Class="mb-3">
-                Plan shape is locked so re-runs stay comparable. You can change environments and each job's batches &mdash; not the job list, timings, or type. Create a new plan for a different shape.
+                Plan shape is locked so re-runs stay comparable. You can change environments, selected batches, and duration — not the job list or type.
             </MudAlert>
         }
 
@@ -891,19 +917,22 @@
             {
                 <MudItem xs="12">
                     <MudAlert Severity="Severity.Info" Dense="true" Variant="Variant.Outlined">
-                        Only batches can be changed on an existing plan &mdash; timings and type are locked to keep runs comparable.
+                        Batches and duration can be changed; the task type and timing shape are locked.
                     </MudAlert>
                 </MudItem>
             }
             <MudItem xs="12">
                 <MudTextField T="string" @bind-Value="_taskLabel" Label="Label (optional)" Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@_planLocked" />
             </MudItem>
-            <MudItem xs="6">
-                <MudNumericField T="int" @bind-Value="_taskOffset" Label="Offset (min)" Variant="Variant.Outlined" Margin="Margin.Dense" Min="0" Max="240" Disabled="@_planLocked" />
-            </MudItem>
-            <MudItem xs="6">
-                <MudNumericField T="int" @bind-Value="_taskDuration" Label="Duration (min)" Variant="Variant.Outlined" Margin="Margin.Dense" Min="1" Max="480" Disabled="@_planLocked" />
-            </MudItem>
+            @if (!(_editingOfficial && _taskType == TestTaskType.BurstPush))
+            {
+                <MudItem xs="6">
+                    <MudNumericField T="int" @bind-Value="_taskOffset" Label="Offset (min)" Variant="Variant.Outlined" Margin="Margin.Dense" Min="0" Max="240" Disabled="@_planLocked" />
+                </MudItem>
+                <MudItem xs="6">
+                    <MudNumericField T="int" @bind-Value="_taskDuration" Label="Duration (min)" Variant="Variant.Outlined" Margin="Margin.Dense" Min="1" Max="480" Disabled="@(_planLocked && !_editingOfficial)" />
+                </MudItem>
+            }
 
             @if (_taskType == TestTaskType.PushLoop)
             {
@@ -922,13 +951,18 @@
                     <MudNumericField T="int" @bind-Value="_taskBursts" Label="Burst count" Variant="Variant.Outlined" Margin="Margin.Dense" Min="1" Max="20" Disabled="@_planLocked" />
                 </MudItem>
                 <MudItem xs="12">
-                    <MudSelect T="int" @bind-SelectedValues="_taskBatches" Label="Batches" MultiSelection="true" Variant="Variant.Outlined" Margin="Margin.Dense">
-                        @foreach (MeterBatch b in _batches) { <MudSelectItem T="int" Value="@b.Id">@b.Name (@NicLabel(b.NicType), @b.Count.ToString("N0"))</MudSelectItem> }
+                    <MudSelect T="int" @bind-SelectedValues="_taskBatches" Label="Batches (at least 100,000 meters)" MultiSelection="true" Variant="Variant.Outlined" Margin="Margin.Dense">
+                        @foreach (MeterBatch b in _batches.Where(b => b.Count >= 100_000)) { <MudSelectItem T="int" Value="@b.Id">@b.Name (@NicLabel(b.NicType), @b.Count.ToString("N0"))</MudSelectItem> }
                     </MudSelect>
                 </MudItem>
             }
             else
             {
+                <MudItem xs="12">
+                    <MudSelect T="int" @bind-SelectedValues="_taskBatches" Label="Expected pull batches" MultiSelection="true" Variant="Variant.Outlined" Margin="Margin.Dense">
+                        @foreach (MeterBatch b in _batches) { <MudSelectItem T="int" Value="@b.Id">@b.Name (@NicLabel(b.NicType), @b.Count.ToString("N0"))</MudSelectItem> }
+                    </MudSelect>
+                </MudItem>
                 <MudItem xs="12">
                     <MudAlert Severity="Severity.Info" Dense="true" Variant="Variant.Outlined">
                         Monitors inbound TCP sessions during its window. Score weight is 1.3× higher than push tasks.
@@ -983,12 +1017,12 @@
     private bool _runOpen;
     private TestPlan? _runPlan;
     private string _runLabel = "";
-    private int _runDelay;
 
     // Plan dialog
     private bool _planOpen;
     private bool _editingPlan;
     private bool _editingBase;
+    private bool _editingOfficial;
     /// <summary>True while editing an existing plan: its shape is frozen so re-runs stay
     /// apples-to-apples. Only environments and per-job batch selection may change.</summary>
     private bool _planLocked;
@@ -1008,6 +1042,7 @@
     private int _taskDuration = 15;
     private int _taskInterval = 300;
     private int _taskBursts = 3;
+    private int? _taskMetersPerBatch;
     private IReadOnlyCollection<int> _taskBatches = Array.Empty<int>();
 
     private TestPlan? ActivePlan =>
@@ -1049,7 +1084,7 @@
         _activeRun = RunEngine.ActiveRun; _testRunActive = false;
         Refresh(); StateHasChanged();
         // no auto-download — the report is in Results, download it from there if wanted
-        Snackbar.Add($"Run complete — Raw {report.RawBenchScore:N0} / Norm {report.NormalizedBenchScore:N0}", Severity.Success);
+        Snackbar.Add($"Run complete — best minute {report.BestMinuteScore:N0} / average {report.AverageMinuteScore:N0}", Severity.Success);
     });
 
     // Push
@@ -1058,6 +1093,12 @@
         _pushingBatchIds.Add(batchId);
         try
         {
+            if (_editingOfficial && _planTasks.OfType<BurstPushTask>().Any()
+                && _planTasks.OfType<BurstPushTask>().SelectMany(t => t.BatchIds).Any(id => _batches.FirstOrDefault(b => b.Id == id)?.Count < 100_000))
+            {
+                _planError = "Test Push requires selected batches of at least 100,000 meters.";
+                return;
+            }
             PushBatchResult r = await Push.PushBatchAsync(batchId);
             if (!r.Ok) Snackbar.Add(r.Error ?? "Push failed.", Severity.Error);
             else if (r.Failed == 0) Snackbar.Add($"Pushed {r.Sent}/{r.Total}.", Severity.Success);
@@ -1072,19 +1113,19 @@
     private void StopLoop() { Schedule.Stop(); }
 
     // Run
-    private void OpenRunDialog(TestPlan plan) { _runPlan = plan; _runLabel = ""; _runDelay = 0; _runOpen = true; }
+    private void OpenRunDialog(TestPlan plan) { _runPlan = plan; _runLabel = ""; _runOpen = true; }
     private void StartRun()
     {
         if (_runPlan is null) return;
-        DateTimeOffset at = _runDelay > 0 ? DateTimeOffset.UtcNow.AddMinutes(_runDelay) : DateTimeOffset.UtcNow;
+        DateTimeOffset at = DateTimeOffset.UtcNow;
         try { RunEngine.ScheduleRun(_runPlan, _runLabel, at); _runOpen = false; Snackbar.Add("Run started.", Severity.Info); }
         catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
     }
     private void CancelRun() { RunEngine.Cancel(); }
 
     // Plans
-    private void OpenAddPlan() { _editingPlan = false; _editingBase = false; _planLocked = false; _planId = null; _planName = ""; _planEnvs = Array.Empty<string>(); _planTasks = new(); _planError = null; _planOpen = true; }
-    private void OpenEditPlan(TestPlan p) { _editingPlan = true; _editingBase = p.IsBasePlan; _planLocked = true; _planId = p.Id; _planName = p.Name; _planEnvs = p.EnvironmentKeys.ToList(); _planTasks = p.Tasks.ToList(); _planError = null; _planOpen = true; }
+    private void OpenAddPlan() { _editingPlan = false; _editingBase = false; _editingOfficial = false; _planLocked = false; _planId = null; _planName = ""; _planEnvs = Array.Empty<string>(); _planTasks = new(); _planError = null; _planOpen = true; }
+    private void OpenEditPlan(TestPlan p) { _editingPlan = true; _editingBase = p.IsBasePlan; _editingOfficial = p.IsOfficial; _planLocked = true; _planId = p.Id; _planName = p.Name; _planEnvs = p.EnvironmentKeys.ToList(); _planTasks = p.Tasks.ToList(); _planError = null; _planOpen = true; }
 
     private void SavePlan()
     {
@@ -1097,7 +1138,7 @@
             {
                 TestPlan? ex = TestPlans.Plan(_planId);
                 if (ex is null) { _planError = "Not found."; return; }
-                TestPlans.UpdatePlan(new TestPlan { Id = ex.Id, Name = _editingBase ? ex.Name : _planName, IsBasePlan = ex.IsBasePlan, EnvironmentKeys = _planEnvs.ToList(), Tasks = _planTasks.ToList(), LockedFields = ex.LockedFields, CreatedAtUtc = ex.CreatedAtUtc });
+                TestPlans.UpdatePlan(new TestPlan { Id = ex.Id, Name = _editingBase ? ex.Name : _planName, IsBasePlan = ex.IsBasePlan, OfficialKind = ex.OfficialKind, EnvironmentKeys = _planEnvs.ToList(), Tasks = _planTasks.ToList(), LockedFields = ex.LockedFields, CreatedAtUtc = ex.CreatedAtUtc });
             }
             else
             {
@@ -1111,16 +1152,16 @@
     private void DeletePlan(TestPlan p) { if (!TestPlans.DeletePlan(p.Id, out string e)) Snackbar.Add(e, Severity.Error); }
 
     // Tasks
-    private void OpenAddTask() { _taskEditing = false; _taskTarget = null; _taskType = TestTaskType.PushLoop; _taskLabel = ""; _taskOffset = 0; _taskDuration = 15; _taskInterval = 300; _taskBursts = 3; _taskBatches = Array.Empty<int>(); _taskOpen = true; }
-    private void OpenEditTask(TestTask t) { _taskEditing = true; _taskTarget = t; _taskType = t.Type; _taskLabel = t.Label; _taskOffset = t.OffsetMinutes; _taskDuration = t.DurationMinutes; _taskInterval = t is PushLoopTask pl ? pl.PushIntervalSec : 300; _taskBursts = t is BurstPushTask bt ? bt.BurstCount : 3; _taskBatches = t is PushLoopTask pl2 ? pl2.BatchIds.ToList() : t is BurstPushTask bt2 ? bt2.BatchIds.ToList() : Array.Empty<int>(); _taskOpen = true; }
+    private void OpenAddTask() { _taskEditing = false; _taskTarget = null; _taskType = TestTaskType.PushLoop; _taskLabel = ""; _taskOffset = 0; _taskDuration = 15; _taskInterval = 300; _taskBursts = 3; _taskMetersPerBatch = null; _taskBatches = Array.Empty<int>(); _taskOpen = true; }
+    private void OpenEditTask(TestTask t) { _taskEditing = true; _taskTarget = t; _taskType = t.Type; _taskLabel = t.Label; _taskOffset = t.OffsetMinutes; _taskDuration = t.DurationMinutes; _taskInterval = t is PushLoopTask pl ? pl.PushIntervalSec : 300; _taskBursts = t is BurstPushTask bt ? bt.BurstCount : 3; _taskMetersPerBatch = t is BurstPushTask standard ? standard.MetersPerBatch : null; _taskBatches = t is PushLoopTask pl2 ? pl2.BatchIds.ToList() : t is BurstPushTask bt2 ? bt2.BatchIds.ToList() : t is PullListenerTask pull ? pull.BatchIds.ToList() : Array.Empty<int>(); _taskOpen = true; }
 
     private void SaveTask()
     {
         TestTask n = _taskType switch
         {
             TestTaskType.PushLoop => new PushLoopTask { Label = _taskLabel, OffsetMinutes = _taskOffset, DurationMinutes = _taskDuration, PushIntervalSec = _taskInterval, BatchIds = _taskBatches.ToList() },
-            TestTaskType.BurstPush => new BurstPushTask { Label = _taskLabel, OffsetMinutes = _taskOffset, DurationMinutes = _taskDuration, BurstCount = _taskBursts, BatchIds = _taskBatches.ToList() },
-            _ => new PullListenerTask { Label = _taskLabel, OffsetMinutes = _taskOffset, DurationMinutes = _taskDuration },
+            TestTaskType.BurstPush => new BurstPushTask { Label = _taskLabel, OffsetMinutes = _taskOffset, DurationMinutes = _taskDuration, BurstCount = _taskBursts, BatchIds = _taskBatches.ToList(), MetersPerBatch = _taskMetersPerBatch },
+            _ => new PullListenerTask { Label = _taskLabel, OffsetMinutes = _taskOffset, DurationMinutes = _taskDuration, BatchIds = _taskBatches.ToList() },
         };
         if (_taskEditing && _taskTarget is not null) { int i = _planTasks.IndexOf(_taskTarget); if (i >= 0) _planTasks[i] = n; }
         else _planTasks.Add(n);
@@ -1156,7 +1197,8 @@
             .Where(PlanVisible)
             .GroupBy(r => r.PlanId)
             .Select(g => new PlanGroup(g.First().PlanName, g.OrderByDescending(r => r.RawBenchScore).Take(5).ToList()))
-            .OrderBy(g => g.PlanName).ToList();
+            .OrderBy(g => g.Top.First().PlanId is TestPlanRegistry.PullPlanId or TestPlanRegistry.PushPlanId ? 0 : 1)
+            .ThenBy(g => g.PlanName).ToList();
 
     // Pipeline helpers
     private enum TaskPhase { Waiting, Running, Done, Stopped }
@@ -1204,6 +1246,39 @@
         BurstPushTask bt => $"{bt.BurstCount}× burst · {bt.BatchIds.Count} batch(es)",
         _ => "monitors inbound sessions",
     };
+
+    private string BatchSummary(TestTask task)
+    {
+        IReadOnlyList<int> ids = task switch
+        {
+            PullListenerTask pull => pull.BatchIds,
+            PushLoopTask loop => loop.BatchIds,
+            BurstPushTask push => push.BatchIds,
+            _ => Array.Empty<int>(),
+        };
+        if (ids.Count == 0) return "not configured";
+        string[] names = ids
+            .Select(id => _batches.FirstOrDefault(batch => batch.Id == id)?.Name ?? $"missing #{id}")
+            .ToArray();
+        return string.Join(", ", names);
+    }
+
+    private string? BaseConfigurationError(TestPlan plan)
+    {
+        if (!plan.IsBasePlan) return null;
+        if (plan.EnvironmentKeys.Count == 0) return "select an environment";
+        if (plan.Id == TestPlanRegistry.PullPlanId)
+            return plan.Tasks.OfType<PullListenerTask>().FirstOrDefault()?.BatchIds.Count > 0
+                ? null : "select pull batches";
+        if (plan.Id == TestPlanRegistry.PushPlanId)
+        {
+            BurstPushTask? push = plan.Tasks.OfType<BurstPushTask>().FirstOrDefault();
+            if (push is null || push.BatchIds.Count == 0) return "select a 100k batch";
+            return push.BatchIds.Any(id => _batches.FirstOrDefault(b => b.Id == id)?.Count < 100_000)
+                ? "each push batch must have at least 100k meters" : null;
+        }
+        return null;
+    }
 
     private static string TaskBadgeClass(TestTaskType t) => t switch
     {

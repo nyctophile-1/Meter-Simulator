@@ -6,6 +6,11 @@ public sealed class TestPlan
     public string Name { get; set; } = "";
     public bool IsBasePlan { get; init; }
 
+    /// <summary>Only the two supplied standard plans are eligible for a leaderboard.</summary>
+    public OfficialTestKind OfficialKind { get; init; }
+
+    public bool IsOfficial => OfficialKind != OfficialTestKind.None;
+
     /// <summary>HES environments this plan targets (empty = all active environments).</summary>
     public List<string> EnvironmentKeys { get; set; } = new();
 
@@ -24,3 +29,5 @@ public sealed class TestPlan
     public string DisplayName => string.IsNullOrWhiteSpace(Name) ? Id : Name;
     public bool IsFieldLocked(string field) => LockedFields.Contains(field);
 }
+
+public enum OfficialTestKind { None, Pull, Push }

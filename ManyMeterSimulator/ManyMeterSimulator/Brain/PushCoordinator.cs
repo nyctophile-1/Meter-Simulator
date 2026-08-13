@@ -72,7 +72,7 @@ public sealed class PushCoordinator
     /// </para>
     /// </summary>
     public async Task<PushBatchResult> PushBatchAsync(
-        int batchId, string? destination = null, CancellationToken cancellationToken = default)
+        int batchId, string? destination = null, CancellationToken cancellationToken = default, int? maximumMeters = null)
     {
         MeterBatch? batch = _registry.Batches.FirstOrDefault(b => b.Id == batchId);
         if (batch is null)
@@ -83,8 +83,8 @@ public sealed class PushCoordinator
         // "The correct channel": a TCP batch pushes over a socket to its bound IP; an MQTT batch
         // publishes to its bound broker. The one Send-Push button dispatches on the batch's NIC.
         return batch.NicType == NicType.Tcp4G
-            ? await PushTcpAsync(batch, destination, cancellationToken)
-            : await PushMqttAsync(batch, cancellationToken);
+            ? await PushTcpAsync(batch, destination, cancellationToken, maximumMeters)
+            : await PushMqttAsync(batch, cancellationToken, maximumMeters);
     }
 
     /// <summary>
@@ -92,7 +92,7 @@ public sealed class PushCoordinator
     /// is how HES tells the meters apart — see <see cref="TcpPushSender"/>).
     /// </summary>
     private async Task<PushBatchResult> PushTcpAsync(
-        MeterBatch batch, string? destination, CancellationToken cancellationToken)
+        MeterBatch batch, string? destination, CancellationToken cancellationToken, int? maximumMeters)
     {
         if (!TryResolveDestination(batch, destination, out string resolved, out string error))
         {
@@ -101,7 +101,7 @@ public sealed class PushCoordinator
 
         destination = resolved;
 
-        IReadOnlyList<(MeterRef Meter, DLMSServerSession Session)> meters = await _sessions.MaterializeBatchAsync(batch, cancellationToken: cancellationToken);
+        IReadOnlyList<(MeterRef Meter, DLMSServerSession Session)> meters = await _sessions.MaterializeBatchAsync(batch, cancellationToken: cancellationToken, maximumMeters: maximumMeters);
 
         int metersSent = 0, metersFailed = 0;
         using var gate = new SemaphoreSlim(Math.Max(1, _options.MaxConcurrency));
@@ -175,7 +175,7 @@ public sealed class PushCoordinator
     /// batch is bound to. There is no per-meter source IP here — the node id in the topic is the
     /// identity, and the push arrives on the same broker HES already expects that meter's traffic on.
     /// </summary>
-    private async Task<PushBatchResult> PushMqttAsync(MeterBatch batch, CancellationToken cancellationToken)
+    private async Task<PushBatchResult> PushMqttAsync(MeterBatch batch, CancellationToken cancellationToken, int? maximumMeters)
     {
         NicType transport = NicTypes.TransportFor(batch.NicType);
 
@@ -223,7 +223,7 @@ public sealed class PushCoordinator
             return PushBatchResult.ForError(ex.Message);
         }
 
-        IReadOnlyList<(MeterRef Meter, DLMSServerSession Session)> meters = await _sessions.MaterializeBatchAsync(batch, cancellationToken: cancellationToken);
+        IReadOnlyList<(MeterRef Meter, DLMSServerSession Session)> meters = await _sessions.MaterializeBatchAsync(batch, cancellationToken: cancellationToken, maximumMeters: maximumMeters);
 
         int metersSent = 0, metersFailed = 0;
         using var gate = new SemaphoreSlim(Math.Max(1, _options.MaxConcurrency));

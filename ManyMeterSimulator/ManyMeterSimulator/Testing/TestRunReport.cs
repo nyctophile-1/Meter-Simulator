@@ -24,6 +24,10 @@ public sealed class TestRunReport
     /// <summary>RawBenchScore / task count — comparable across plans of different size.</summary>
     public int NormalizedBenchScore { get; init; }
 
+    public int BestMinuteScore => RawBenchScore;
+    public double AverageMinuteScore => NormalizedBenchScore;
+    public List<MinuteScoreRecord> MinuteScores { get; init; } = new();
+
     // Convenience alias for existing Results page code
     public int BenchScore => RawBenchScore;
 
@@ -41,6 +45,11 @@ public sealed class TestRunReport
     public long TotalInboundConnections { get; init; }
     public long TotalInboundExchanges { get; init; }
     public double AvgInboundLatencyMs { get; init; }
+    public double AverageInboundExchangesPerSecond { get; init; }
+    public double PeakInboundExchangesPerSecond { get; init; }
+    public bool OfficialBenchmarkProfileApplied { get; init; }
+    public int? NetworkDelayLowerMs { get; init; }
+    public int? NetworkDelayUpperMs { get; init; }
 
     // Per-task breakdown
     public List<TaskRunReport> Tasks { get; init; } = new();
@@ -57,6 +66,7 @@ public sealed class TaskRunReport
     public int OffsetMinutes { get; init; }
     public int DurationMinutes { get; init; }
     public int TaskScore { get; init; }
+    public int BestMinuteScore { get; init; }
 
     // Push metrics (PushLoop, BurstPush)
     public int TotalPushed { get; init; }
@@ -90,6 +100,14 @@ public sealed class EnvironmentRunReport
     public double MedianMs { get; init; }
     public double P95Ms { get; init; }
     public int BenchScore { get; init; }
+}
+
+public sealed class MinuteScoreRecord
+{
+    public DateTimeOffset MinuteStartUtc { get; init; }
+    public int SuccessfulMeters { get; init; }
+    public int FailedMeters { get; init; }
+    public int Score => SuccessfulMeters;
 }
 
 // ── Tick-level records ──────────────────────────────────────────────────────────────────────────

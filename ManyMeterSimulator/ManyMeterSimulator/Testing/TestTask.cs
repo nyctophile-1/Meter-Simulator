@@ -33,6 +33,7 @@ public sealed class PushLoopTask : TestTask
 public sealed class PullListenerTask : TestTask
 {
     public override TestTaskType Type => TestTaskType.PullListener;
+    public List<int> BatchIds { get; set; } = new();
     // No extra config — uses the existing TCP listener socket.
 }
 
@@ -42,4 +43,5 @@ public sealed class BurstPushTask : TestTask
     public override TestTaskType Type => TestTaskType.BurstPush;
     public int BurstCount { get; set; } = 3;
     public List<int> BatchIds { get; set; } = new();
+    public int? MetersPerBatch { get; set; }
 }

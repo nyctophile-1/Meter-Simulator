@@ -2,8 +2,10 @@ namespace ManyMeterSimulator.Testing;
 
 public sealed class TestPlanRegistry
 {
-    public const string BasePlanId = "base";
-    public const string QuickPushPlanId = "base-quickpush";
+    public const string PullPlanId = "test-pull";
+    public const string PushPlanId = "test-push";
+    private const string LegacyBasePlanId = "base";
+    private const string LegacyQuickPushPlanId = "base-quickpush";
 
     private readonly List<TestPlan> _plans = new();
     private readonly ITestPlanStore _store;
@@ -22,15 +24,32 @@ public sealed class TestPlanRegistry
             _plans.AddRange(saved);
 
             bool dirty = false;
-            if (!_plans.Any(p => p.IsBasePlan))
+            // Replace retired defaults once while preserving custom plans and later user choices
+            // on the official plans.
+            bool hasLegacyDefaults = _plans.Any(p => p.Id is LegacyBasePlanId or LegacyQuickPushPlanId);
+            if (hasLegacyDefaults)
             {
-                _plans.Insert(0, MakeBasePlan());
+                _plans.RemoveAll(p => p.Id is LegacyBasePlanId or LegacyQuickPushPlanId or PullPlanId or PushPlanId);
+                _plans.Insert(0, MakePullPlan());
+                _plans.Insert(1, MakePushPlan());
                 dirty = true;
             }
-            if (!_plans.Any(p => string.Equals(p.Id, QuickPushPlanId, StringComparison.OrdinalIgnoreCase)))
+            else
             {
-                _plans.Insert(Math.Min(1, _plans.Count), MakeQuickPushPlan());
-                dirty = true;
+                if (!_plans.Any(p => p.Id == PullPlanId)) { _plans.Insert(0, MakePullPlan()); dirty = true; }
+                if (!_plans.Any(p => p.Id == PushPlanId)) { _plans.Insert(Math.Min(1, _plans.Count), MakePushPlan()); dirty = true; }
+            }
+            TestPlan? pushPlan = _plans.FirstOrDefault(p => p.Id == PushPlanId);
+            foreach (BurstPushTask task in pushPlan?.Tasks.OfType<BurstPushTask>() ?? Enumerable.Empty<BurstPushTask>())
+            {
+                if (task.DurationMinutes != 0 || task.OffsetMinutes != 0 || task.BurstCount != 1 || task.MetersPerBatch != 100_000)
+                {
+                    task.DurationMinutes = 0;
+                    task.OffsetMinutes = 0;
+                    task.BurstCount = 1;
+                    task.MetersPerBatch = 100_000;
+                    dirty = true;
+                }
             }
             if (dirty) PersistLocked();
         }
@@ -99,11 +118,12 @@ public sealed class TestPlanRegistry
         lock (_lock)
         {
             _plans.Clear();
-            _plans.Add(MakeBasePlan());
-            _plans.Add(MakeQuickPushPlan());
+            _plans.Add(MakePullPlan());
+            _plans.Add(MakePushPlan());
 
-            foreach (TestPlan p in incoming.Where(p => !p.IsBasePlan
-                && !string.Equals(p.Id, QuickPushPlanId, StringComparison.OrdinalIgnoreCase)))
+            foreach (TestPlan p in incoming.Where(p => !p.IsOfficial
+                && p.Id is not LegacyBasePlanId and not LegacyQuickPushPlanId
+                && p.Id is not PullPlanId and not PushPlanId))
                 _plans.Add(p);
 
             PersistLocked();
@@ -114,17 +134,17 @@ public sealed class TestPlanRegistry
 
     private void PersistLocked() => _store.Save(_plans);
 
-    private static TestPlan MakeBasePlan() => new()
+    private static TestPlan MakePullPlan() => new()
     {
-        Id = BasePlanId,
-        Name = "Base Plan",
+        Id = PullPlanId,
+        Name = "Test Pull",
         IsBasePlan = true,
+        OfficialKind = OfficialTestKind.Pull,
         Tasks = new List<TestTask>
         {
-            new PushLoopTask
+            new PullListenerTask
             {
-                Label = "Standard push loop",
-                PushIntervalSec = 300,
+                Label = "Pull listener",
                 DurationMinutes = 15,
                 OffsetMinutes = 0,
             },
@@ -136,19 +156,21 @@ public sealed class TestPlanRegistry
     /// finishes in a minute, so hitting Run behaves like a push button — but still produces
     /// a scored, comparable report like every other plan.
     /// </summary>
-    private static TestPlan MakeQuickPushPlan() => new()
+    private static TestPlan MakePushPlan() => new()
     {
-        Id = QuickPushPlanId,
-        Name = "Quick Push",
+        Id = PushPlanId,
+        Name = "Test Push",
         IsBasePlan = true,
+        OfficialKind = OfficialTestKind.Push,
         Tasks = new List<TestTask>
         {
             new BurstPushTask
             {
-                Label = "One-shot push",
+                Label = "100k one-shot push",
                 BurstCount = 1,
-                DurationMinutes = 1,
+                DurationMinutes = 0,
                 OffsetMinutes = 0,
+                MetersPerBatch = 100_000,
             },
         },
     };

@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using ManyMeterSimulator.Brain;
+using ManyMeterSimulator.BadComm;
 using ManyMeterSimulator.Diagnostics;
+using ManyMeterSimulator.Networking;
 using ManyMeterSimulator.Networking.Nic;
 using ManyMeterSimulator.Networking.Registry;
 using ManyMeterSimulator.Provisioning;
@@ -19,6 +21,8 @@ public sealed class TestRunEngine : IAsyncDisposable
     private readonly MeterSessionManager _sessions;
     private readonly SimulatorMetrics _simMetrics;
     private readonly TestRunStore _store;
+    private readonly BadCommSettings _badComm;
+    private readonly NetworkDelaySettings _networkDelay;
     private readonly ILogger<TestRunEngine> _logger;
 
     private CancellationTokenSource? _cts;
@@ -33,6 +37,8 @@ public sealed class TestRunEngine : IAsyncDisposable
         MeterSessionManager sessions,
         SimulatorMetrics simMetrics,
         TestRunStore store,
+        BadCommSettings badComm,
+        NetworkDelaySettings networkDelay,
         ILogger<TestRunEngine> logger)
     {
         _meters = meters;
@@ -41,6 +47,8 @@ public sealed class TestRunEngine : IAsyncDisposable
         _sessions = sessions;
         _simMetrics = simMetrics;
         _store = store;
+        _badComm = badComm;
+        _networkDelay = networkDelay;
         _logger = logger;
     }
 
@@ -59,6 +67,10 @@ public sealed class TestRunEngine : IAsyncDisposable
 
     public void ScheduleRun(TestPlan plan, string runLabel, DateTimeOffset startAt)
     {
+        string? configurationError = GetBaseConfigurationError(plan);
+        if (configurationError is not null)
+            throw new InvalidOperationException(configurationError);
+
         lock (_lock)
         {
             if (IsActive) throw new InvalidOperationException("A test run is already active. Cancel it first.");
@@ -79,6 +91,34 @@ public sealed class TestRunEngine : IAsyncDisposable
         }
 
         Changed?.Invoke();
+    }
+
+    private string? GetBaseConfigurationError(TestPlan plan)
+    {
+        if (!plan.IsBasePlan)
+            return null;
+
+        if (plan.EnvironmentKeys.Count == 0)
+            return $"{plan.DisplayName} needs at least one environment selected.";
+
+        if (plan.Id == TestPlanRegistry.PullPlanId)
+        {
+            PullListenerTask? pull = plan.Tasks.OfType<PullListenerTask>().FirstOrDefault();
+            return pull is null || pull.BatchIds.Count == 0
+                ? "Test Pull needs at least one pull batch selected."
+                : null;
+        }
+
+        if (plan.Id == TestPlanRegistry.PushPlanId)
+        {
+            BurstPushTask? push = plan.Tasks.OfType<BurstPushTask>().FirstOrDefault();
+            if (push is null || push.BatchIds.Count == 0)
+                return "Test Push needs at least one batch selected.";
+            bool hasInvalidBatch = push.BatchIds.Any(id => _meters.Batches.FirstOrDefault(b => b.Id == id)?.Count < 100_000);
+            return hasInvalidBatch ? "Test Push batches must each contain at least 100,000 meters." : null;
+        }
+
+        return null;
     }
 
     public void Cancel()
@@ -120,6 +160,7 @@ public sealed class TestRunEngine : IAsyncDisposable
 
         // Snapshot HES-side counters so we can compute the run-wide delta at finalize —
         // this is what tells us "how much did HES actually touch us during this run".
+        OfficialBenchmarkProfile? profile = plan.IsOfficial ? ApplyOfficialProfile() : null;
         SimulatorMetricsSnapshot inboundBaseline = _simMetrics.Snapshot(_sessions.LiveMeterCount);
 
         // Launch CPU sampler + all tasks concurrently
@@ -130,7 +171,8 @@ public sealed class TestRunEngine : IAsyncDisposable
         double avgCpu = cpuSampler.AveragePct;
         double peakRam = GetPeakRamMb();
 
-        Finalize(state, taskResults, plan, runLabel, avgCpu, peakRam, actualStart, inboundBaseline);
+        Finalize(state, taskResults, plan, runLabel, avgCpu, peakRam, actualStart, inboundBaseline, profile is not null);
+        profile?.Restore(_badComm, _networkDelay);
     }
 
     private async Task<TaskRunResult> RunTaskAsync(TestTask task, DateTimeOffset runStart, TestRunState state, CancellationToken ct)
@@ -196,10 +238,10 @@ public sealed class TestRunEngine : IAsyncDisposable
     {
         var ticks = new List<TickRecord>();
 
-        for (int burst = 1; burst <= task.BurstCount && !ct.IsCancellationRequested && DateTimeOffset.UtcNow < end; burst++)
+        for (int burst = 1; burst <= task.BurstCount && !ct.IsCancellationRequested; burst++)
         {
             DateTimeOffset tickStart = DateTimeOffset.UtcNow;
-            TickRecord tick = await RunPushTickAsync(burst, task.TaskId, tickStart, task.BatchIds, ct);
+            TickRecord tick = await RunPushTickAsync(burst, task.TaskId, tickStart, task.BatchIds, ct, task.MetersPerBatch);
             ticks.Add(tick);
 
             lock (_lock)
@@ -218,6 +260,9 @@ public sealed class TestRunEngine : IAsyncDisposable
         SimulatorMetricsSnapshot baseline = _simMetrics.Snapshot(_sessions.LiveMeterCount);
         long baseAccepted = baseline.TotalAccepted;
         long baseExchanges = baseline.TotalExchanges;
+        long lastAccepted = baseAccepted;
+        long lastExchanges = baseExchanges;
+        var minuteScores = new List<MinuteScoreRecord>();
         int peakConcurrent = _sessions.LiveMeterCount;
         long sumLive = 0;
         int sampleCount = 0;
@@ -237,6 +282,11 @@ public sealed class TestRunEngine : IAsyncDisposable
             SimulatorMetricsSnapshot poll = _simMetrics.Snapshot(live);
             long connsSoFar = poll.TotalAccepted - baseAccepted;
             long reqsSoFar = poll.TotalExchanges - baseExchanges;
+            AddMinuteScore(minuteScores, DateTimeOffset.UtcNow,
+                (int)Math.Min(int.MaxValue, Math.Max(0, poll.TotalExchanges - lastExchanges)),
+                (int)Math.Min(int.MaxValue, Math.Max(0, poll.TotalAccepted - lastAccepted)));
+            lastAccepted = poll.TotalAccepted;
+            lastExchanges = poll.TotalExchanges;
             lock (_lock)
                 state.LastSummary = $"[{task.DisplayLabel}] {connsSoFar} conn · {reqsSoFar} req (avg {poll.AvgBridgeLatency.TotalMilliseconds:F0}ms) · {live} live";
             Changed?.Invoke();
@@ -245,6 +295,9 @@ public sealed class TestRunEngine : IAsyncDisposable
         SimulatorMetricsSnapshot endSnap = _simMetrics.Snapshot(_sessions.LiveMeterCount);
         long deltaAccepted = Math.Max(0, endSnap.TotalAccepted - baseAccepted);
         long deltaExchanges = Math.Max(0, endSnap.TotalExchanges - baseExchanges);
+        AddMinuteScore(minuteScores, DateTimeOffset.UtcNow,
+            (int)Math.Min(int.MaxValue, Math.Max(0, endSnap.TotalExchanges - lastExchanges)),
+            (int)Math.Min(int.MaxValue, Math.Max(0, endSnap.TotalAccepted - lastAccepted)));
 
         double elapsedMin = Math.Max(0.1, (DateTimeOffset.UtcNow - taskStart).TotalMinutes);
         double avgConcurrent = sampleCount > 0 ? (double)sumLive / sampleCount : peakConcurrent;
@@ -261,10 +314,11 @@ public sealed class TestRunEngine : IAsyncDisposable
             pullP95Ms: avgLatencyMs,
             peakConcurrent: peakConcurrent,
             avgConcurrent: avgConcurrent,
-            sessionRatePerMin: sessionRate);
+            sessionRatePerMin: sessionRate,
+            minuteScores: minuteScores);
     }
 
-    private async Task<TickRecord> RunPushTickAsync(int tickNum, string taskId, DateTimeOffset tickStart, IReadOnlyList<int> batchIds, CancellationToken ct)
+    private async Task<TickRecord> RunPushTickAsync(int tickNum, string taskId, DateTimeOffset tickStart, IReadOnlyList<int> batchIds, CancellationToken ct, int? maximumMeters = null)
     {
         var results = new List<BatchTickResult>();
 
@@ -279,7 +333,7 @@ public sealed class TestRunEngine : IAsyncDisposable
             BatchTickResult tr;
             try
             {
-                PushBatchResult r = await _push.PushBatchAsync(batchId, destination: null, ct);
+                PushBatchResult r = await _push.PushBatchAsync(batchId, destination: null, ct, maximumMeters);
                 sw.Stop();
                 tr = new BatchTickResult
                 {
@@ -334,7 +388,8 @@ public sealed class TestRunEngine : IAsyncDisposable
         double avgCpu,
         double peakRam,
         DateTimeOffset startUtc,
-        SimulatorMetricsSnapshot inboundBaseline)
+        SimulatorMetricsSnapshot inboundBaseline,
+        bool officialProfileApplied = false)
     {
         DateTimeOffset endUtc = DateTimeOffset.UtcNow;
         TestRunStatus finalStatus;
@@ -378,11 +433,16 @@ public sealed class TestRunEngine : IAsyncDisposable
         double overallMedian = Percentile(allDurations, 50);
         double overallP95 = Percentile(allDurations, 95);
 
-        // HES-side traffic factors into the score even for push-only plans: a HES that pulled
-        // ~500 exchanges/min while we pushed is doing real work and should show up on the board.
-        double inboundBonus = (inboundExchanges * 5.0) + (inboundConns * 15.0);
-        int rawScore = (int)Math.Round((taskReports.Sum(t => t.TaskScore) + inboundBonus) * systemFactor);
-        int normalizedScore = taskReports.Count == 0 ? 0 : rawScore / taskReports.Count;
+        // The headline score is the strongest clock-minute, not accumulated work over the run.
+        List<MinuteScoreRecord> minuteScores = BuildMinuteScores(taskResults);
+        List<MinuteScoreRecord> pullMinuteScores = taskResults
+            .Where(r => r.Task.Type == TestTaskType.PullListener)
+            .SelectMany(r => r.MinuteScores)
+            .GroupBy(m => m.MinuteStartUtc)
+            .Select(g => new MinuteScoreRecord { MinuteStartUtc = g.Key, SuccessfulMeters = g.Sum(m => m.SuccessfulMeters), FailedMeters = g.Sum(m => m.FailedMeters) })
+            .ToList();
+        int rawScore = minuteScores.Count == 0 ? 0 : minuteScores.Max(m => m.Score);
+        int normalizedScore = minuteScores.Count == 0 ? 0 : (int)Math.Round(minuteScores.Average(m => m.Score));
 
         // Per-environment aggregates
         var envKeys = taskResults
@@ -440,6 +500,7 @@ public sealed class TestRunEngine : IAsyncDisposable
             PeakRamMb = Math.Round(peakRam, 0),
             RawBenchScore = rawScore,
             NormalizedBenchScore = normalizedScore,
+            MinuteScores = minuteScores,
             TotalMetersPushed = totalPushed,
             TotalMetersFailed = totalFailed,
             OverallSuccessRatePct = overallSuccess,
@@ -449,6 +510,11 @@ public sealed class TestRunEngine : IAsyncDisposable
             TotalInboundConnections = inboundConns,
             TotalInboundExchanges = inboundExchanges,
             AvgInboundLatencyMs = Math.Round(inboundLatencyMs, 1),
+            AverageInboundExchangesPerSecond = Math.Round(inboundExchanges / (elapsedMin * 60.0), 2),
+            PeakInboundExchangesPerSecond = Math.Round((pullMinuteScores.Count == 0 ? 0 : pullMinuteScores.Max(m => m.SuccessfulMeters)) / 60.0, 2),
+            OfficialBenchmarkProfileApplied = officialProfileApplied,
+            NetworkDelayLowerMs = officialProfileApplied ? 300 : null,
+            NetworkDelayUpperMs = officialProfileApplied ? 500 : null,
             Tasks = taskReports,
             Environments = envReports,
         };
@@ -514,6 +580,7 @@ public sealed class TestRunEngine : IAsyncDisposable
         }
 
         taskRaw *= ScoreScale;
+        int taskBestMinute = BuildMinuteScores(new[] { r }).DefaultIfEmpty().Max(m => m?.Score ?? 0);
 
         return new TaskRunReport
         {
@@ -522,7 +589,8 @@ public sealed class TestRunEngine : IAsyncDisposable
             TaskLabel = r.Task.DisplayLabel,
             OffsetMinutes = r.Task.OffsetMinutes,
             DurationMinutes = r.Task.DurationMinutes,
-            TaskScore = (int)Math.Round(taskRaw),
+            TaskScore = taskBestMinute,
+            BestMinuteScore = taskBestMinute,
             TotalPushed = pushed,
             TotalFailed = failed,
             SuccessRatePct = successPct,
@@ -542,6 +610,56 @@ public sealed class TestRunEngine : IAsyncDisposable
     }
 
     // ── Scoring helpers ──────────────────────────────────────────────────────────────────────────
+
+    private static List<MinuteScoreRecord> BuildMinuteScores(IEnumerable<TaskRunResult> results)
+    {
+        var samples = new List<MinuteScoreRecord>();
+        foreach (TaskRunResult result in results)
+        {
+            samples.AddRange(result.MinuteScores);
+            foreach (TickRecord tick in result.Ticks)
+                AddMinuteScore(samples, tick.TimestampUtc, tick.TotalSent, tick.TotalFailed);
+        }
+
+        return samples
+            .GroupBy(m => m.MinuteStartUtc)
+            .Select(g => new MinuteScoreRecord
+            {
+                MinuteStartUtc = g.Key,
+                SuccessfulMeters = g.Sum(m => m.SuccessfulMeters),
+                FailedMeters = g.Sum(m => m.FailedMeters),
+            })
+            .OrderBy(m => m.MinuteStartUtc)
+            .ToList();
+    }
+
+    private OfficialBenchmarkProfile ApplyOfficialProfile()
+    {
+        var profile = new OfficialBenchmarkProfile(_badComm.Snapshot(), _networkDelay.Current);
+        if (!_badComm.TryUpdate(new BadCommConfig { Enabled = false }, out string? error))
+            throw new InvalidOperationException($"Could not apply official benchmark profile: {error}");
+        if (!_networkDelay.TryUpdate(300, 500))
+            throw new InvalidOperationException("Could not apply the official 300-500 ms network delay.");
+        return profile;
+    }
+
+    private static void AddMinuteScore(List<MinuteScoreRecord> samples, DateTimeOffset timestamp, int successful, int failed)
+    {
+        DateTimeOffset minute = new(timestamp.Year, timestamp.Month, timestamp.Day, timestamp.Hour, timestamp.Minute, 0, TimeSpan.Zero);
+        int index = samples.FindIndex(m => m.MinuteStartUtc == minute);
+        if (index < 0)
+        {
+            samples.Add(new MinuteScoreRecord { MinuteStartUtc = minute, SuccessfulMeters = successful, FailedMeters = failed });
+            return;
+        }
+        MinuteScoreRecord old = samples[index];
+        samples[index] = new MinuteScoreRecord
+        {
+            MinuteStartUtc = minute,
+            SuccessfulMeters = old.SuccessfulMeters + successful,
+            FailedMeters = old.FailedMeters + failed,
+        };
+    }
 
     private static double NicSuccessWeight(string nicType) => nicType switch
     {
@@ -598,10 +716,12 @@ public sealed class TestRunEngine : IAsyncDisposable
         public int PeakConcurrentSessions { get; }
         public double AvgConcurrentSessions { get; }
         public double SessionRatePerMin { get; }
+        public List<MinuteScoreRecord> MinuteScores { get; }
 
         public TaskRunResult(TestTask task, List<TickRecord>? ticks = null, int burstCount = 0,
             int pullsReceived = 0, int pullsAnswered = 0, double pullP95Ms = 0,
-            int peakConcurrent = 0, double avgConcurrent = 0, double sessionRatePerMin = 0)
+            int peakConcurrent = 0, double avgConcurrent = 0, double sessionRatePerMin = 0,
+            List<MinuteScoreRecord>? minuteScores = null)
         {
             Task = task;
             Ticks = ticks ?? new List<TickRecord>();
@@ -612,6 +732,16 @@ public sealed class TestRunEngine : IAsyncDisposable
             PeakConcurrentSessions = peakConcurrent;
             AvgConcurrentSessions = avgConcurrent;
             SessionRatePerMin = sessionRatePerMin;
+            MinuteScores = minuteScores ?? new List<MinuteScoreRecord>();
+        }
+    }
+
+    private sealed record OfficialBenchmarkProfile(BadCommConfig BadComm, NetworkDelaySettings.Bounds Delay)
+    {
+        public void Restore(BadCommSettings badComm, NetworkDelaySettings networkDelay)
+        {
+            badComm.TryUpdate(BadComm, out _);
+            networkDelay.TryUpdate(Delay.LowerMs, Delay.UpperMs);
         }
     }
 
