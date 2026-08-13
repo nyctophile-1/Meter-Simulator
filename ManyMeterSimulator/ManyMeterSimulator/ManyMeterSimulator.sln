@@ -10,6 +10,7 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "deploy", "deploy", "{3F1C7A94-6E4B-4D2A-9C58-7B21D0E4A115}"
 	ProjectSection(SolutionItems) = preProject
 		..\..\deploy\build.ps1 = ..\..\deploy\build.ps1
+		..\..\deploy\server.ps1 = ..\..\deploy\server.ps1
 		..\..\deploy\deploy.sh = ..\..\deploy\deploy.sh
 		..\..\deploy\host-prep.sh = ..\..\deploy\host-prep.sh
 		..\..\deploy\push-listener.ps1 = ..\..\deploy\push-listener.ps1
