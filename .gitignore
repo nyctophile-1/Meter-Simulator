@@ -414,3 +414,13 @@ deploy/register-meters-hes.sql
 # HES data-model exports (KimbalSpecifics/DataModel). Large raw dumps pulled from the HES DB;
 # a filtered subset for the templates we actually simulate gets committed instead.
 /ManyMeterSimulator/ManyMeterSimulator/KimbalSpecifics/DataModel/
+
+# ── AWS / secrets — never commit credentials ──────────────────────────────────
+# deploy/server.ps1 deliberately reads credentials from the AWS CLI's own store
+# (%USERPROFILE%\.aws), never from the repo. These entries are a backstop.
+.aws/
+*.pem
+*.ppk
+.env
+.env.*
+aws-credentials*
