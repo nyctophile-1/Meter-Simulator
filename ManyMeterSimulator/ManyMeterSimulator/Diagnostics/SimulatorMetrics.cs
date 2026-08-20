@@ -33,6 +33,8 @@ public sealed class SimulatorMetrics
     private long _badCommDelayCount;
     private long _totalNonCommDrops;
     private long _totalBadCommDrops;
+    // Gauge of decoded inbound requests currently being handled; this is not a session count.
+    private long _activeInboundExchanges;
 
     private readonly NicCounters[] _byNic;
 
@@ -46,6 +48,10 @@ public sealed class SimulatorMetrics
     }
 
     public void RecordAccepted(NicType nic) => Interlocked.Increment(ref For(nic).TotalAccepted);
+
+    public int ActiveInboundExchanges => (int)Math.Clamp(Interlocked.Read(ref _activeInboundExchanges), 0, int.MaxValue);
+    public void BeginInboundExchange() => Interlocked.Increment(ref _activeInboundExchanges);
+    public void EndInboundExchange() => Interlocked.Decrement(ref _activeInboundExchanges);
 
     public void RecordRejectedCollision(NicType nic) => Interlocked.Increment(ref For(nic).TotalRejectedCollision);
 

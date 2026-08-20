@@ -488,7 +488,10 @@ public sealed class MqttNicListenerService : BackgroundService, IMqttPushPublish
 
         // Same funnel the TCP listener uses: hand the brain a complete wrapper frame, get one back.
         var stopwatch = Stopwatch.StartNew();
-        byte[] response = await _bridge.ExchangeAsync(item.Meter, decoded.DlmsFrame!, cancellationToken);
+        _metrics.BeginInboundExchange();
+        byte[] response;
+        try { response = await _bridge.ExchangeAsync(item.Meter, decoded.DlmsFrame!, cancellationToken); }
+        finally { _metrics.EndInboundExchange(); }
         stopwatch.Stop();
         _metrics.RecordExchange(item.Meter.Nic, stopwatch.Elapsed);
         session.Touch();

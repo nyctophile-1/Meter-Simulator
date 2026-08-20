@@ -258,7 +258,10 @@ public class TcpNicListenerService : BackgroundService
                     var bridgeStopwatch = Stopwatch.StartNew();
                     // Hand the brain the COMPLETE frame; it returns a complete wrapper reply
                     // (Gurux owns wrapper build), which we write back verbatim — no re-wrapping.
-                    byte[] response = await _bridge.ExchangeAsync(state.Meter, frame.Raw, sessionToken);
+                    _metrics.BeginInboundExchange();
+                    byte[] response;
+                    try { response = await _bridge.ExchangeAsync(state.Meter, frame.Raw, sessionToken); }
+                    finally { _metrics.EndInboundExchange(); }
                     bridgeStopwatch.Stop();
                     _metrics.RecordExchange(state.Meter.Nic, bridgeStopwatch.Elapsed);
 

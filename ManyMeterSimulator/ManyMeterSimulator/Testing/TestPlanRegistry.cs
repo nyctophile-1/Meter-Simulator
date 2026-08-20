@@ -40,6 +40,9 @@ public sealed class TestPlanRegistry
                 if (!_plans.Any(p => p.Id == PushPlanId)) { _plans.Insert(Math.Min(1, _plans.Count), MakePushPlan()); dirty = true; }
             }
             TestPlan? pushPlan = _plans.FirstOrDefault(p => p.Id == PushPlanId);
+            TestPlan? pullPlan = _plans.FirstOrDefault(p => p.Id == PullPlanId);
+            if (pullPlan is not null && pullPlan.Name != "Pull") { pullPlan.Name = "Pull"; dirty = true; }
+            if (pushPlan is not null && pushPlan.Name != "Push") { pushPlan.Name = "Push"; dirty = true; }
             foreach (BurstPushTask task in pushPlan?.Tasks.OfType<BurstPushTask>() ?? Enumerable.Empty<BurstPushTask>())
             {
                 if (task.DurationMinutes != 0 || task.OffsetMinutes != 0 || task.BurstCount != 1 || task.MetersPerBatch != 100_000)
@@ -137,7 +140,7 @@ public sealed class TestPlanRegistry
     private static TestPlan MakePullPlan() => new()
     {
         Id = PullPlanId,
-        Name = "Test Pull",
+        Name = "Pull",
         IsBasePlan = true,
         OfficialKind = OfficialTestKind.Pull,
         Tasks = new List<TestTask>
@@ -159,7 +162,7 @@ public sealed class TestPlanRegistry
     private static TestPlan MakePushPlan() => new()
     {
         Id = PushPlanId,
-        Name = "Test Push",
+        Name = "Push",
         IsBasePlan = true,
         OfficialKind = OfficialTestKind.Push,
         Tasks = new List<TestTask>

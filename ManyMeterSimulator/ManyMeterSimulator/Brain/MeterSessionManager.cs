@@ -161,18 +161,32 @@ public sealed class MeterSessionManager
         MeterBatch batch,
         IProgress<BatchMaterializationProgress>? progress = null,
         CancellationToken cancellationToken = default,
-        int? maximumMeters = null)
+        int? maximumMeters = null,
+        bool selectRandomly = false)
     {
         var result = new List<(MeterRef, DLMSServerSession)>();
         long total = Math.Min(batch.EndIndex - batch.StartIndex + 1, Math.Max(0, maximumMeters ?? int.MaxValue));
         long count = 0;
         int chunkSize = 500;
 
+        // A partial benchmark must not repeatedly favour the first meter IDs in a batch. Generate
+        // a unique random sample before materializing sessions; full-batch callers keep the cheap
+        // sequential path.
+        IReadOnlyList<long>? selectedIndexes = null;
+        if (selectRandomly && total < batch.Count)
+        {
+            var picked = new HashSet<long>();
+            while (picked.Count < total)
+                picked.Add(Random.Shared.NextInt64(batch.StartIndex, batch.EndIndex + 1));
+            selectedIndexes = picked.ToList();
+        }
+
         await Task.Yield();
 
-        for (long index = batch.StartIndex; count < total; index++)
+        for (long ordinal = 0; ordinal < total; ordinal++)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            long index = selectedIndexes is null ? batch.StartIndex + ordinal : selectedIndexes[(int)ordinal];
             var meter = new MeterRef(index, batch.NicType);
             result.Add((meter, GetOrCreate(meter)));
             count++;

@@ -73,7 +73,7 @@ public sealed class TestRunEngine : IAsyncDisposable
 
         lock (_lock)
         {
-            if (IsActive) throw new InvalidOperationException("A test run is already active. Cancel it first.");
+            if (IsActive) throw new InvalidOperationException("A test run is already active. Stop it first.");
 
             _cts = new CancellationTokenSource();
             _active = new TestRunState
@@ -98,30 +98,35 @@ public sealed class TestRunEngine : IAsyncDisposable
         if (!plan.IsBasePlan)
             return null;
 
-        if (plan.EnvironmentKeys.Count == 0)
-            return $"{plan.DisplayName} needs at least one environment selected.";
-
         if (plan.Id == TestPlanRegistry.PullPlanId)
         {
             PullListenerTask? pull = plan.Tasks.OfType<PullListenerTask>().FirstOrDefault();
-            return pull is null || pull.BatchIds.Count == 0
-                ? "Test Pull needs at least one pull batch selected."
+            return pull is null || pull.DurationMinutes < 1
+                ? "Test Pull needs a pull listener duration."
                 : null;
         }
 
         if (plan.Id == TestPlanRegistry.PushPlanId)
         {
             BurstPushTask? push = plan.Tasks.OfType<BurstPushTask>().FirstOrDefault();
+            if (push is null || string.IsNullOrWhiteSpace(push.EnvironmentKey))
+                return "Test Push needs an environment selected in its push task.";
             if (push is null || push.BatchIds.Count == 0)
                 return "Test Push needs at least one batch selected.";
             bool hasInvalidBatch = push.BatchIds.Any(id => _meters.Batches.FirstOrDefault(b => b.Id == id)?.Count < 100_000);
-            return hasInvalidBatch ? "Test Push batches must each contain at least 100,000 meters." : null;
+            if (hasInvalidBatch) return "Test Push batches must each contain at least 100,000 meters.";
+            bool wrongEnvironment = push.BatchIds.Any(id => !string.Equals(_meters.Batches.FirstOrDefault(b => b.Id == id)?.EnvironmentKey, push.EnvironmentKey, StringComparison.OrdinalIgnoreCase));
+            return wrongEnvironment ? "Every Test Push batch must belong to the selected environment." : null;
         }
 
         return null;
     }
 
-    public void Cancel()
+    /// <summary>
+    /// Stops an in-progress run and saves a report from every measurement completed up to this
+    /// point. It does not change the benchmark sampling interval or scoring rules.
+    /// </summary>
+    public void StopNow()
     {
         CancellationTokenSource? cts;
         lock (_lock)
@@ -129,14 +134,18 @@ public sealed class TestRunEngine : IAsyncDisposable
             cts = _cts;
             if (_active is { Status: TestRunStatus.Scheduled or TestRunStatus.Running } s)
             {
-                s.Status = TestRunStatus.Cancelled;
+                s.Status = TestRunStatus.Stopped;
                 s.EndUtc = DateTimeOffset.UtcNow;
+                s.LastSummary = "Stopped early; saving measurements collected so far.";
             }
         }
 
         cts?.Cancel();
         Changed?.Invoke();
     }
+
+    // Kept for callers compiled against the earlier API. UI actions use StopNow.
+    public void Cancel() => StopNow();
 
     // ── Run loop ────────────────────────────────────────────────────────────────────────────────
 
@@ -147,7 +156,7 @@ public sealed class TestRunEngine : IAsyncDisposable
         if (waitFor > TimeSpan.FromSeconds(2))
         {
             try { await Task.Delay(waitFor, ct); }
-            catch (OperationCanceledException) { Finalize(state, Array.Empty<TaskRunResult>(), plan, runLabel, 0, 0, startAt, _simMetrics.Snapshot(_sessions.LiveMeterCount)); return; }
+            catch (OperationCanceledException) { Finalize(state, Array.Empty<TaskRunResult>(), plan, runLabel, 0, 0, startAt, _simMetrics.Snapshot(_simMetrics.ActiveInboundExchanges)); return; }
         }
 
         DateTimeOffset actualStart = DateTimeOffset.UtcNow;
@@ -161,11 +170,13 @@ public sealed class TestRunEngine : IAsyncDisposable
         // Snapshot HES-side counters so we can compute the run-wide delta at finalize —
         // this is what tells us "how much did HES actually touch us during this run".
         OfficialBenchmarkProfile? profile = plan.IsOfficial ? ApplyOfficialProfile() : null;
-        SimulatorMetricsSnapshot inboundBaseline = _simMetrics.Snapshot(_sessions.LiveMeterCount);
+        SimulatorMetricsSnapshot inboundBaseline = _simMetrics.Snapshot(_simMetrics.ActiveInboundExchanges);
 
         // Launch CPU sampler + all tasks concurrently
         using var cpuSampler = new CpuSampler();
-        var taskTasks = plan.Tasks.Select(task => RunTaskAsync(task, actualStart, state, ct)).ToList();
+        // A cancellation can interrupt a push mid-batch. Preserve the other task results and
+        // finalize the partial report instead of allowing Task.WhenAll to abandon it.
+        var taskTasks = plan.Tasks.Select(task => RunTaskSafelyAsync(task, actualStart, state, ct)).ToList();
         TaskRunResult[] taskResults = await Task.WhenAll(taskTasks);
 
         double avgCpu = cpuSampler.AveragePct;
@@ -175,13 +186,19 @@ public sealed class TestRunEngine : IAsyncDisposable
         profile?.Restore(_badComm, _networkDelay);
     }
 
+    private async Task<TaskRunResult> RunTaskSafelyAsync(TestTask task, DateTimeOffset runStart, TestRunState state, CancellationToken ct)
+    {
+        try { return await RunTaskAsync(task, runStart, state, ct); }
+        catch (OperationCanceledException) { return new TaskRunResult(task); }
+    }
+
     private async Task<TaskRunResult> RunTaskAsync(TestTask task, DateTimeOffset runStart, TestRunState state, CancellationToken ct)
     {
         // Respect offset
         if (task.OffsetMinutes > 0)
         {
-            DateTimeOffset taskStart = runStart.AddMinutes(task.OffsetMinutes);
-            TimeSpan wait = taskStart - DateTimeOffset.UtcNow;
+            DateTimeOffset scheduledTaskStart = runStart.AddMinutes(task.OffsetMinutes);
+            TimeSpan wait = scheduledTaskStart - DateTimeOffset.UtcNow;
             if (wait > TimeSpan.Zero)
             {
                 try { await Task.Delay(wait, ct); }
@@ -189,13 +206,15 @@ public sealed class TestRunEngine : IAsyncDisposable
             }
         }
 
-        DateTimeOffset end = DateTimeOffset.UtcNow.AddMinutes(task.DurationMinutes);
+        DateTimeOffset taskStart = DateTimeOffset.UtcNow;
+        DateTimeOffset end = taskStart.AddMinutes(task.DurationMinutes);
 
         return task switch
         {
             PushLoopTask loop => await RunPushLoopAsync(loop, end, state, ct),
-            PullListenerTask pull => await RunPullListenerAsync(pull, end, state, ct),
+            PullListenerTask pull => await RunPullListenerAsync(pull, taskStart, end, state, ct),
             BurstPushTask burst => await RunBurstPushAsync(burst, end, state, ct),
+            PartialPushTask partial => await RunPartialPushAsync(partial, end, state, ct),
             _ => new TaskRunResult(task),
         };
     }
@@ -252,21 +271,63 @@ public sealed class TestRunEngine : IAsyncDisposable
         return new TaskRunResult(task, ticks, task.BurstCount);
     }
 
-    private async Task<TaskRunResult> RunPullListenerAsync(PullListenerTask task, DateTimeOffset end, TestRunState state, CancellationToken ct)
+    private async Task<TaskRunResult> RunPartialPushAsync(PartialPushTask task, DateTimeOffset end, TestRunState state, CancellationToken ct)
+    {
+        var ticks = new List<TickRecord>();
+        IReadOnlyDictionary<int, int> limits = GetPartialBatchLimits(task);
+
+        for (int burst = 1; burst <= task.BurstCount && !ct.IsCancellationRequested && DateTimeOffset.UtcNow < end; burst++)
+        {
+            TickRecord tick = await RunPushTickAsync(burst, task.TaskId, DateTimeOffset.UtcNow, task.BatchIds, ct, perBatchLimits: limits, selectRandomly: true);
+            ticks.Add(tick);
+            lock (_lock)
+                state.LastSummary = $"[{task.DisplayLabel}] partial push {burst}/{task.BurstCount}: {tick.TotalSent} sent";
+            Changed?.Invoke();
+        }
+
+        return new TaskRunResult(task, ticks, task.BurstCount);
+    }
+
+    private IReadOnlyDictionary<int, int> GetPartialBatchLimits(PartialPushTask task)
+    {
+        var batches = task.BatchIds
+            .Select(id => _meters.Batches.FirstOrDefault(b => b.Id == id))
+            .Where(b => b is not null)
+            .Cast<MeterBatch>()
+            .ToList();
+        if (task.Mode == PartialPushMode.Percentage)
+            return batches.ToDictionary(b => b.Id, b => Math.Min((int)b.Count, Math.Max(0, (int)Math.Ceiling(b.Count * Math.Clamp(task.Percentage, 0, 100) / 100.0))));
+
+        int requested = Math.Max(0, task.MeterCount);
+        long fleetSize = batches.Sum(b => b.Count);
+        requested = (int)Math.Min(requested, fleetSize);
+        var limits = batches.ToDictionary(b => b.Id, b => (int)Math.Floor(requested * (b.Count / (double)Math.Max(1, fleetSize))));
+        int assigned = limits.Values.Sum();
+        foreach (MeterBatch batch in batches.OrderByDescending(b => b.Count))
+        {
+            if (assigned >= requested) break;
+            int capacity = (int)batch.Count - limits[batch.Id];
+            int add = Math.Min(capacity, requested - assigned);
+            limits[batch.Id] += add;
+            assigned += add;
+        }
+        return limits;
+    }
+
+    private async Task<TaskRunResult> RunPullListenerAsync(PullListenerTask task, DateTimeOffset taskStart, DateTimeOffset end, TestRunState state, CancellationToken ct)
     {
         // Real HES activity comes from SimulatorMetrics: TotalAccepted = connections HES opened,
         // TotalExchanges = DLMS request/response pairs. LiveMeterCount only tracks materialized
         // session objects which barely move — that's why the old readings were all zero.
-        SimulatorMetricsSnapshot baseline = _simMetrics.Snapshot(_sessions.LiveMeterCount);
+        SimulatorMetricsSnapshot baseline = _simMetrics.Snapshot(_simMetrics.ActiveInboundExchanges);
         long baseAccepted = baseline.TotalAccepted;
         long baseExchanges = baseline.TotalExchanges;
         long lastAccepted = baseAccepted;
         long lastExchanges = baseExchanges;
         var minuteScores = new List<MinuteScoreRecord>();
-        int peakConcurrent = _sessions.LiveMeterCount;
+        int peakConcurrent = _simMetrics.ActiveInboundExchanges;
         long sumLive = 0;
         int sampleCount = 0;
-        DateTimeOffset taskStart = DateTimeOffset.UtcNow;
         var pollInterval = TimeSpan.FromSeconds(5);
 
         while (!ct.IsCancellationRequested && DateTimeOffset.UtcNow < end)
@@ -274,7 +335,7 @@ public sealed class TestRunEngine : IAsyncDisposable
             try { await Task.Delay(pollInterval, ct); }
             catch (OperationCanceledException) { break; }
 
-            int live = _sessions.LiveMeterCount;
+            int live = _simMetrics.ActiveInboundExchanges;
             if (live > peakConcurrent) peakConcurrent = live;
             sumLive += live;
             sampleCount++;
@@ -282,9 +343,9 @@ public sealed class TestRunEngine : IAsyncDisposable
             SimulatorMetricsSnapshot poll = _simMetrics.Snapshot(live);
             long connsSoFar = poll.TotalAccepted - baseAccepted;
             long reqsSoFar = poll.TotalExchanges - baseExchanges;
-            AddMinuteScore(minuteScores, DateTimeOffset.UtcNow,
+            AddPullMinuteSample(minuteScores, taskStart, DateTimeOffset.UtcNow,
                 (int)Math.Min(int.MaxValue, Math.Max(0, poll.TotalExchanges - lastExchanges)),
-                (int)Math.Min(int.MaxValue, Math.Max(0, poll.TotalAccepted - lastAccepted)));
+                (int)Math.Min(int.MaxValue, Math.Max(0, poll.TotalAccepted - lastAccepted)), live);
             lastAccepted = poll.TotalAccepted;
             lastExchanges = poll.TotalExchanges;
             lock (_lock)
@@ -292,12 +353,12 @@ public sealed class TestRunEngine : IAsyncDisposable
             Changed?.Invoke();
         }
 
-        SimulatorMetricsSnapshot endSnap = _simMetrics.Snapshot(_sessions.LiveMeterCount);
+        SimulatorMetricsSnapshot endSnap = _simMetrics.Snapshot(_simMetrics.ActiveInboundExchanges);
         long deltaAccepted = Math.Max(0, endSnap.TotalAccepted - baseAccepted);
         long deltaExchanges = Math.Max(0, endSnap.TotalExchanges - baseExchanges);
-        AddMinuteScore(minuteScores, DateTimeOffset.UtcNow,
+        AddPullMinuteSample(minuteScores, taskStart, DateTimeOffset.UtcNow,
             (int)Math.Min(int.MaxValue, Math.Max(0, endSnap.TotalExchanges - lastExchanges)),
-            (int)Math.Min(int.MaxValue, Math.Max(0, endSnap.TotalAccepted - lastAccepted)));
+            (int)Math.Min(int.MaxValue, Math.Max(0, endSnap.TotalAccepted - lastAccepted)), _simMetrics.ActiveInboundExchanges);
 
         double elapsedMin = Math.Max(0.1, (DateTimeOffset.UtcNow - taskStart).TotalMinutes);
         double avgConcurrent = sampleCount > 0 ? (double)sumLive / sampleCount : peakConcurrent;
@@ -318,7 +379,7 @@ public sealed class TestRunEngine : IAsyncDisposable
             minuteScores: minuteScores);
     }
 
-    private async Task<TickRecord> RunPushTickAsync(int tickNum, string taskId, DateTimeOffset tickStart, IReadOnlyList<int> batchIds, CancellationToken ct, int? maximumMeters = null)
+    private async Task<TickRecord> RunPushTickAsync(int tickNum, string taskId, DateTimeOffset tickStart, IReadOnlyList<int> batchIds, CancellationToken ct, int? maximumMeters = null, IReadOnlyDictionary<int, int>? perBatchLimits = null, bool selectRandomly = false)
     {
         var results = new List<BatchTickResult>();
 
@@ -333,7 +394,8 @@ public sealed class TestRunEngine : IAsyncDisposable
             BatchTickResult tr;
             try
             {
-                PushBatchResult r = await _push.PushBatchAsync(batchId, destination: null, ct, maximumMeters);
+                int? meterLimit = perBatchLimits is null ? maximumMeters : perBatchLimits.GetValueOrDefault(batchId);
+                PushBatchResult r = await _push.PushBatchAsync(batchId, destination: null, ct, meterLimit, selectRandomly);
                 sw.Stop();
                 tr = new BatchTickResult
                 {
@@ -347,6 +409,13 @@ public sealed class TestRunEngine : IAsyncDisposable
                     DurationMs = sw.ElapsedMilliseconds,
                     Error = r.Ok ? null : r.Error,
                 };
+            }
+            catch (OperationCanceledException)
+            {
+                // Do not turn an intentional stop into a failed batch. Completed earlier
+                // batches remain in this tick and are included in the stopped-run report.
+                sw.Stop();
+                break;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -396,7 +465,7 @@ public sealed class TestRunEngine : IAsyncDisposable
 
         lock (_lock)
         {
-            finalStatus = state.Status is TestRunStatus.Cancelled or TestRunStatus.Failed
+            finalStatus = state.Status is TestRunStatus.Cancelled or TestRunStatus.Stopped or TestRunStatus.Failed
                 ? state.Status
                 : TestRunStatus.Completed;
             state.Status = finalStatus;
@@ -409,7 +478,7 @@ public sealed class TestRunEngine : IAsyncDisposable
         double systemFactor = ComputeSystemFactor(avgCpu);
 
         // HES-side delta across the whole run: how much did HES actually touch us?
-        SimulatorMetricsSnapshot inboundEnd = _simMetrics.Snapshot(_sessions.LiveMeterCount);
+        SimulatorMetricsSnapshot inboundEnd = _simMetrics.Snapshot(_simMetrics.ActiveInboundExchanges);
         long inboundConns = Math.Max(0, inboundEnd.TotalAccepted - inboundBaseline.TotalAccepted);
         long inboundExchanges = Math.Max(0, inboundEnd.TotalExchanges - inboundBaseline.TotalExchanges);
         double inboundLatencyMs = inboundEnd.AvgBridgeLatency.TotalMilliseconds;
@@ -433,16 +502,29 @@ public sealed class TestRunEngine : IAsyncDisposable
         double overallMedian = Percentile(allDurations, 50);
         double overallP95 = Percentile(allDurations, 95);
 
-        // The headline score is the strongest clock-minute, not accumulated work over the run.
+        // Scores are split by traffic direction. Host CPU/RAM and broker latency remain debug
+        // telemetry only, so they never alter a benchmark score.
         List<MinuteScoreRecord> minuteScores = BuildMinuteScores(taskResults);
         List<MinuteScoreRecord> pullMinuteScores = taskResults
             .Where(r => r.Task.Type == TestTaskType.PullListener)
             .SelectMany(r => r.MinuteScores)
             .GroupBy(m => m.MinuteStartUtc)
-            .Select(g => new MinuteScoreRecord { MinuteStartUtc = g.Key, SuccessfulMeters = g.Sum(m => m.SuccessfulMeters), FailedMeters = g.Sum(m => m.FailedMeters) })
+            .Select(g => new MinuteScoreRecord
+            {
+                MinuteStartUtc = g.Key,
+                SuccessfulMeters = g.Sum(m => m.SuccessfulMeters),
+                FailedMeters = g.Sum(m => m.FailedMeters),
+                PeakConcurrentSessions = g.Max(m => m.PeakConcurrentSessions),
+                ConcurrentSessionSampleSum = g.Sum(m => m.ConcurrentSessionSampleSum),
+                ConcurrentSessionSamples = g.Sum(m => m.ConcurrentSessionSamples),
+            })
             .ToList();
-        int rawScore = minuteScores.Count == 0 ? 0 : minuteScores.Max(m => m.Score);
-        int normalizedScore = minuteScores.Count == 0 ? 0 : (int)Math.Round(minuteScores.Average(m => m.Score));
+        List<MinuteScoreRecord> pushMinuteScores = BuildMinuteScores(taskResults.Where(r => r.Task.Type != TestTaskType.PullListener));
+        MinuteScoreRecord? bestPullMinute = pullMinuteScores.OrderByDescending(PullMinuteScore).FirstOrDefault();
+        int pullScore = bestPullMinute is null ? 0 : PullMinuteScore(bestPullMinute);
+        int pushScore = pushMinuteScores.Count == 0 ? 0 : pushMinuteScores.Max(m => m.SuccessfulMeters);
+        int rawScore = pullScore + pushScore;
+        int normalizedScore = rawScore;
 
         // Per-environment aggregates
         var envKeys = taskResults
@@ -500,6 +582,8 @@ public sealed class TestRunEngine : IAsyncDisposable
             PeakRamMb = Math.Round(peakRam, 0),
             RawBenchScore = rawScore,
             NormalizedBenchScore = normalizedScore,
+            PullBenchScore = pullScore,
+            PushBenchScore = pushScore,
             MinuteScores = minuteScores,
             TotalMetersPushed = totalPushed,
             TotalMetersFailed = totalFailed,
@@ -523,7 +607,7 @@ public sealed class TestRunEngine : IAsyncDisposable
         catch (Exception ex) { _logger.LogError(ex, "Failed to save report {RunId}", state.RunId); }
 
         Changed?.Invoke();
-        if (finalStatus == TestRunStatus.Completed) RunCompleted?.Invoke(report);
+        if (finalStatus is TestRunStatus.Completed or TestRunStatus.Stopped) RunCompleted?.Invoke(report);
     }
 
     private TaskRunReport BuildTaskReport(TaskRunResult r, double elapsedMin)
@@ -542,6 +626,7 @@ public sealed class TestRunEngine : IAsyncDisposable
             TestTaskType.PushLoop => 1.0,
             TestTaskType.PullListener => 1.3,
             TestTaskType.BurstPush => 0.9,
+            TestTaskType.PartialPush => 0.9,
             _ => 1.0,
         };
 
@@ -575,12 +660,16 @@ public sealed class TestRunEngine : IAsyncDisposable
                     return bThroughput * fleetFactor * nicW * (bPct / 100.0) * (1000.0 / (1 + bP95 / 1000.0));
                 });
 
-            double burstFactor = r.Task is BurstPushTask bt ? 1.0 + (bt.BurstCount - 1) * 0.05 : 1.0;
+            double burstFactor = r.Task is BurstPushTask bt ? 1.0 + (bt.BurstCount - 1) * 0.05
+                : r.Task is PartialPushTask pt ? 1.0 + (pt.BurstCount - 1) * 0.05 : 1.0;
             taskRaw = batchSum * typeMultiplier * burstFactor;
         }
 
         taskRaw *= ScoreScale;
-        int taskBestMinute = BuildMinuteScores(new[] { r }).DefaultIfEmpty().Max(m => m?.Score ?? 0);
+        List<MinuteScoreRecord> taskMinutes = BuildMinuteScores(new[] { r });
+        int taskBestMinute = r.Task.Type == TestTaskType.PullListener
+            ? taskMinutes.DefaultIfEmpty().Max(m => m is null ? 0 : PullMinuteScore(m))
+            : taskMinutes.DefaultIfEmpty().Max(m => m?.SuccessfulMeters ?? 0);
 
         return new TaskRunReport
         {
@@ -628,6 +717,9 @@ public sealed class TestRunEngine : IAsyncDisposable
                 MinuteStartUtc = g.Key,
                 SuccessfulMeters = g.Sum(m => m.SuccessfulMeters),
                 FailedMeters = g.Sum(m => m.FailedMeters),
+                PeakConcurrentSessions = g.Max(m => m.PeakConcurrentSessions),
+                ConcurrentSessionSampleSum = g.Sum(m => m.ConcurrentSessionSampleSum),
+                ConcurrentSessionSamples = g.Sum(m => m.ConcurrentSessionSamples),
             })
             .OrderBy(m => m.MinuteStartUtc)
             .ToList();
@@ -646,6 +738,17 @@ public sealed class TestRunEngine : IAsyncDisposable
     private static void AddMinuteScore(List<MinuteScoreRecord> samples, DateTimeOffset timestamp, int successful, int failed)
     {
         DateTimeOffset minute = new(timestamp.Year, timestamp.Month, timestamp.Day, timestamp.Hour, timestamp.Minute, 0, TimeSpan.Zero);
+        AddMinuteScoreAt(samples, minute, successful, failed);
+    }
+
+    private static void AddMinuteScore(List<MinuteScoreRecord> samples, DateTimeOffset windowStart, DateTimeOffset timestamp, int successful, int failed)
+    {
+        int minuteOffset = Math.Max(0, (int)Math.Floor((timestamp - windowStart).TotalMinutes));
+        AddMinuteScoreAt(samples, windowStart.AddMinutes(minuteOffset), successful, failed);
+    }
+
+    private static void AddMinuteScoreAt(List<MinuteScoreRecord> samples, DateTimeOffset minute, int successful, int failed)
+    {
         int index = samples.FindIndex(m => m.MinuteStartUtc == minute);
         if (index < 0)
         {
@@ -658,8 +761,43 @@ public sealed class TestRunEngine : IAsyncDisposable
             MinuteStartUtc = minute,
             SuccessfulMeters = old.SuccessfulMeters + successful,
             FailedMeters = old.FailedMeters + failed,
+            PeakConcurrentSessions = old.PeakConcurrentSessions,
+            ConcurrentSessionSampleSum = old.ConcurrentSessionSampleSum,
+            ConcurrentSessionSamples = old.ConcurrentSessionSamples,
         };
     }
+
+    private static void AddPullMinuteSample(List<MinuteScoreRecord> samples, DateTimeOffset windowStart, DateTimeOffset timestamp, int successful, int failed, int activeSessions)
+    {
+        int minuteOffset = Math.Max(0, (int)Math.Floor((timestamp - windowStart).TotalMinutes));
+        DateTimeOffset minute = windowStart.AddMinutes(minuteOffset);
+        int index = samples.FindIndex(m => m.MinuteStartUtc == minute);
+        if (index < 0)
+        {
+            samples.Add(new MinuteScoreRecord
+            {
+                MinuteStartUtc = minute, SuccessfulMeters = successful, FailedMeters = failed,
+                PeakConcurrentSessions = activeSessions, ConcurrentSessionSampleSum = activeSessions,
+                ConcurrentSessionSamples = 1,
+            });
+            return;
+        }
+
+        MinuteScoreRecord old = samples[index];
+        samples[index] = new MinuteScoreRecord
+        {
+            MinuteStartUtc = minute, SuccessfulMeters = old.SuccessfulMeters + successful,
+            FailedMeters = old.FailedMeters + failed,
+            PeakConcurrentSessions = Math.Max(old.PeakConcurrentSessions, activeSessions),
+            ConcurrentSessionSampleSum = old.ConcurrentSessionSampleSum + activeSessions,
+            ConcurrentSessionSamples = old.ConcurrentSessionSamples + 1,
+        };
+    }
+
+    /// <summary>Pull = exchanges + 2 × peak concurrent sessions + average concurrent sessions.</summary>
+    private static int PullMinuteScore(MinuteScoreRecord minute) => minute.SuccessfulMeters
+        + (2 * minute.PeakConcurrentSessions)
+        + (int)Math.Round(minute.AverageConcurrentSessions);
 
     private static double NicSuccessWeight(string nicType) => nicType switch
     {

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Nodes;
 using Microsoft.Extensions.Options;
 using ManyMeterSimulator.Provisioning;
 
@@ -47,6 +48,31 @@ public sealed class TestRunStore
 
         try { return JsonSerializer.Deserialize<TestRunReport>(File.ReadAllText(found), JsonOpts); }
         catch (Exception ex) { _logger.LogError(ex, "Failed to load report {RunId}", runId); return null; }
+    }
+
+    public bool Rename(string runId, string label, out string? error)
+    {
+        error = null;
+        string? path = FindFileByRunId(runId);
+        if (path is null) { error = "Run report was not found."; return false; }
+        try
+        {
+            JsonObject? node = JsonNode.Parse(File.ReadAllText(path))?.AsObject();
+            if (node is null) { error = "Run report could not be read."; return false; }
+            node[nameof(TestRunReport.RunLabel)] = label.Trim();
+            File.WriteAllText(path, node.ToJsonString(JsonOpts));
+            return true;
+        }
+        catch (Exception ex) { _logger.LogError(ex, "Failed to rename report {RunId}", runId); error = ex.Message; return false; }
+    }
+
+    public bool Delete(string runId, out string? error)
+    {
+        error = null;
+        string? path = FindFileByRunId(runId);
+        if (path is null) { error = "Run report was not found."; return false; }
+        try { File.Delete(path); return true; }
+        catch (Exception ex) { _logger.LogError(ex, "Failed to delete report {RunId}", runId); error = ex.Message; return false; }
     }
 
     public IReadOnlyList<TestRunReport> LoadAll()

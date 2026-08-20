@@ -23,6 +23,11 @@ public sealed class TestRunReport
     public int RawBenchScore { get; init; }
     /// <summary>RawBenchScore / task count — comparable across plans of different size.</summary>
     public int NormalizedBenchScore { get; init; }
+    /// <summary>Pull benchmark: exchanges/minute plus concurrent-session capacity.</summary>
+    public int PullBenchScore { get; init; }
+    /// <summary>Push benchmark: successful meters pushed in the best minute.</summary>
+    public int PushBenchScore { get; init; }
+    public int OverallBenchScore => PullBenchScore + PushBenchScore;
 
     public int BestMinuteScore => RawBenchScore;
     public double AverageMinuteScore => NormalizedBenchScore;
@@ -107,6 +112,12 @@ public sealed class MinuteScoreRecord
     public DateTimeOffset MinuteStartUtc { get; init; }
     public int SuccessfulMeters { get; init; }
     public int FailedMeters { get; init; }
+    public int PeakConcurrentSessions { get; init; }
+    public long ConcurrentSessionSampleSum { get; init; }
+    public int ConcurrentSessionSamples { get; init; }
+    public double AverageConcurrentSessions => ConcurrentSessionSamples == 0
+        ? 0
+        : (double)ConcurrentSessionSampleSum / ConcurrentSessionSamples;
     public int Score => SuccessfulMeters;
 }
 
@@ -149,7 +160,7 @@ public sealed class BatchRunReport
     public double P95Ms { get; init; }
 }
 
-public enum TestRunStatus { Scheduled, Running, Completed, Failed, Cancelled }
+public enum TestRunStatus { Scheduled, Running, Completed, Failed, Cancelled, Stopped }
 
 public sealed class TestRunState
 {
