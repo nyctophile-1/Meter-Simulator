@@ -289,7 +289,7 @@ else
                     <td style="text-align:right">@batch.Count.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</td>
                     <td>
                         <MudChip T="string" Size="Size.Small" Variant="Variant.Filled" Color="@StatusColor(batch.Status)">
-                            @batch.Status
+                            @StatusLabel(batch.Status)
                         </MudChip>
                         @if (batch.Status == BatchStatus.Starting && Sessions.GetProgress(batch.Id) is { } p)
                         {
@@ -598,6 +598,13 @@ else
         BatchStatus.Starting => Color.Info,
         BatchStatus.Stopped => Color.Error,
         _ => Color.Default,
+    };
+
+    private static string StatusLabel(BatchStatus status) => status switch
+    {
+        BatchStatus.Starting => "Loading",
+        BatchStatus.NotStarted => "Not started",
+        _ => status.ToString(),
     };
 
     /// <summary>

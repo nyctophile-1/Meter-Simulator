@@ -16,17 +16,27 @@ public sealed class SessionRegistry
 {
     private readonly ConcurrentDictionary<long, ConnectionState> _activeSessions = new();
 
+    /// <summary>Raised for each real session open/close, including the new active-session count.</summary>
+    public event Action<int, DateTimeOffset>? ActiveCountChanged;
+
     /// <summary>Atomically registers a session for a meter. False if one is already active.</summary>
-    public bool TryRegister(MeterRef meter, ConnectionState state) => _activeSessions.TryAdd(meter.Index, state);
+    public bool TryRegister(MeterRef meter, ConnectionState state)
+    {
+        if (!_activeSessions.TryAdd(meter.Index, state)) return false;
+        ActiveCountChanged?.Invoke(_activeSessions.Count, DateTimeOffset.UtcNow);
+        return true;
+    }
 
     /// <summary>Removes the given session, but only if it's still the one on record for that meter.</summary>
     public void Unregister(MeterRef meter, ConnectionState state)
     {
-        _activeSessions.TryRemove(new KeyValuePair<long, ConnectionState>(meter.Index, state));
+        if (_activeSessions.TryRemove(new KeyValuePair<long, ConnectionState>(meter.Index, state)))
+            ActiveCountChanged?.Invoke(_activeSessions.Count, DateTimeOffset.UtcNow);
     }
 
     public bool TryGet(MeterRef meter, out ConnectionState? state) => _activeSessions.TryGetValue(meter.Index, out state);
 
+    /// <summary>Current live meter sessions. The registry is the single source of truth.</summary>
     public int ActiveCount => _activeSessions.Count;
 
     /// <summary>Live sessions on one NIC. O(n) — for the periodic summary, not the hot path.</summary>

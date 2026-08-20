@@ -614,10 +614,10 @@
                         <div class="metrics-strip">
                             @MetricCell("★ SELECTED BEST MINUTE", r.BestMinuteScore.ToString("N0") + " exchanges", "var(--mud-palette-success)")
                             @MetricCell("★ SELECTED MINUTE EPS", (r.BestMinuteScore / 60.0).ToString("F2"), "var(--mud-palette-success)")
-                            @MetricCell("★ PEAK PARALLEL", r.Tasks.Where(t => t.TaskType == TestTaskType.PullListener).DefaultIfEmpty().Max(t => t?.PeakConcurrentSessions ?? 0).ToString("N0"), "var(--mud-palette-success)")
-                            @MetricCell("★ AVG PARALLEL", r.Tasks.Where(t => t.TaskType == TestTaskType.PullListener).DefaultIfEmpty().Max(t => t?.AvgConcurrentSessions ?? 0).ToString("F1"), "var(--mud-palette-success)")
+                            @MetricCell("PEAK ACTIVE SESSIONS", r.Tasks.Where(t => t.TaskType == TestTaskType.PullListener).DefaultIfEmpty().Max(t => t?.PeakConcurrentSessions ?? 0).ToString("N0"), "var(--mud-palette-success)")
+                            @MetricCell("AVG ACTIVE SESSIONS", r.Tasks.Where(t => t.TaskType == TestTaskType.PullListener).DefaultIfEmpty().Max(t => t?.AvgConcurrentSessions ?? 0).ToString("F1"), "var(--mud-palette-success)")
                         </div>
-                        <div class="sec-sub mb-3">★ Metrics are used for the Base Pull leaderboard. CPU, memory, and network/broker latency are diagnostic only.</div>
+                        <div class="sec-sub mb-3">These selected-minute values determine the Pull benchmark score. CPU, memory, and bridge timing are diagnostic only.</div>
                     }
                     else
                     {
@@ -638,8 +638,8 @@
                         @MetricCell("BEST MINUTE EXCHANGES", r.BestMinuteScore.ToString("N0"), null)
                         @MetricCell("RUN AVG EPS", r.AverageInboundExchangesPerSecond.ToString("F2"), null)
                         @MetricCell("TOTAL HES EXCHANGES", r.TotalInboundExchanges.ToString("N0"), null)
-                        @MetricCell("HES REACHED", r.TotalInboundConnections.ToString("N0"), null)
-                        @MetricCell("HES LATENCY ms", r.AvgInboundLatencyMs.ToString("F0"), null)
+                        @MetricCell("ADMITTED SESSIONS", r.TotalInboundConnections.ToString("N0"), null)
+                        @MetricCell("SIM BRIDGE TIME ms", r.AvgInboundLatencyMs.ToString("F0"), null)
                         @MetricCell("SIM AVG CPU %", r.AvgCpuPct.ToString("F1"), null)
                         @MetricCell("SIM PEAK RAM MB", r.PeakRamMb.ToString("N0"), null)
                     </div>
@@ -739,8 +739,8 @@
             {
                 ("Pull score", r=>PullScore(r), true, r=>PullValue(r, PullScore(r).ToString("N0"))),
                 ("Selected minute EPS", r=>r.BestMinuteScore / 60.0, true, r=>PullValue(r, (r.BestMinuteScore / 60.0).ToString("F2"))),
-                ("Peak parallel exchanges", r=>r.Tasks.Where(t=>t.TaskType == TestTaskType.PullListener).DefaultIfEmpty().Max(t=>t?.PeakConcurrentSessions ?? 0), true, r=>PullValue(r, r.Tasks.Where(t=>t.TaskType == TestTaskType.PullListener).DefaultIfEmpty().Max(t=>t?.PeakConcurrentSessions ?? 0).ToString("N0"))),
-                ("Avg parallel exchanges", r=>r.Tasks.Where(t=>t.TaskType == TestTaskType.PullListener).DefaultIfEmpty().Max(t=>t?.AvgConcurrentSessions ?? 0), true, r=>PullValue(r, r.Tasks.Where(t=>t.TaskType == TestTaskType.PullListener).DefaultIfEmpty().Max(t=>t?.AvgConcurrentSessions ?? 0).ToString("F1"))),
+                ("Peak active sessions", r=>r.Tasks.Where(t=>t.TaskType == TestTaskType.PullListener).DefaultIfEmpty().Max(t=>t?.PeakConcurrentSessions ?? 0), true, r=>PullValue(r, r.Tasks.Where(t=>t.TaskType == TestTaskType.PullListener).DefaultIfEmpty().Max(t=>t?.PeakConcurrentSessions ?? 0).ToString("N0"))),
+                ("Avg active sessions", r=>r.Tasks.Where(t=>t.TaskType == TestTaskType.PullListener).DefaultIfEmpty().Max(t=>t?.AvgConcurrentSessions ?? 0), true, r=>PullValue(r, r.Tasks.Where(t=>t.TaskType == TestTaskType.PullListener).DefaultIfEmpty().Max(t=>t?.AvgConcurrentSessions ?? 0).ToString("F1"))),
             };
             var pushMetrics = new (string Label, Func<TestRunReport,double> Val, bool HighGood, Func<TestRunReport,string> Fmt)[]
             {

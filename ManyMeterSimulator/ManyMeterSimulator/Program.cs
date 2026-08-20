@@ -232,28 +232,29 @@ MeterSimulator.Diagnostics.CoreLog.Configure(
     }
 
     // Restore materialized meter sessions for batches that were running before restart.
-    // The batch status is restored from disk but meters are not in memory, so we reload them now.
+    // Their persisted state only says they were active before shutdown; their meter sessions are
+    // not in memory yet. Route restoration through StartBatchAsync so each batch visibly moves to
+    // Loading, publishes its materialization progress, and becomes Running only when ready.
     var sessionManager = app.Services.GetRequiredService<MeterSessionManager>();
     var runningBatches = meterRegistry.Batches.Where(b => b.Status == BatchStatus.Running).ToList();
     if (runningBatches.Count > 0)
     {
         var logger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("ManyMeterSimulator.Startup");
-        _ = Task.Run(async () =>
+        var restores = runningBatches.Select(async batch =>
         {
-            foreach (var batch in runningBatches)
+            try
             {
-                try
-                {
-                    await sessionManager.MaterializeBatchAsync(batch);
-                    logger.LogInformation("Reloaded {Count} meter sessions for batch {BatchId} ({BatchName}) on startup",
-                        batch.Count, batch.Id, batch.Name);
-                }
-                catch (Exception ex)
-                {
-                    logger.LogError(ex, "Failed to reload batch {BatchId} ({BatchName}) on startup", batch.Id, batch.Name);
-                }
+                await sessionManager.StartBatchAsync(batch.Id);
+                logger.LogInformation("Reloaded {Count} meter sessions for batch {BatchId} ({BatchName}) on startup",
+                    batch.Count, batch.Id, batch.Name);
             }
-        });
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Failed to reload batch {BatchId} ({BatchName}) on startup", batch.Id, batch.Name);
+            }
+        }).ToArray();
+
+        _ = Task.WhenAll(restores);
     }
 }
 

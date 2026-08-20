@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using ManyMeterSimulator.Brain;
 using ManyMeterSimulator.BadComm;
@@ -19,6 +20,7 @@ public sealed class TestRunEngine : IAsyncDisposable
     private readonly NetworkRegistry _network;
     private readonly PushCoordinator _push;
     private readonly MeterSessionManager _sessions;
+    private readonly SessionRegistry _connectionRegistry;
     private readonly SimulatorMetrics _simMetrics;
     private readonly TestRunStore _store;
     private readonly BadCommSettings _badComm;
@@ -35,6 +37,7 @@ public sealed class TestRunEngine : IAsyncDisposable
         NetworkRegistry network,
         PushCoordinator push,
         MeterSessionManager sessions,
+        SessionRegistry connectionRegistry,
         SimulatorMetrics simMetrics,
         TestRunStore store,
         BadCommSettings badComm,
@@ -45,6 +48,7 @@ public sealed class TestRunEngine : IAsyncDisposable
         _network = network;
         _push = push;
         _sessions = sessions;
+        _connectionRegistry = connectionRegistry;
         _simMetrics = simMetrics;
         _store = store;
         _badComm = badComm;
@@ -170,7 +174,7 @@ public sealed class TestRunEngine : IAsyncDisposable
         // Snapshot HES-side counters so we can compute the run-wide delta at finalize —
         // this is what tells us "how much did HES actually touch us during this run".
         OfficialBenchmarkProfile? profile = plan.IsOfficial ? ApplyOfficialProfile() : null;
-        SimulatorMetricsSnapshot inboundBaseline = _simMetrics.Snapshot(_simMetrics.ActiveInboundExchanges);
+        SimulatorMetricsSnapshot inboundBaseline = _simMetrics.Snapshot(_connectionRegistry.ActiveCount);
 
         // Launch CPU sampler + all tasks concurrently
         using var cpuSampler = new CpuSampler();
@@ -319,23 +323,31 @@ public sealed class TestRunEngine : IAsyncDisposable
         // Real HES activity comes from SimulatorMetrics: TotalAccepted = connections HES opened,
         // TotalExchanges = DLMS request/response pairs. LiveMeterCount only tracks materialized
         // session objects which barely move — that's why the old readings were all zero.
-        SimulatorMetricsSnapshot baseline = _simMetrics.Snapshot(_simMetrics.ActiveInboundExchanges);
+        SimulatorMetricsSnapshot baseline = _simMetrics.Snapshot(_connectionRegistry.ActiveCount);
         long baseAccepted = baseline.TotalAccepted;
         long baseExchanges = baseline.TotalExchanges;
         long lastAccepted = baseAccepted;
         long lastExchanges = baseExchanges;
         var minuteScores = new List<MinuteScoreRecord>();
-        int peakConcurrent = _simMetrics.ActiveInboundExchanges;
+        int peakConcurrent = _connectionRegistry.ActiveCount;
         long sumLive = 0;
         int sampleCount = 0;
-        var pollInterval = TimeSpan.FromSeconds(5);
+        var pollInterval = TimeSpan.FromSeconds(1);
+        var eventPeaksByMinute = new ConcurrentDictionary<int, int>();
+        Action<int, DateTimeOffset> trackActiveSessionPeak = (active, changedAt) =>
+        {
+            int minuteOffset = Math.Max(0, (int)Math.Floor((changedAt - taskStart).TotalMinutes));
+            eventPeaksByMinute.AddOrUpdate(minuteOffset, active, (_, previous) => Math.Max(previous, active));
+        };
+        trackActiveSessionPeak(peakConcurrent, taskStart);
+        _connectionRegistry.ActiveCountChanged += trackActiveSessionPeak;
 
         while (!ct.IsCancellationRequested && DateTimeOffset.UtcNow < end)
         {
             try { await Task.Delay(pollInterval, ct); }
             catch (OperationCanceledException) { break; }
 
-            int live = _simMetrics.ActiveInboundExchanges;
+            int live = _connectionRegistry.ActiveCount;
             if (live > peakConcurrent) peakConcurrent = live;
             sumLive += live;
             sampleCount++;
@@ -353,12 +365,30 @@ public sealed class TestRunEngine : IAsyncDisposable
             Changed?.Invoke();
         }
 
-        SimulatorMetricsSnapshot endSnap = _simMetrics.Snapshot(_simMetrics.ActiveInboundExchanges);
+        _connectionRegistry.ActiveCountChanged -= trackActiveSessionPeak;
+
+        SimulatorMetricsSnapshot endSnap = _simMetrics.Snapshot(_connectionRegistry.ActiveCount);
         long deltaAccepted = Math.Max(0, endSnap.TotalAccepted - baseAccepted);
         long deltaExchanges = Math.Max(0, endSnap.TotalExchanges - baseExchanges);
         AddPullMinuteSample(minuteScores, taskStart, DateTimeOffset.UtcNow,
             (int)Math.Min(int.MaxValue, Math.Max(0, endSnap.TotalExchanges - lastExchanges)),
-            (int)Math.Min(int.MaxValue, Math.Max(0, endSnap.TotalAccepted - lastAccepted)), _simMetrics.ActiveInboundExchanges);
+            (int)Math.Min(int.MaxValue, Math.Max(0, endSnap.TotalAccepted - lastAccepted)), _connectionRegistry.ActiveCount);
+
+        for (int i = 0; i < minuteScores.Count; i++)
+        {
+            MinuteScoreRecord minute = minuteScores[i];
+            int minuteOffset = Math.Max(0, (int)Math.Floor((minute.MinuteStartUtc - taskStart).TotalMinutes));
+            if (!eventPeaksByMinute.TryGetValue(minuteOffset, out int eventPeak)) continue;
+            minuteScores[i] = new MinuteScoreRecord
+            {
+                MinuteStartUtc = minute.MinuteStartUtc,
+                SuccessfulMeters = minute.SuccessfulMeters,
+                FailedMeters = minute.FailedMeters,
+                PeakConcurrentSessions = Math.Max(minute.PeakConcurrentSessions, eventPeak),
+                ConcurrentSessionSampleSum = minute.ConcurrentSessionSampleSum,
+                ConcurrentSessionSamples = minute.ConcurrentSessionSamples,
+            };
+        }
 
         double elapsedMin = Math.Max(0.1, (DateTimeOffset.UtcNow - taskStart).TotalMinutes);
         double avgConcurrent = sampleCount > 0 ? (double)sumLive / sampleCount : peakConcurrent;
@@ -478,7 +508,7 @@ public sealed class TestRunEngine : IAsyncDisposable
         double systemFactor = ComputeSystemFactor(avgCpu);
 
         // HES-side delta across the whole run: how much did HES actually touch us?
-        SimulatorMetricsSnapshot inboundEnd = _simMetrics.Snapshot(_simMetrics.ActiveInboundExchanges);
+        SimulatorMetricsSnapshot inboundEnd = _simMetrics.Snapshot(_connectionRegistry.ActiveCount);
         long inboundConns = Math.Max(0, inboundEnd.TotalAccepted - inboundBaseline.TotalAccepted);
         long inboundExchanges = Math.Max(0, inboundEnd.TotalExchanges - inboundBaseline.TotalExchanges);
         double inboundLatencyMs = inboundEnd.AvgBridgeLatency.TotalMilliseconds;
@@ -667,8 +697,11 @@ public sealed class TestRunEngine : IAsyncDisposable
 
         taskRaw *= ScoreScale;
         List<MinuteScoreRecord> taskMinutes = BuildMinuteScores(new[] { r });
-        int taskBestMinute = r.Task.Type == TestTaskType.PullListener
-            ? taskMinutes.DefaultIfEmpty().Max(m => m is null ? 0 : PullMinuteScore(m))
+        MinuteScoreRecord? selectedPullMinute = r.Task.Type == TestTaskType.PullListener
+            ? taskMinutes.OrderByDescending(PullMinuteScore).FirstOrDefault()
+            : null;
+        int taskBestMinute = selectedPullMinute is not null
+            ? PullMinuteScore(selectedPullMinute)
             : taskMinutes.DefaultIfEmpty().Max(m => m?.SuccessfulMeters ?? 0);
 
         return new TaskRunReport
@@ -691,8 +724,8 @@ public sealed class TestRunEngine : IAsyncDisposable
             PullsAnswered = r.PullsAnswered,
             PullSuccessRatePct = r.PullsReceived == 0 ? 0 : r.PullsAnswered * 100.0 / r.PullsReceived,
             PullP95Ms = r.PullP95Ms,
-            PeakConcurrentSessions = r.PeakConcurrentSessions,
-            AvgConcurrentSessions = Math.Round(r.AvgConcurrentSessions, 1),
+            PeakConcurrentSessions = selectedPullMinute?.PeakConcurrentSessions ?? r.PeakConcurrentSessions,
+            AvgConcurrentSessions = Math.Round(selectedPullMinute?.AverageConcurrentSessions ?? r.AvgConcurrentSessions, 1),
             SessionRatePerMin = Math.Round(r.SessionRatePerMin, 2),
             TotalActiveMs = r.Ticks.SelectMany(t => t.Batches).Sum(b => b.DurationMs),
         };
