@@ -11,6 +11,7 @@
 @using ManyMeterSimulator.BadComm
 @inject FleetCompositionCache Composition
 @inject SimulatorMetrics Metrics
+@inject DashboardActivityHistory ActivityHistory
 @inject SessionRegistry Connections
 @inject MeterSessionManager Sessions
 @inject MeterRegistry MeterRegistry
@@ -42,7 +43,7 @@
                 <div>
                     <MudText Typo="Typo.subtitle1">Live activity</MudText>
                     <MudText Typo="Typo.caption" Class="mud-text-secondary">
-                        Last @(_activeHistory.Count) samples &middot; every 2s
+                        Last @WindowSeconds seconds &middot; captured every 2s
                     </MudText>
                 </div>
                 <div class="d-flex align-center gap-4 activity-legend">
@@ -54,7 +55,7 @@
 
 
             @{
-                // Always the real chart, from the very first sample: the axes and the 60s window
+                // Always the real chart, from the very first sample: the axes and the 120s window
                 // are fixed regardless of how much history exists yet, so there is nothing for a
                 // "Collecting samples…" placeholder to stand in for — and nothing that changes
                 // height the moment real data arrives (see .chart-layout in site.css).
@@ -129,7 +130,7 @@
                         }
 
                         @* Invisible hit targets — one per sample, sized to its 2s slot in the fixed
-                           60s window (not spread across however many samples exist), and centred on
+                           120s window (not spread across however many samples exist), and centred on
                            the point so the crosshair lands under the cursor. *@
                         <div class="hover-cols">
                             @{
@@ -153,7 +154,7 @@
                         }
                     </div>
 
-                    @* Fixed regardless of how many samples exist yet — this IS the 60s window,
+                    @* Fixed regardless of how many samples exist yet — this IS the 120s window,
                        not a summary of what happened to be collected so far. *@
                     <div></div>
                     <div class="axis-x">
@@ -234,7 +235,7 @@
                     <tr>
                         <th>NIC</th>
                         <th style="text-align:right">Active</th>
-                        <th style="text-align:right">Total exchanges</th>
+                        <th style="text-align:right">Exchanges/min</th>
                         <th style="text-align:right">Exchanges/sec</th>
                     </tr>
                 </thead>
@@ -245,8 +246,8 @@
                         <tr class="batch-row is-idle">
                             <td><span class="nic-badge nic-badge-@nic.ToString().ToLowerInvariant()">@NicLabel(nic)</span></td>
                             <td style="text-align:right">@s.ActiveConnections.ToString("N0")</td>
-                            <td style="text-align:right">@s.TotalExchanges.ToString("N0")</td>
-                            <td style="text-align:right">@_nicExchPerSec.GetValueOrDefault(nic, 0).ToString("N1")</td>
+                            <td style="text-align:right">@NicExchangesPerMinute(nic).ToString("N0")</td>
+                            <td style="text-align:right">@NicExchangesPerSecond(nic).ToString("N1")</td>
                         </tr>
                     }
                 </tbody>
@@ -461,17 +462,15 @@
 @code {
     private System.Threading.Timer? _timer;
 
-    // The chart is a fixed 60-second window, sampled every 2s — 30 points fill it exactly. Both
+    // The chart is a fixed 120-second window, sampled every 2s — 60 points fill it exactly. Both
     // constants are load-bearing beyond MaxPoints: they also drive the always-on axis labels and
     // the time-based X position of every point, so the window never changes shape as data arrives.
-    private const int SampleIntervalSeconds = 2;
-    private const int MaxPoints = 30;
-    private const int WindowSeconds = MaxPoints * SampleIntervalSeconds;
+    private const int SampleIntervalSeconds = DashboardActivityHistory.SampleIntervalSeconds;
+    private const int WindowSeconds = DashboardActivityHistory.WindowSeconds;
 
     private readonly List<double> _activeHistory = new();
     private readonly List<double> _exchangesPerSecHistory = new();
-    private long _lastExchanges;
-    private DateTime _lastSampleUtc;
+    private IReadOnlyList<DashboardActivitySample> _activitySamples = Array.Empty<DashboardActivitySample>();
 
     // Push throughput, derived the same way as exchanges/sec: a delta over the sample interval
     // rather than a running total, so a finished burst decays to zero instead of sitting there.
@@ -503,20 +502,17 @@
 
     private static readonly NicType[] AllNicTypes = Enum.GetValues<NicType>();
     private readonly Dictionary<NicType, SimulatorMetricsSnapshot> _nicSnaps = new();
-    private readonly Dictionary<NicType, long> _nicLastExchanges = new();
-    private readonly Dictionary<NicType, double> _nicExchPerSec = new();
 
     protected override void OnInitialized()
     {
         _maxConns = TcpOptions.Value.MaxConcurrentConnections;
-        _lastSampleUtc = DateTime.UtcNow;
-        Sample(initial: true);
+        Sample();
         _timer = new System.Threading.Timer(
             _ => InvokeAsync(() => { Sample(); StateHasChanged(); }),
             null, 2000, 2000);
     }
 
-    private void Sample(bool initial = false)
+    private void Sample()
     {
         int active = Connections.ActiveCount;
         _snap = Metrics.Snapshot(active);
@@ -533,13 +529,8 @@
 
         _comms = Composition.Current();
 
-        DateTime now = DateTime.UtcNow;
-        double secs = Math.Max(0.001, (now - _lastSampleUtc).TotalSeconds);
-        double perSec = initial ? 0 : Math.Max(0, (_snap.TotalExchanges - _lastExchanges) / secs);
-        _lastExchanges = _snap.TotalExchanges;
-
         long pushAttempts = _snap.TotalPushMetersAttempted;
-        _pushPerSec = initial ? 0 : Math.Max(0, (pushAttempts - _lastPushAttempts) / secs);
+        _pushPerSec = Math.Max(0, (pushAttempts - _lastPushAttempts) / SampleIntervalSeconds);
         _lastPushAttempts = pushAttempts;
 
         // Per-NIC breakdown for the "NIC statistics" table — same delta-over-interval approach as
@@ -549,17 +540,14 @@
             SimulatorMetricsSnapshot nicSnap = Metrics.Snapshot(nic, Connections.ActiveCountFor(nic));
             _nicSnaps[nic] = nicSnap;
 
-            long lastForNic = _nicLastExchanges.GetValueOrDefault(nic, 0);
-            _nicExchPerSec[nic] = initial ? 0 : Math.Max(0, (nicSnap.TotalExchanges - lastForNic) / secs);
-            _nicLastExchanges[nic] = nicSnap.TotalExchanges;
         }
 
-        _lastSampleUtc = now;
-
-        _activeHistory.Add(active);
-        _exchangesPerSecHistory.Add(Math.Round(perSec, 1));
-        if (_activeHistory.Count > MaxPoints) _activeHistory.RemoveAt(0);
-        if (_exchangesPerSecHistory.Count > MaxPoints) _exchangesPerSecHistory.RemoveAt(0);
+        _activitySamples = ActivityHistory.Snapshot();
+        _activeHistory.Clear();
+        _activeHistory.AddRange(_activitySamples.Select(s => (double)s.ActiveConnections));
+        _exchangesPerSecHistory.Clear();
+        for (int i = 0; i < _activitySamples.Count; i++)
+            _exchangesPerSecHistory.Add(ExchangesPerSecondAt(i));
 
         // Each series is scaled 0..niceMax on its own axis, so both stay readable despite very
         // different magnitudes (connections vs exchanges/sec) and zero reads as zero.
@@ -595,7 +583,7 @@
     // Builds a smooth (Catmull-Rom) line path and a matching filled-area path over a 1000x300
     // viewBox, plus each point's 0..1 vertical fraction for positioning HTML markers. X position is
     // TIME-based (see TimeFrac), not index-based, so the line always sits at its real place in the
-    // fixed 60s window and simply grows in from the right rather than stretching to fill the plot.
+    // fixed 120s window and simply grows in from the right rather than stretching to fill the plot.
     private static (string Line, string Area, double[] Norm) BuildPaths(IReadOnlyList<double> data, double max)
     {
         const double W = 1000, H = 300;
@@ -644,8 +632,8 @@
         ("Live meters", _liveMeters.ToString("N0"), Icons.Material.Filled.Bolt, Color.Primary),
         ("Running batches", $"{_runningBatches}/{_totalBatches}", Icons.Material.Filled.PlayArrow, Color.Success),
         ("Provisioned meters", _provisionedMeters.ToString("N0"), Icons.Material.Filled.Dns, Color.Info),
-        ("Total exchanges", _snap.TotalExchanges.ToString("N0"), Icons.Material.Filled.SwapHoriz, Color.Primary),
-        ("Total accepted", _snap.TotalAccepted.ToString("N0"), Icons.Material.Filled.CheckCircle, Color.Success),
+        ("Exchanges/min", ExchangesPerMinute().ToString("N0"), Icons.Material.Filled.SwapHoriz, Color.Primary),
+        ("Accepted/min", AcceptedPerMinute().ToString("N0"), Icons.Material.Filled.CheckCircle, Color.Success),
         ("Meters pushed", _snap.TotalPushMetersSent.ToString("N0"), Icons.Material.Filled.Send,
             _snap.TotalPushMetersFailed > 0 ? Color.Warning : Color.Secondary),
     };
@@ -667,6 +655,39 @@
         >= 1_000 => (v / 1_000).ToString("0.#", CultureInfo.InvariantCulture) + "k",
         _ => v.ToString("0.##", CultureInfo.InvariantCulture),
     };
+
+    // Rates deliberately come from the rolling activity history rather than lifetime counters.
+    // When the app has been running for days, these remain immediately meaningful and never need
+    // an operator reset. During the first minute, use the available interval; afterwards this is
+    // always a true trailing 60-second rate, while the chart still retains 120 seconds of context.
+    private double ExchangesPerMinute() => PerMinute(s => s.TotalExchanges);
+    private double AcceptedPerMinute() => PerMinute(s => s.TotalAccepted);
+
+    private double NicExchangesPerMinute(NicType nic) => PerMinute(s =>
+        s.ByNic.TryGetValue(nic, out NicActivityTotals totals) ? totals.TotalExchanges : 0);
+
+    private double NicExchangesPerSecond(NicType nic) => NicExchangesPerMinute(nic) / 60;
+
+    private double PerMinute(Func<DashboardActivitySample, long> total)
+    {
+        if (_activitySamples.Count < 2) return 0;
+        DashboardActivitySample last = _activitySamples[^1];
+        DateTimeOffset start = last.TimestampUtc.AddMinutes(-1);
+        DashboardActivitySample first = _activitySamples
+            .Where(s => s.TimestampUtc <= start)
+            .LastOrDefault(_activitySamples[0]);
+        double seconds = Math.Max(0.001, (last.TimestampUtc - first.TimestampUtc).TotalSeconds);
+        return Math.Max(0, (total(last) - total(first)) / seconds * 60);
+    }
+
+    private double ExchangesPerSecondAt(int index)
+    {
+        if (index == 0 || index >= _activitySamples.Count) return 0;
+        DashboardActivitySample before = _activitySamples[index - 1];
+        DashboardActivitySample current = _activitySamples[index];
+        double seconds = Math.Max(0.001, (current.TimestampUtc - before.TimestampUtc).TotalSeconds);
+        return Math.Max(0, (current.TotalExchanges - before.TotalExchanges) / seconds);
+    }
 
     // With 0/1 samples there is nothing valid to index into _connNorm/_exchNorm (BuildPaths returns
     // an empty array below 2 points) — everything hover-related must check this before touching them.

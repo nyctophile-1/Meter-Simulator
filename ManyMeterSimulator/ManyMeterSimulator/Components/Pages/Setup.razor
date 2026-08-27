@@ -318,12 +318,11 @@ else
                 </tr>
                 @if (expanded)
                 {
-                    @* The panel is part of the same hit target as the row above it: clicking
-                       anywhere in it closes the batch again, so the open state has one obvious way
-                       out instead of forcing a trip back to the header row. Controls inside stop
-                       propagation. *@
-                    <tr class="batch-detail-row @StatusRowClass(batch.Status)"
-                        @onclick="() => ToggleDetails(batch.Id)">
+                    @* Details are deliberately not a toggle target. Operators often select an IP,
+                       node id, or serial range to copy it; routing that click to the row used to
+                       collapse the panel before the browser could finish the selection. Click the
+                       summary row to close it instead. *@
+                    <tr class="batch-detail-row @StatusRowClass(batch.Status)">
                         <td colspan="@(CanOperate ? 6 : 5)" class="pa-0">
                             <div class="batch-detail">
                                 @* One CSS grid for every field, so the label/value rhythm is identical
@@ -364,9 +363,7 @@ else
                                     </div>
                                 </div>
 
-                                @* Buttons stop propagation: the panel itself collapses on click, and
-                                   an action inside it must not do both. *@
-                                <div class="batch-detail-actions" @onclick:stopPropagation="true">
+                                <div class="batch-detail-actions">
                                     <MudButton Size="Size.Small" Variant="Variant.Outlined"
                                                StartIcon="@Icons.Material.Filled.Download"
                                                OnClick="() => DownloadCsv(batch.Id)">

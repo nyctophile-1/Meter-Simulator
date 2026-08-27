@@ -95,6 +95,7 @@ builder.Services.Configure<HostOptions>(o => o.ShutdownTimeout = TimeSpan.FromSe
 
 builder.Services.AddSingleton<SessionRegistry>();
 builder.Services.AddSingleton<SimulatorMetrics>();
+builder.Services.AddSingleton<DashboardActivityHistory>();
 builder.Services.AddSingleton<MeterAdmission>();
 
 // Operator-set runtime knobs (network delay today, more later), persisted alongside — but
@@ -162,6 +163,8 @@ else
 builder.Services.AddHostedService<TcpNicListenerService>();
 // NIC-agnostic housekeeping (idle reaping + metrics summary) — serves every NIC, not just TCP.
 builder.Services.AddHostedService<SessionMaintenanceService>();
+// Capture dashboard telemetry continuously, not only while the Dashboard component is open.
+builder.Services.AddHostedService(sp => sp.GetRequiredService<DashboardActivityHistory>());
 
 // ── MQTT NICs ────────────────────────────────────────────────────────────────────────────────
 // One codec per variant. The direct-4G codec serves both c and d (same broker, topics and framing
