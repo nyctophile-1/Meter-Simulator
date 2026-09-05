@@ -717,8 +717,14 @@ namespace Gurux.DLMS.Objects
                     {
                         start = 1;
                     }
-                    int count = Convert.ToInt32(arr[1]);
-                    if (count == 0)
+                    // arr[1] is the TO-entry index (AccessSelectionParameters per the DLMS spec),
+                    // not a row count — GXDLMSClient.ReadRowsByEntry itself encodes it as
+                    // `index + count - 1`. Treating it as a literal count here returned far more
+                    // rows than requested whenever start != 1 (e.g. asking for entries 10-15 read
+                    // 15 rows starting at 10, instead of the intended 6).
+                    int toEntry = Convert.ToInt32(arr[1]);
+                    int count = toEntry == 0 ? 0 : toEntry - start + 1;
+                    if (count <= 0)
                     {
                         count = Buffer.Count;
                     }
