@@ -129,7 +129,7 @@ namespace MeterSimulator.DLMS
             // (HES reconciles IP-vs-meterno using the serial in the DLMS payload.)
             ApplySerialOverride();
 
-            //InitializeObjects();
+            InitializeObjects();
             InitializeSecuritySetup();
             InitializeAssociation();
 
