@@ -129,7 +129,16 @@ namespace MeterSimulator.DLMS
             // (HES reconciles IP-vs-meterno using the serial in the DLMS payload.)
             ApplySerialOverride();
 
-            InitializeObjects();
+            // InitializeObjects() (legacy, pre-template hardcoded object set) must stay disabled:
+            // it registers its own Clock/registers/Daily Load Profile at the SAME OBIS the XML
+            // template uses, and since it runs before the XML merge loop below, that loop's
+            // dedup-by-(ObjectType, LogicalName) check finds these already registered and silently
+            // skips the real XML objects — orphaning them entirely, not just shadowing their data.
+            // Re-enabling this is what broke "read the Daily Load Profile from the XML template":
+            // every read resolved to this hardcoded stand-in instead, for every meter, regardless
+            // of template. Daily Load Profile reads now go through Gurux's native selective-access
+            // handling on the real XML profile, same as every other profile.
+            // InitializeObjects();
             InitializeSecuritySetup();
             InitializeAssociation();
 
