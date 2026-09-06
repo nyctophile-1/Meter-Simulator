@@ -128,6 +128,7 @@ namespace MeterSimulator.DLMS
             // loop above, which would otherwise overwrite it with the template's serial.
             // (HES reconciles IP-vs-meterno using the serial in the DLMS payload.)
             ApplySerialOverride();
+            ApplyDeviceIdOverride();
 
             // InitializeObjects() (legacy, pre-template hardcoded object set) must stay disabled:
             // it registers its own Clock/registers/Daily Load Profile at the SAME OBIS the XML
@@ -200,6 +201,16 @@ namespace MeterSimulator.DLMS
         private const string SerialNumberLN = "0.0.96.1.0.255";
 
         /// <summary>
+        /// OBIS of the Device ID (a GXDLMSData string, attr 2) — a DIFFERENT object from
+        /// <see cref="SerialNumberLN"/>, and the one the push structure actually carries as its
+        /// meter-identifying element (see BuildPushPayloads' ObjectList). Missed by the original
+        /// serial override, so every meter on a shared template pushed the template's one static
+        /// value ("CRYSA1231166" for SA1231166HP_values.xml) — the HES could only ever resolve one
+        /// meter per template, since they were all indistinguishable on the wire.
+        /// </summary>
+        private const string DeviceIdLN = "0.0.96.1.2.255";
+
+        /// <summary>
         /// Records this meter's own serial (<see cref="DLMSMeter.MeterNo"/>, "MY" + 9-digit index)
         /// in its per-meter value store, which is what <see cref="PreRead"/> answers from. The
         /// shared template object is deliberately left untouched.
@@ -214,6 +225,24 @@ namespace MeterSimulator.DLMS
 
             _meter.SetValue(SerialNumberLN, _meter.MeterNo);
             CoreLog.Debug($"[Serial] {_meter.MeterNo}: {SerialNumberLN} set for this meter");
+        }
+
+        /// <summary>
+        /// Same per-meter treatment as <see cref="ApplySerialOverride"/>, for the Device ID object
+        /// pushed as the meter-identifying element of a push structure. Keeps the template's "CRY"
+        /// prefix convention (its static value is "CRY" + the serial, e.g. "CRYSA1231166") while
+        /// making the value unique per meter.
+        /// </summary>
+        private void ApplyDeviceIdOverride()
+        {
+            if (_objectsFromFile.FindByLN(ObjectType.Data, DeviceIdLN) is not GXDLMSData)
+            {
+                CoreLog.Debug($"[DeviceId] {_meter.MeterNo}: no {DeviceIdLN} in template, skipping");
+                return;
+            }
+
+            _meter.SetValue(DeviceIdLN, "CRY" + _meter.MeterNo);
+            CoreLog.Debug($"[DeviceId] {_meter.MeterNo}: {DeviceIdLN} set for this meter");
         }
 
         /// <summary>
@@ -233,11 +262,19 @@ namespace MeterSimulator.DLMS
         /// </para>
         /// </summary>
         /// <param name="useCiphering">true → general-glo-ciphering with the meter's keys; false → plaintext.</param>
+        /// <param name="pushSetupLogicalName">
+        /// When set, restricts sending to the ONE PushSetup with this LN (e.g. "0.0.25.9.0.255" for
+        /// Instant, "0.5.25.9.0.255" for Block Load) — each profile type is its own PushSetup at its
+        /// own channel OBIS, because that LN is also the "SelfLN" element the HES uses to dispatch to
+        /// the matching parser (see BuildPushPayloads' Item[1] in each flat structure). Null (the
+        /// default) sends every non-empty PushSetup the template configures.
+        /// </param>
         /// <returns>One byte[] per PushSetup — each a complete DLMS wrapper DataNotification frame.</returns>
-        public IReadOnlyList<byte[]> BuildPushPayloads(bool useCiphering)
+        public IReadOnlyList<byte[]> BuildPushPayloads(bool useCiphering, string? pushSetupLogicalName = null)
         {
             var pushObjects = _objects.OfType<GXDLMSPushSetup>()
                 .Where(p => p.PushObjectList.Count > 0)
+                .Where(p => pushSetupLogicalName == null || p.LogicalName == pushSetupLogicalName)
                 .ToList();
 
             if (pushObjects.Count == 0)
@@ -248,6 +285,12 @@ namespace MeterSimulator.DLMS
                     "(e.g. Values_SZ0000014HP.xml).");
                 return Array.Empty<byte[]>();
             }
+
+            // Each PushSetup's list is a purely flat structure now (Device ID, SelfLN, then scalar
+            // fields matching the HES's SerialNumber-ordered schema) — no nested profile buffer to
+            // encode. A push that represents a load profile's row (e.g. Block Load) still needs its
+            // per-row values pulled from that profile's latest buffer entry first.
+            SyncBlockLoadPushValues();
 
             var payloads = new List<byte[]>(pushObjects.Count);
             foreach (var push in pushObjects)
@@ -311,10 +354,76 @@ namespace MeterSimulator.DLMS
                         if (dv != null) data.Value = dv;
                         break;
                     case GXDLMSClock clk:
-                        clk.Time = new GXDateTime(DateTime.UtcNow);
+                        // A per-meter override (e.g. SyncBlockLoadPushValues, which needs this
+                        // push's timestamp to be the buffered row's own captured time, not "now")
+                        // wins when set; otherwise a Clock in a push list means "the time of this
+                        // push", so it defaults to now.
+                        var clockOverride = _meter.GetValue(clk.LogicalName);
+                        clk.Time = clockOverride is GXDateTime gClockOverride ? gClockOverride : new GXDateTime(DateTime.UtcNow);
                         break;
                 }
             }
+        }
+
+        /// <summary>
+        /// OBIS of the Block Load (Load Survey) profile this push reads from — the same object the
+        /// pull path already serves in full from its Buffer.
+        /// </summary>
+        private const string BlockLoadProfileLN = "1.0.99.1.0.255";
+
+        /// <summary>
+        /// OBIS of a Clock dedicated to the Block Load push's own RTC slot. Deliberately NOT the
+        /// shared Clock ("0.0.1.0.0.255") that every other push (e.g. Instant) uses to mean "now" —
+        /// this one must carry the captured row's own time instead, rounded to the nearest
+        /// 30-minute block (the meter's capture period), not whatever moment the operator happened
+        /// to click "Send Push".
+        /// </summary>
+        private const string BlockLoadRtcLN = "0.0.1.0.1.255";
+
+        /// <summary>
+        /// Copies the LATEST row of the Block Load profile's buffer onto this meter's per-attribute
+        /// value store — the same store <see cref="SyncPushValues"/> already reads from — so the
+        /// flat Block Load PushSetup carries real data without any special-casing in the encode path
+        /// itself. A no-op (leaves the store untouched) if the template has no Block Load profile or
+        /// its buffer is empty; harmless to call for every push regardless of which PushSetup is
+        /// actually being sent.
+        /// </summary>
+        private void SyncBlockLoadPushValues()
+        {
+            if (_objectsFromFile.FindByLN(ObjectType.ProfileGeneric, BlockLoadProfileLN) is not GXDLMSProfileGeneric profile
+                || profile.Buffer.Count == 0)
+            {
+                return;
+            }
+
+            object[] latestRow = profile.Buffer[^1];
+            if (latestRow.Length == 0 || latestRow[0] is not GXDateTime rowTime)
+            {
+                CoreLog.Debug($"[Push] {_meter.MeterNo}: Block Load latest row has no usable timestamp, skipping sync");
+                return;
+            }
+
+            DateTime rounded = RoundToNearestHalfHour(rowTime.Value.DateTime);
+            _meter.SetValue(BlockLoadRtcLN, new GXDateTime(rounded));
+
+            // Column 0 is the row's own timestamp (already consumed above) — everything after it
+            // lines up 1:1, in order, with CaptureObjects[1..].
+            var captureObjects = profile.CaptureObjects;
+            for (int i = 1; i < captureObjects.Count && i < latestRow.Length; i++)
+            {
+                _meter.SetValue(captureObjects[i].Key.LogicalName, latestRow[i]);
+            }
+
+            CoreLog.Debug($"[Push] {_meter.MeterNo}: Block Load synced from row {rowTime.Value:O} -> rounded {rounded:O}");
+        }
+
+        /// <summary>Rounds to the nearest 30-minute mark (:00 or :30), half-up on an exact tie.</summary>
+        private static DateTime RoundToNearestHalfHour(DateTime value)
+        {
+            long blockTicks = TimeSpan.FromMinutes(30).Ticks;
+            long remainder = value.Ticks % blockTicks;
+            long rounded = remainder < blockTicks / 2 ? value.Ticks - remainder : value.Ticks + (blockTicks - remainder);
+            return new DateTime(rounded, value.Kind);
         }
 
         /// <summary>
@@ -326,12 +435,22 @@ namespace MeterSimulator.DLMS
             _notify ??= new GXDLMSSecureNotify(
                 true, _meter.ClientAddress, _meter.ServerAddress, InterfaceType.WRAPPER);
 
-        /// <summary>Applies plaintext or general-glo-ciphering to the notify encoder.</summary>
+        /// <summary>
+        /// Applies plaintext or glo-ciphering to the notify encoder.
+        ///
+        /// <para>
+        /// Security.Encryption (confidentiality only, no auth tag) — NOT AuthenticationEncryption —
+        /// to match the HES receiver, which is configured the same way
+        /// (<c>clientState.Client.Ciphering.Security = Security.Encryption</c>). A mismatch here
+        /// produces a security-control byte / GCM tag length the HES does not expect and it fails
+        /// to decrypt.
+        /// </para>
+        /// </summary>
         private void ConfigureNotifyCiphering(bool useCiphering)
         {
             if (useCiphering)
             {
-                Notify.Ciphering.Security = Security.AuthenticationEncryption;
+                Notify.Ciphering.Security = Security.Encryption;
                 Notify.Ciphering.SystemTitle = _meter.SystemTitle;
                 Notify.Ciphering.BlockCipherKey = _meter.BlockCipherKey;
                 Notify.Ciphering.AuthenticationKey = _meter.AuthenticationKey;

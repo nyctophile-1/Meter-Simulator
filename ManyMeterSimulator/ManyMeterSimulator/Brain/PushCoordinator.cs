@@ -71,9 +71,15 @@ public sealed class PushCoordinator
     /// own session lock so it can't collide with an in-flight HES pull.
     /// </para>
     /// </summary>
+    /// <param name="pushSetupLogicalName">
+    /// Optional: send only the ONE PushSetup with this LN (e.g. "0.5.25.9.0.255" for Block Load)
+    /// instead of every non-empty PushSetup the template configures. Each profile type is its own
+    /// PushSetup at its own channel OBIS, since that LN is what the HES uses to dispatch to the
+    /// matching parser. See <see cref="DLMSServerSession.BuildPushPayloads"/>.
+    /// </param>
     public async Task<PushBatchResult> PushBatchAsync(
         int batchId, string? destination = null, CancellationToken cancellationToken = default, int? maximumMeters = null,
-        bool selectRandomly = false)
+        bool selectRandomly = false, string? pushSetupLogicalName = null)
     {
         MeterBatch? batch = _registry.Batches.FirstOrDefault(b => b.Id == batchId);
         if (batch is null)
@@ -84,8 +90,8 @@ public sealed class PushCoordinator
         // "The correct channel": a TCP batch pushes over a socket to its bound IP; an MQTT batch
         // publishes to its bound broker. The one Send-Push button dispatches on the batch's NIC.
         return batch.NicType == NicType.Tcp4G
-            ? await PushTcpAsync(batch, destination, cancellationToken, maximumMeters, selectRandomly)
-            : await PushMqttAsync(batch, cancellationToken, maximumMeters, selectRandomly);
+            ? await PushTcpAsync(batch, destination, cancellationToken, maximumMeters, selectRandomly, pushSetupLogicalName)
+            : await PushMqttAsync(batch, cancellationToken, maximumMeters, selectRandomly, pushSetupLogicalName);
     }
 
     /// <summary>
@@ -93,7 +99,8 @@ public sealed class PushCoordinator
     /// is how HES tells the meters apart — see <see cref="TcpPushSender"/>).
     /// </summary>
     private async Task<PushBatchResult> PushTcpAsync(
-        MeterBatch batch, string? destination, CancellationToken cancellationToken, int? maximumMeters, bool selectRandomly)
+        MeterBatch batch, string? destination, CancellationToken cancellationToken, int? maximumMeters, bool selectRandomly,
+        string? pushSetupLogicalName = null)
     {
         if (!TryResolveDestination(batch, destination, out string resolved, out string error))
         {
@@ -122,7 +129,7 @@ public sealed class PushCoordinator
                 {
                     lock (pair.Session)
                     {
-                        return pair.Session.BuildPushPayloads(_options.UseCiphering).ToArray();
+                        return pair.Session.BuildPushPayloads(_options.UseCiphering, pushSetupLogicalName).ToArray();
                     }
                 }, cancellationToken);
 
@@ -176,7 +183,9 @@ public sealed class PushCoordinator
     /// batch is bound to. There is no per-meter source IP here — the node id in the topic is the
     /// identity, and the push arrives on the same broker HES already expects that meter's traffic on.
     /// </summary>
-    private async Task<PushBatchResult> PushMqttAsync(MeterBatch batch, CancellationToken cancellationToken, int? maximumMeters, bool selectRandomly)
+    private async Task<PushBatchResult> PushMqttAsync(
+        MeterBatch batch, CancellationToken cancellationToken, int? maximumMeters, bool selectRandomly,
+        string? pushSetupLogicalName = null)
     {
         NicType transport = NicTypes.TransportFor(batch.NicType);
 
@@ -239,7 +248,7 @@ public sealed class PushCoordinator
                 {
                     lock (pair.Session)
                     {
-                        return pair.Session.BuildPushPayloads(_options.UseCiphering).ToArray();
+                        return pair.Session.BuildPushPayloads(_options.UseCiphering, pushSetupLogicalName).ToArray();
                     }
                 }, cancellationToken);
 

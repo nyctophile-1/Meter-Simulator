@@ -458,7 +458,7 @@
     <MethodAccess>0</MethodAccess>
     <Unit>6</Unit>
     <Scaler>1</Scaler>
-    <Value Type="0" />
+    <Value Type="6">555644</Value>
   </GXDLMSRegister>
   <GXDLMSRegister>
     <LN>0.0.0.1.2.255</LN>
@@ -476,7 +476,7 @@
     <MethodAccess>0</MethodAccess>
     <Unit>27</Unit>
     <Scaler>1000</Scaler>
-    <Value Type="0" />
+    <Value Type="24">51.2065999209881</Value>
   </GXDLMSRegister>
   <GXDLMSRegister>
     <LN>1.0.12.7.0.255</LN>
@@ -485,7 +485,7 @@
     <MethodAccess>0</MethodAccess>
     <Unit>35</Unit>
     <Scaler>1</Scaler>
-    <Value Type="0" />
+    <Value Type="23">244.6091</Value>
   </GXDLMSRegister>
   <GXDLMSRegister>
     <LN>1.0.11.7.0.255</LN>
@@ -494,7 +494,7 @@
     <MethodAccess>0</MethodAccess>
     <Unit>33</Unit>
     <Scaler>1</Scaler>
-    <Value Type="0" />
+    <Value Type="23">0.3755</Value>
   </GXDLMSRegister>
   <GXDLMSRegister>
     <LN>1.0.91.7.0.255</LN>
@@ -503,7 +503,7 @@
     <MethodAccess>0</MethodAccess>
     <Unit>33</Unit>
     <Scaler>1</Scaler>
-    <Value Type="0" />
+    <Value Type="23">0.3755</Value>
   </GXDLMSRegister>
   <GXDLMSRegister>
     <LN>1.0.13.7.0.255</LN>
@@ -512,7 +512,7 @@
     <MethodAccess>0</MethodAccess>
     <Unit>255</Unit>
     <Scaler>1</Scaler>
-    <Value Type="0" />
+    <Value Type="23">-0.9510064</Value>
   </GXDLMSRegister>
   <GXDLMSRegister>
     <LN>1.0.14.7.0.255</LN>
@@ -521,7 +521,7 @@
     <MethodAccess>0</MethodAccess>
     <Unit>44</Unit>
     <Scaler>1</Scaler>
-    <Value Type="0" />
+    <Value Type="23">50.1</Value>
   </GXDLMSRegister>
   <GXDLMSRegister>
     <LN>1.0.9.7.0.255</LN>
@@ -530,7 +530,7 @@
     <MethodAccess>0</MethodAccess>
     <Unit>28</Unit>
     <Scaler>1000</Scaler>
-    <Value Type="0" />
+    <Value Type="24">91.981902718544</Value>
   </GXDLMSRegister>
   <GXDLMSRegister>
     <LN>1.0.1.8.0.255</LN>
@@ -539,7 +539,7 @@
     <MethodAccess>0</MethodAccess>
     <Unit>30</Unit>
     <Scaler>1000</Scaler>
-    <Value Type="0" />
+    <Value Type="24">4834.96</Value>
   </GXDLMSRegister>
   <GXDLMSRegister>
     <LN>1.0.9.8.0.255</LN>
@@ -548,7 +548,7 @@
     <MethodAccess>0</MethodAccess>
     <Unit>31</Unit>
     <Scaler>1000</Scaler>
-    <Value Type="0" />
+    <Value Type="24">5029.88</Value>
   </GXDLMSRegister>
   <GXDLMSRegister>
     <LN>1.0.2.8.0.255</LN>
@@ -557,7 +557,7 @@
     <MethodAccess>0</MethodAccess>
     <Unit>30</Unit>
     <Scaler>1000</Scaler>
-    <Value Type="0" />
+    <Value Type="24">0</Value>
   </GXDLMSRegister>
   <GXDLMSRegister>
     <LN>1.0.10.8.0.255</LN>
@@ -566,7 +566,7 @@
     <MethodAccess>0</MethodAccess>
     <Unit>31</Unit>
     <Scaler>1000</Scaler>
-    <Value Type="0" />
+    <Value Type="24">0</Value>
   </GXDLMSRegister>
   <GXDLMSRegister>
     <LN>0.0.94.91.8.255</LN>
@@ -836,9 +836,9 @@
     <MethodAccess>0</MethodAccess>
     <Unit>27</Unit>
     <Scaler>1000</Scaler>
-    <Value Type="0" />
+    <Value Type="24">3887.59994506836</Value>
     <Status Type="0" />
-    <CaptureTime />
+    <CaptureTime>08/31/2026 16:08:12</CaptureTime>
   </GXDLMSExtendedRegister>
   <GXDLMSExtendedRegister>
     <LN>1.0.9.6.0.255</LN>
@@ -847,9 +847,9 @@
     <MethodAccess>0</MethodAccess>
     <Unit>28</Unit>
     <Scaler>1000</Scaler>
-    <Value Type="0" />
+    <Value Type="24">3888.27991485596</Value>
     <Status Type="0" />
-    <CaptureTime />
+    <CaptureTime>08/31/2026 16:08:12</CaptureTime>
   </GXDLMSExtendedRegister>
   <GXDLMSExtendedRegister>
     <LN>1.0.2.6.0.255</LN>
@@ -3315,6 +3315,23 @@
     <Enabled>0</Enabled>
     <ClockBase>0</ClockBase>
   </GXDLMSClock>
+  <!-- Push-only RTC stand-in for the Block Load push (see DLMSServerSession.SyncBlockLoadPushValues):
+       carries the LATEST Block Load row's own captured time, rounded to the nearest 30-minute block,
+       not "now" like the real Clock above — a separate object so the two never collide. -->
+  <GXDLMSClock>
+    <LN>0.0.1.0.1.255</LN>
+    <Description>Block Load Push RTC</Description>
+    <Access>11</Access>
+    <MethodAccess>0</MethodAccess>
+    <Time>06/09/2026 18:57:45</Time>
+    <TimeZone>0</TimeZone>
+    <Status>0</Status>
+    <Begin />
+    <End />
+    <Deviation>0</Deviation>
+    <Enabled>0</Enabled>
+    <ClockBase>0</ClockBase>
+  </GXDLMSClock>
   <GXDLMSScriptTable>
     <LN>0.0.10.0.1.255</LN>
     <Description>MD Reset Action</Description>
@@ -3695,7 +3712,258 @@
     <Description>Instant Push Setup</Description>
     <Access>1131111</Access>
     <MethodAccess>0</MethodAccess>
-    <ObjectList />
+    <ObjectList>
+      <Item>
+        <ObjectType>1</ObjectType>
+        <LN>0.0.96.1.2.255</LN>
+        <AI>2</AI>
+        <DI>0</DI>
+      </Item>
+      <Item>
+        <!-- The push setup's own Logical Name (attribute 1) — a real capture off a live meter
+             shows this as the second structure element (its own OBIS as a 6-byte octet string),
+             right after the Device ID. The HES parser apparently indexes on this shape, so it's
+             required, not just informational. -->
+        <ObjectType>40</ObjectType>
+        <LN>0.0.25.9.0.255</LN>
+        <AI>1</AI>
+        <DI>0</DI>
+      </Item>
+      <Item>
+        <!-- Clock (attribute 2) — the third element in the real capture, the push's timestamp.
+             Also serves as "RtcDateTime" (SerialNumber 1) of the INSTANT_DLMS_PUSH_1P schema:
+             HES computes index = SerialNumber + 1, so RtcDateTime resolves to this exact slot. -->
+        <ObjectType>8</ObjectType>
+        <LN>0.0.1.0.0.255</LN>
+        <AI>2</AI>
+        <DI>0</DI>
+      </Item>
+      <!-- Everything below is FLAT — one scalar per structure slot, NOT the ProfileGeneric's
+           Buffer (which would nest a whole Array/Structure here). The real HES parser
+           (DLMSGenericParser.ParseAndSaveInstantProfile) indexes straight into the outer
+           structure by SerialNumber+1, so it expects Voltage etc. as top-level values right
+           after Device ID / PushSetup-LN / Clock, in exactly this order — the same order as
+           the Instantaneous Profile's own CaptureObjects (1.0.94.91.0.255), items 2-22. Load
+           Survey and Daily Profile are NOT listed here: they need their OWN PushSetup objects
+           at their own channel OBIS (0.5.../0.6...) so the SelfLN element dispatches to the
+           right parser — bundling them under channel 0 like before made every push look like
+           an Instant push regardless of what data was inside it. -->
+      <Item> <!-- Voltage -->
+        <ObjectType>3</ObjectType>
+        <LN>1.0.12.7.0.255</LN>
+        <AI>2</AI>
+        <DI>0</DI>
+      </Item>
+      <Item> <!-- PhaseCurrent -->
+        <ObjectType>3</ObjectType>
+        <LN>1.0.11.7.0.255</LN>
+        <AI>2</AI>
+        <DI>0</DI>
+      </Item>
+      <Item> <!-- NeutralCurrent -->
+        <ObjectType>3</ObjectType>
+        <LN>1.0.91.7.0.255</LN>
+        <AI>2</AI>
+        <DI>0</DI>
+      </Item>
+      <Item> <!-- TotalPowerFactor -->
+        <ObjectType>3</ObjectType>
+        <LN>1.0.13.7.0.255</LN>
+        <AI>2</AI>
+        <DI>0</DI>
+      </Item>
+      <Item> <!-- Frequency -->
+        <ObjectType>3</ObjectType>
+        <LN>1.0.14.7.0.255</LN>
+        <AI>2</AI>
+        <DI>0</DI>
+      </Item>
+      <Item> <!-- ApparentPowerKva -->
+        <ObjectType>3</ObjectType>
+        <LN>1.0.9.7.0.255</LN>
+        <AI>2</AI>
+        <DI>0</DI>
+      </Item>
+      <Item> <!-- ActivePowerKw -->
+        <ObjectType>3</ObjectType>
+        <LN>1.0.1.7.0.255</LN>
+        <AI>2</AI>
+        <DI>0</DI>
+      </Item>
+      <Item> <!-- CumulativeEnergyKwh -->
+        <ObjectType>3</ObjectType>
+        <LN>1.0.1.8.0.255</LN>
+        <AI>2</AI>
+        <DI>0</DI>
+      </Item>
+      <Item> <!-- CumulativeEnergyKvah -->
+        <ObjectType>3</ObjectType>
+        <LN>1.0.9.8.0.255</LN>
+        <AI>2</AI>
+        <DI>0</DI>
+      </Item>
+      <Item> <!-- Mdw -->
+        <ObjectType>4</ObjectType>
+        <LN>1.0.1.6.0.255</LN>
+        <AI>2</AI>
+        <DI>0</DI>
+      </Item>
+      <Item> <!-- MdwDateTime -->
+        <ObjectType>4</ObjectType>
+        <LN>1.0.1.6.0.255</LN>
+        <AI>5</AI>
+        <DI>0</DI>
+      </Item>
+      <Item> <!-- MdVa -->
+        <ObjectType>4</ObjectType>
+        <LN>1.0.9.6.0.255</LN>
+        <AI>2</AI>
+        <DI>0</DI>
+      </Item>
+      <Item> <!-- MdVaDatetime -->
+        <ObjectType>4</ObjectType>
+        <LN>1.0.9.6.0.255</LN>
+        <AI>5</AI>
+        <DI>0</DI>
+      </Item>
+      <Item> <!-- TotalPowerOnDuration -->
+        <ObjectType>3</ObjectType>
+        <LN>0.0.94.91.14.255</LN>
+        <AI>2</AI>
+        <DI>0</DI>
+      </Item>
+      <Item> <!-- CumulativeTamperCount -->
+        <ObjectType>1</ObjectType>
+        <LN>0.0.94.91.0.255</LN>
+        <AI>2</AI>
+        <DI>0</DI>
+      </Item>
+      <Item> <!-- CumulativeBillingCount -->
+        <ObjectType>1</ObjectType>
+        <LN>0.0.0.1.0.255</LN>
+        <AI>2</AI>
+        <DI>0</DI>
+      </Item>
+      <Item> <!-- CumulativeProgrammingCount -->
+        <ObjectType>1</ObjectType>
+        <LN>0.0.96.2.0.255</LN>
+        <AI>2</AI>
+        <DI>0</DI>
+      </Item>
+      <Item> <!-- CumulativeEnergyKwhExport -->
+        <ObjectType>3</ObjectType>
+        <LN>1.0.2.8.0.255</LN>
+        <AI>2</AI>
+        <DI>0</DI>
+      </Item>
+      <Item> <!-- CumulativeEnergyKvahExport -->
+        <ObjectType>3</ObjectType>
+        <LN>1.0.10.8.0.255</LN>
+        <AI>2</AI>
+        <DI>0</DI>
+      </Item>
+      <Item> <!-- LoadLimitFunctionStatus (plain Data stand-in, see comment above DisconnectControl) -->
+        <ObjectType>1</ObjectType>
+        <LN>0.0.96.3.11.255</LN>
+        <AI>2</AI>
+        <DI>0</DI>
+      </Item>
+      <Item> <!-- LoadLimitValueKw (plain Data stand-in, see comment above DisconnectControl) -->
+        <ObjectType>1</ObjectType>
+        <LN>0.0.17.0.1.255</LN>
+        <AI>2</AI>
+        <DI>0</DI>
+      </Item>
+      <Item> <!-- NICSignalPower (SerialNumber 23 — see comment above 0.1.96.12.5.255) -->
+        <ObjectType>1</ObjectType>
+        <LN>0.1.96.12.5.255</LN>
+        <AI>2</AI>
+        <DI>0</DI>
+      </Item>
+    </ObjectList>
+    <Service>0</Service>
+    <Destination />
+    <Message>0</Message>
+    <CommunicationWindow />
+    <RandomisationStartInterval>0</RandomisationStartInterval>
+    <NumberOfRetries>0</NumberOfRetries>
+    <RepetitionDelay>0</RepetitionDelay>
+  </GXDLMSPushSetup>
+  <!-- Block Load (Load Survey) push — own channel (0.5...) so the SelfLN element dispatches to
+       vayu-core's ParseAndSaveBlockloadProfile, not the Instant parser. Flat, matching the
+       BLOCK_DLMS_PUSH_1P schema (ProfileTemplateId 59, SerialNumber 1-8) 1:1: RtcDateTime,
+       AverageVoltage, CumulativeEnergyKwhImport, CumulativeEnergyKvahImport,
+       CumulativeEnergyKwhExport, CumulativeEnergyKvahExport, AverageCurrent, NeutralCurrent — the
+       same order as the Block Load profile's own CaptureObjects. Values are synced from that
+       profile's LATEST buffer row at push time (DLMSServerSession.SyncBlockLoadPushValues), not
+       baked in here. -->
+  <GXDLMSPushSetup>
+    <LN>0.5.25.9.0.255</LN>
+    <Description>Block Load Push Setup</Description>
+    <Access>1131111</Access>
+    <MethodAccess>0</MethodAccess>
+    <ObjectList>
+      <Item> <!-- Device ID -->
+        <ObjectType>1</ObjectType>
+        <LN>0.0.96.1.2.255</LN>
+        <AI>2</AI>
+        <DI>0</DI>
+      </Item>
+      <Item> <!-- PushSetup's own LN -->
+        <ObjectType>40</ObjectType>
+        <LN>0.5.25.9.0.255</LN>
+        <AI>1</AI>
+        <DI>0</DI>
+      </Item>
+      <Item> <!-- RtcDateTime — the latest Block Load row's own time, rounded to :00/:30 -->
+        <ObjectType>8</ObjectType>
+        <LN>0.0.1.0.1.255</LN>
+        <AI>2</AI>
+        <DI>0</DI>
+      </Item>
+      <Item> <!-- AverageVoltage -->
+        <ObjectType>3</ObjectType>
+        <LN>1.0.12.27.0.255</LN>
+        <AI>2</AI>
+        <DI>0</DI>
+      </Item>
+      <Item> <!-- CumulativeEnergyKwhImport -->
+        <ObjectType>3</ObjectType>
+        <LN>1.0.1.29.0.255</LN>
+        <AI>2</AI>
+        <DI>0</DI>
+      </Item>
+      <Item> <!-- CumulativeEnergyKvahImport -->
+        <ObjectType>3</ObjectType>
+        <LN>1.0.9.29.0.255</LN>
+        <AI>2</AI>
+        <DI>0</DI>
+      </Item>
+      <Item> <!-- CumulativeEnergyKwhExport -->
+        <ObjectType>3</ObjectType>
+        <LN>1.0.2.29.0.255</LN>
+        <AI>2</AI>
+        <DI>0</DI>
+      </Item>
+      <Item> <!-- CumulativeEnergyKvahExport -->
+        <ObjectType>3</ObjectType>
+        <LN>1.0.10.29.0.255</LN>
+        <AI>2</AI>
+        <DI>0</DI>
+      </Item>
+      <Item> <!-- AverageCurrent -->
+        <ObjectType>3</ObjectType>
+        <LN>1.0.11.27.0.255</LN>
+        <AI>2</AI>
+        <DI>0</DI>
+      </Item>
+      <Item> <!-- NeutralCurrent -->
+        <ObjectType>3</ObjectType>
+        <LN>1.0.91.27.0.255</LN>
+        <AI>2</AI>
+        <DI>0</DI>
+      </Item>
+    </ObjectList>
     <Service>0</Service>
     <Destination />
     <Message>0</Message>
@@ -3814,17 +4082,57 @@
     <Description>Load Limit Function Status</Description>
     <Access>1113</Access>
     <MethodAccess>11</MethodAccess>
-    <OutputState>0</OutputState>
+    <OutputState>1</OutputState>
     <ControlState>0</ControlState>
     <ControlMode>0</ControlMode>
   </GXDLMSDisconnectControl>
+  <!-- Plain Data stand-ins for the push, NOT read via the DisconnectControl/Limiter objects above:
+       both of those have a GXXmlReader.Load quirk in this vendored Gurux build where an edited
+       OutputState/ThresholdActive still decodes as the default (false / None) instead of what the
+       template says — confirmed by a live push capture where LoadLimitValueKw came back as
+       <None />, which crashed the real HES's non-null-checked ConvertByteToDecimalDivideBy
+       overload. The HES parses these push slots purely by flat position (SerialNumber+1 into the
+       structure), so which object supplies the value doesn't matter to it — only that it's really
+       there. -->
+  <GXDLMSData>
+    <LN>0.0.96.3.11.255</LN>
+    <Description>Load Limit Function Status (push stand-in)</Description>
+    <Access>11</Access>
+    <MethodAccess />
+    <Value Type="3">true</Value>
+  </GXDLMSData>
+  <GXDLMSData>
+    <LN>0.0.17.0.1.255</LN>
+    <Description>Load Limit Value (push stand-in)</Description>
+    <Access>11</Access>
+    <MethodAccess />
+    <Value Type="23">15120</Value>
+  </GXDLMSData>
+  <!-- NICSignalPower (SerialNumber 23 in the HES's INSTANT_DLMS_PUSH_1P schema for
+       ProfileTemplateId 59 / "APRAAVA HP (RSSI)" — some meter-template variants add this 23rd
+       field beyond the 22 the base schema has). HES computes index = SerialNumber+1 = 24 and
+       indexes straight into the push structure, so without a 25th element here it throws
+       ArgumentOutOfRangeException on any nameplate registered against that variant — confirmed
+       against MeterTemplateDetail.sql. Harmless extra element for the 22-field variants, which
+       simply never read this far. -->
+  <GXDLMSData>
+    <LN>0.1.96.12.5.255</LN>
+    <Description>Average Signal Strength (push stand-in)</Description>
+    <Access>11</Access>
+    <MethodAccess />
+    <Value Type="16">-70</Value>
+  </GXDLMSData>
   <GXDLMSLimiter>
     <LN>0.0.17.0.0.255</LN>
     <Description>Load Limit Value</Description>
     <Access>11131331111</Access>
     <MethodAccess />
-    <MonitoredValue />
-    <ThresholdActive Type="0" />
+    <MonitoredValue>
+      <ObjectType>3</ObjectType>
+      <LN>1.0.1.7.0.255</LN>
+      <Index>2</Index>
+    </MonitoredValue>
+    <ThresholdActive Type="23">15120</ThresholdActive>
     <ThresholdNormal Type="0" />
     <ThresholdEmergency Type="0" />
     <MinOverThresholdDuration>0</MinOverThresholdDuration>
