@@ -425,7 +425,12 @@ namespace MeterSimulator.DLMS
                 return;
             }
 
-            DateTime rounded = RoundToNearestHalfHour(rowTime.Value.DateTime);
+            // DateTimeOffset.DateTime always comes back Kind=Unspecified, whatever the offset was
+            // — so wrapping "rounded" in GXDateTime as-is would make Gurux compute its wire offset
+            // from TimeZoneInfo.Local (the HOST machine's zone) instead of encoding it as the UTC
+            // value it actually is. Force Kind=Utc so the digits transmit with offset 0 regardless
+            // of what timezone the process happens to run in.
+            DateTime rounded = DateTime.SpecifyKind(RoundToNearestHalfHour(rowTime.Value.DateTime), DateTimeKind.Utc);
             _meter.SetValue(BlockLoadRtcLN, new GXDateTime(rounded));
 
             // Column 0 is the row's own timestamp (already consumed above) — everything after it

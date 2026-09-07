@@ -149,8 +149,25 @@ namespace MeterSimulator.DLMS
                             };
                             continue;
                         }
+                        // DateTime.TryParse gives Kind=Unspecified for a plain string with no
+                        // offset/zone suffix — GXDateTime's constructor then computes the offset
+                        // from TimeZoneInfo.Local (whatever machine happens to run this), silently
+                        // baking in that machine's UTC offset (e.g. +5:30 on an IST dev box) even
+                        // though these digits are meant to BE UTC already. Force Kind=Utc so the
+                        // same digits are taken as-is, with offset 0, regardless of the host's
+                        // timezone — a meter's clock is UTC, never machine-local.
                         if (row[i] is string s && DateTime.TryParse(s, out DateTime dt))
-                            row[i] = new GXDateTime(dt);
+                            row[i] = new GXDateTime(DateTime.SpecifyKind(dt, DateTimeKind.Utc));
+
+                        // Most profile rows arrive from Gurux's own XML reader already as
+                        // GXDateTime, never touching the string branch above — but Gurux's reader
+                        // hits the exact same TimeZoneInfo.Local pitfall internally when a cell's
+                        // XML text carries no explicit offset. Re-stamp every concrete cell's
+                        // wall-clock digits as UTC here too, so the fix applies regardless of which
+                        // path produced the GXDateTime. Must happen before ShiftBufferTimestamps —
+                        // shifting only translates the instant, it never corrects a wrong offset.
+                        if (row[i] is GXDateTime existing && IsConcreteDate(existing))
+                            existing.Value = new DateTimeOffset(DateTime.SpecifyKind(existing.Value.DateTime, DateTimeKind.Utc));
 
                         if (row[i] != null)
                             columnTypes[i] = WiderType(columnTypes[i], DataTypeFromValue(row[i]));
