@@ -111,12 +111,10 @@ public sealed class PushCoordinator
 
         IReadOnlyList<(MeterRef Meter, DLMSServerSession Session)> meters = await _sessions.MaterializeBatchAsync(batch, cancellationToken: cancellationToken, maximumMeters: maximumMeters, selectRandomly: selectRandomly);
 
-        int metersSent = 0, metersFailed = 0;
-        using var gate = new SemaphoreSlim(Math.Max(1, _options.MaxConcurrency));
+        int metersSent = 0, metersFailed = 0, payloadsSent = 0, payloadsFailed = 0;
 
-        var tasks = meters.Select(async pair =>
+        await ProcessInWavesAsync(meters, batch, async pair =>
         {
-            await gate.WaitAsync(cancellationToken);
             long startedTicks = Stopwatch.GetTimestamp();
             try
             {
@@ -144,6 +142,8 @@ public sealed class PushCoordinator
                     _options.DefaultPort, payloads, cancellationToken);
 
                 _metrics.RecordPushPayloads(batch.NicType, result.Sent, result.Failed);
+                Interlocked.Add(ref payloadsSent, result.Sent);
+                Interlocked.Add(ref payloadsFailed, result.Failed);
 
                 if (result.Failed == 0 && result.Sent > 0)
                 {
@@ -163,19 +163,71 @@ public sealed class PushCoordinator
                 Interlocked.Increment(ref metersFailed);
                 _metrics.RecordPushMeter(batch.NicType, ok: false, Stopwatch.GetElapsedTime(startedTicks));
             }
+        }, cancellationToken);
+
+        _logger.LogInformation(
+            "Push batch {BatchId} ({BatchName}) to {Destination}: {Sent} sent, {Failed} failed of {Total} meter(s) " +
+            "— {RecordsSent} record(s) pushed, {RecordsFailed} failed",
+            batch.Id, batch.Name, destination, metersSent, metersFailed, meters.Count, payloadsSent, payloadsFailed);
+
+        return new PushBatchResult(true, meters.Count, metersSent, metersFailed, null);
+    }
+
+    /// <summary>
+    /// Runs <paramref name="perMeter"/> over every meter, throttled to
+    /// <see cref="PushOptions.MaxConcurrency"/> concurrent in flight AND split into waves of
+    /// <see cref="PushOptions.ChunkSize"/>, with a pause of <see cref="PushOptions.ChunkIntervalSeconds"/>
+    /// between waves (not after the last one). Shared by the TCP and MQTT paths — neither transport
+    /// changes the pacing story, only what "send" means per meter.
+    /// </summary>
+    private async Task ProcessInWavesAsync(
+        IReadOnlyList<(MeterRef Meter, DLMSServerSession Session)> meters,
+        MeterBatch batch,
+        Func<(MeterRef Meter, DLMSServerSession Session), Task> perMeter,
+        CancellationToken cancellationToken)
+    {
+        int chunkSize = _options.ChunkSize > 0 ? _options.ChunkSize : int.MaxValue;
+        int waveCount = (meters.Count + chunkSize - 1) / Math.Max(1, chunkSize);
+        using var gate = new SemaphoreSlim(Math.Max(1, _options.MaxConcurrency));
+
+        for (int offset = 0, wave = 1; offset < meters.Count; offset += chunkSize, wave++)
+        {
+            int count = Math.Min(chunkSize, meters.Count - offset);
+            var tasks = new List<Task>(count);
+            for (int i = offset; i < offset + count; i++)
+            {
+                var pair = meters[i];
+                tasks.Add(Run(pair));
+            }
+
+            await Task.WhenAll(tasks);
+
+            bool isLastWave = offset + count >= meters.Count;
+            if (waveCount > 1)
+            {
+                _logger.LogInformation(
+                    "Push batch {BatchId} ({BatchName}): wave {Wave}/{WaveCount} done ({Count} meter(s))",
+                    batch.Id, batch.Name, wave, waveCount, count);
+            }
+
+            if (!isLastWave && _options.ChunkIntervalSeconds > 0)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(_options.ChunkIntervalSeconds), cancellationToken);
+            }
+        }
+
+        async Task Run((MeterRef Meter, DLMSServerSession Session) pair)
+        {
+            await gate.WaitAsync(cancellationToken);
+            try
+            {
+                await perMeter(pair);
+            }
             finally
             {
                 gate.Release();
             }
-        });
-
-        await Task.WhenAll(tasks);
-
-        _logger.LogInformation(
-            "Push batch {BatchId} ({BatchName}) to {Destination}: {Sent} sent, {Failed} failed of {Total} meter(s)",
-            batch.Id, batch.Name, destination, metersSent, metersFailed, meters.Count);
-
-        return new PushBatchResult(true, meters.Count, metersSent, metersFailed, null);
+        }
     }
 
     /// <summary>
@@ -235,12 +287,10 @@ public sealed class PushCoordinator
 
         IReadOnlyList<(MeterRef Meter, DLMSServerSession Session)> meters = await _sessions.MaterializeBatchAsync(batch, cancellationToken: cancellationToken, maximumMeters: maximumMeters, selectRandomly: selectRandomly);
 
-        int metersSent = 0, metersFailed = 0;
-        using var gate = new SemaphoreSlim(Math.Max(1, _options.MaxConcurrency));
+        int metersSent = 0, metersFailed = 0, payloadsSent = 0, payloadsFailed = 0;
 
-        var tasks = meters.Select(async pair =>
+        await ProcessInWavesAsync(meters, batch, async pair =>
         {
-            await gate.WaitAsync(cancellationToken);
             long startedTicks = Stopwatch.GetTimestamp();
             try
             {
@@ -279,6 +329,8 @@ public sealed class PushCoordinator
                 }
 
                 _metrics.RecordPushPayloads(batch.NicType, published, publishFailed);
+                Interlocked.Add(ref payloadsSent, published);
+                Interlocked.Add(ref payloadsFailed, publishFailed);
 
                 if (anyFailed)
                 {
@@ -297,17 +349,12 @@ public sealed class PushCoordinator
                 Interlocked.Increment(ref metersFailed);
                 _metrics.RecordPushMeter(batch.NicType, ok: false, Stopwatch.GetElapsedTime(startedTicks));
             }
-            finally
-            {
-                gate.Release();
-            }
-        });
-
-        await Task.WhenAll(tasks);
+        }, cancellationToken);
 
         _logger.LogInformation(
-            "MQTT push batch {BatchId} ({BatchName}) via {Binding}: {Sent} sent, {Failed} failed of {Total} meter(s)",
-            batch.Id, batch.Name, binding, metersSent, metersFailed, meters.Count);
+            "MQTT push batch {BatchId} ({BatchName}) via {Binding}: {Sent} sent, {Failed} failed of {Total} meter(s) " +
+            "— {RecordsSent} record(s) pushed, {RecordsFailed} failed",
+            batch.Id, batch.Name, binding, metersSent, metersFailed, meters.Count, payloadsSent, payloadsFailed);
 
         return new PushBatchResult(true, meters.Count, metersSent, metersFailed, null);
     }

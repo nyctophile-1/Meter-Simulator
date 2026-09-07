@@ -154,8 +154,18 @@ public sealed class MeterSessionManager
     }
 
     /// <summary>
-    /// Asynchronously materializes every meter in a batch in chunks of 500 meters, yielding execution
-    /// to keep the UI thread fully responsive.
+    /// Materializes every meter in a batch, fanned out across up to <see cref="Environment.ProcessorCount"/>
+    /// worker threads.
+    ///
+    /// <para>
+    /// This is safe to parallelize because the two things every meter touches on first build are
+    /// already designed for concurrent first-touch: <see cref="GetOrCreate"/> itself
+    /// (ConcurrentDictionary + Lazy&lt;T&gt; with ExecutionAndPublication) and
+    /// <see cref="TemplateModelCache"/> underneath it (same pattern). Before this, materializing a
+    /// batch ran the whole loop on ONE thread — for a fleet-scale batch (lakhs of meters) that pins
+    /// a single core for minutes even though the work is trivially parallel and the machine has many
+    /// idle cores the whole time.
+    /// </para>
     /// </summary>
     public async Task<IReadOnlyList<(MeterRef Meter, DLMSServerSession Session)>> MaterializeBatchAsync(
         MeterBatch batch,
@@ -164,10 +174,7 @@ public sealed class MeterSessionManager
         int? maximumMeters = null,
         bool selectRandomly = false)
     {
-        var result = new List<(MeterRef, DLMSServerSession)>();
         long total = Math.Min(batch.EndIndex - batch.StartIndex + 1, Math.Max(0, maximumMeters ?? int.MaxValue));
-        long count = 0;
-        int chunkSize = 500;
 
         // A partial benchmark must not repeatedly favour the first meter IDs in a batch. Generate
         // a unique random sample before materializing sessions; full-batch callers keep the cheap
@@ -183,26 +190,41 @@ public sealed class MeterSessionManager
 
         await Task.Yield();
 
-        for (long ordinal = 0; ordinal < total; ordinal++)
+        if (total > int.MaxValue)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            long index = selectedIndexes is null ? batch.StartIndex + ordinal : selectedIndexes[(int)ordinal];
-            var meter = new MeterRef(index, batch.NicType);
-            result.Add((meter, GetOrCreate(meter)));
-            count++;
+            throw new NotSupportedException($"Batch of {total} meters exceeds what can be materialized in one call.");
+        }
 
-            if (count % chunkSize == 0 || count == total)
+        var result = new (MeterRef Meter, DLMSServerSession Session)[total];
+        long materialized = 0;
+        const int progressStride = 500;
+
+        var parallelOptions = new ParallelOptions
+        {
+            MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount),
+            CancellationToken = cancellationToken,
+        };
+
+        await Parallel.ForEachAsync(Enumerable.Range(0, (int)total), parallelOptions, (ordinal, ct) =>
+        {
+            long index = selectedIndexes is null ? batch.StartIndex + ordinal : selectedIndexes[ordinal];
+            var meter = new MeterRef(index, batch.NicType);
+            result[ordinal] = (meter, GetOrCreate(meter));
+
+            long count = Interlocked.Increment(ref materialized);
+            if (count % progressStride == 0 || count == total)
             {
                 var p = new BatchMaterializationProgress(batch.Id, count, total);
                 _startingProgress[batch.Id] = p;
                 progress?.Report(p);
                 OnProgressChanged?.Invoke(p);
-                await Task.Yield();
             }
-        }
+
+            return ValueTask.CompletedTask;
+        });
 
         _logger.LogDebug("Materialized {Count} meter session(s) for batch {BatchId} ({BatchName})",
-            result.Count, batch.Id, batch.Name);
+            result.Length, batch.Id, batch.Name);
 
         return result;
     }

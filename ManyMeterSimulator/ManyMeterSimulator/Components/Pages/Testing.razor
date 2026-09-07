@@ -521,6 +521,14 @@
                    OnClick="OpenLoopDialog" Disabled="@_testRunActive">Loop push</MudButton>
     </div>
 
+    <MudSelect T="string" Label="Profile" @bind-Value="_pushProfileFilter" Dense="true" Variant="Variant.Outlined"
+               Style="max-width:260px;" Class="mb-3">
+        @foreach (var opt in PushProfileOptions)
+        {
+            <MudSelectItem Value="@opt.Obis">@opt.Label</MudSelectItem>
+        }
+    </MudSelect>
+
     @if (_scheduleState.IntervalMinutes > 0)
     {
         <MudAlert Severity="@(_scheduleState.IsRunning ? Severity.Info : Severity.Normal)" Variant="Variant.Outlined" Dense="true" Class="mb-3">
@@ -1213,6 +1221,21 @@
     });
 
     // Push
+    // Value is the PushSetup's OWN LN that BuildPushPayloads filters on — each profile type is its
+    // own PushSetup at its own channel OBIS (0.0... Instant, 0.5... Block Load, ...), because that
+    // LN is also what the HES uses to dispatch to the matching parser. Null ("All") sends every
+    // non-empty PushSetup the template configures, each as its own separate payload/frame — NOT
+    // combined into one structure (an earlier iteration did that and it was both too large to parse
+    // and dispatched to the wrong HES parser regardless of content).
+    private static readonly (string? Obis, string Label)[] PushProfileOptions =
+    {
+        ("0.0.25.9.0.255", "Instantaneous Profile"),
+        ("0.5.25.9.0.255", "Load Survey (Block Load)"),
+        (null, "All"),
+    };
+
+    private string? _pushProfileFilter = "0.0.25.9.0.255";
+
     private async Task SendPushAsync(int batchId)
     {
         _pushingBatchIds.Add(batchId);
@@ -1224,7 +1247,7 @@
                 _planError = "Test Push requires selected batches of at least 100,000 meters.";
                 return;
             }
-            PushBatchResult r = await Push.PushBatchAsync(batchId);
+            PushBatchResult r = await Push.PushBatchAsync(batchId, pushSetupLogicalName: _pushProfileFilter);
             if (!r.Ok) Snackbar.Add(r.Error ?? "Push failed.", Severity.Error);
             else if (r.Failed == 0) Snackbar.Add($"Pushed {r.Sent}/{r.Total}.", Severity.Success);
             else Snackbar.Add($"Pushed {r.Sent}/{r.Total}; {r.Failed} failed.", Severity.Warning);

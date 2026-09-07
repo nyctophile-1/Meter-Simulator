@@ -29,12 +29,18 @@ namespace MeterSimulator.Models
     {
         private static readonly byte[] Manufacturer = Encoding.ASCII.GetBytes("SIM"); // 3 bytes
 
-        /// <summary>Serial number string, matches ManyMeterSimulator MeterRegistry.FormatSerial.</summary>
-        public static string Serial(long index) => $"MY{index:D9}";
+        /// <summary>
+        /// Serial number string — "MY" + 8-digit index, 10 characters total. Kept at exactly 10 (not
+        /// 9 digits, which used to make 11) because the HES's own MeterNo database column tops out at
+        /// varchar(10); anything longer gets silently truncated or rejected downstream. This caps
+        /// provisionable meters at <see cref="ManyMeterSimulator.Provisioning.MeterRegistry.MaxIndex"/>
+        /// (99,999,999) — comfortably past any batch size this simulator has actually been run at.
+        /// </summary>
+        public static string Serial(long index) => $"MY{index:D8}";
 
         /// <summary>
         /// The HES-facing node id: the serial with its alphabetic prefix and leading zeros removed
-        /// ("MY000001005" → "1005"), which is exactly the index in decimal. Every meter has one
+        /// ("MY00001005" → "1005"), which is exactly the index in decimal. Every meter has one
         /// regardless of NIC — HES needs a node id to register a meter even on TCP, where the IPv6
         /// address is the transport identity. Because this and <see cref="Serial"/> derive from the
         /// same index, they can never disagree.

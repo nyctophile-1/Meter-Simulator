@@ -28,10 +28,28 @@ public sealed class PushOptions
     public string DefaultDestination { get; set; } = "";
 
     /// <summary>
-    /// Cap on how many meters push concurrently, so "Send Push" on a large batch doesn't open tens
-    /// of thousands of outbound sockets at once. Each push is a short blocking connect+write.
+    /// Cap on how many meters push concurrently WITHIN one wave (see <see cref="ChunkSize"/>), so
+    /// "Send Push" on a large batch doesn't open tens of thousands of outbound sockets at once. Each
+    /// push is a short blocking connect+write.
     /// </summary>
     public int MaxConcurrency { get; set; } = 64;
+
+    /// <summary>
+    /// Meters per wave when pushing a batch. At fleet scale (lakhs of meters), even a
+    /// MaxConcurrency-throttled push still fires the ENTIRE batch as one burst — nothing paces the
+    /// total volume over time. A broker or HES that can absorb 10-20k messages in a few seconds may
+    /// not survive all of them landing within the same second. Waves of this size, spaced by
+    /// <see cref="ChunkIntervalSeconds"/>, bound the burst regardless of how large the batch is.
+    /// int.MaxValue disables waving — the whole batch goes out as one wave (still gated by
+    /// MaxConcurrency), which was the only behavior before this setting existed.
+    /// </summary>
+    public int ChunkSize { get; set; } = 10_000;
+
+    /// <summary>
+    /// Pause between push waves (see <see cref="ChunkSize"/>). Not applied after the last wave.
+    /// Zero sends every wave back-to-back with no pacing at all.
+    /// </summary>
+    public int ChunkIntervalSeconds { get; set; } = 5;
 
     /// <summary>QoS for MQTT push publishes. HES clamps its own subscribe QoS to 2, so 2 is safe.</summary>
     public int PublishQos { get; set; } = 2;

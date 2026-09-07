@@ -15,8 +15,12 @@ namespace ManyMeterSimulator.Provisioning;
 /// </summary>
 public sealed class MeterRegistry
 {
-    /// <summary>Meter serial numbers are "MY" + 9 zero-padded digits, so this is the largest supported index (one shy of a billion).</summary>
-    public const long MaxIndex = 999_999_999;
+    /// <summary>
+    /// Meter serial numbers are "MY" + 8 zero-padded digits (10 characters total — the HES's MeterNo
+    /// column is varchar(10), so this is a hard ceiling, not a style choice), so this is the largest
+    /// supported index.
+    /// </summary>
+    public const long MaxIndex = 99_999_999;
 
     private readonly List<MeterBatch> _batches = new();
     private readonly object _lock = new();
@@ -483,7 +487,10 @@ public sealed class MeterRegistry
     private static string? Normalize(string? key) =>
         string.IsNullOrWhiteSpace(key) ? null : key.Trim();
 
-    public static string FormatSerial(long index) => $"MY{index:D9}";
+    /// <summary>The registry's own name for <see cref="MeterIdentity.Serial"/> — same value, kept as
+    /// one implementation rather than two so the "MY" + 8-digit format can't drift out of sync
+    /// between them again.</summary>
+    public static string FormatSerial(long index) => MeterIdentity.Serial(index);
 }
 
 public readonly record struct BatchPreview(

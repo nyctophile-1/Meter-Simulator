@@ -387,6 +387,16 @@ namespace MeterSimulator.DLMS
         /// itself. A no-op (leaves the store untouched) if the template has no Block Load profile or
         /// its buffer is empty; harmless to call for every push regardless of which PushSetup is
         /// actually being sent.
+        ///
+        /// <para>
+        /// "Latest" means the row with the MAXIMUM timestamp, found explicitly — NOT
+        /// <c>Buffer[^1]</c> (the last array slot). A live push confirmed this template's Block Load
+        /// buffer is chronologically sorted for indices 0..N-2 but carries one stray, over-a-month-old
+        /// row at the very end (a data artifact, not something this code should have to assume away).
+        /// Trusting array position silently pushed that stale row's timestamp on every send.
+        /// <see cref="MeterObjectLoader.ShiftBufferTimestamps"/> already computes "latest" the same
+        /// way, via Max() — this now matches it instead of a second, weaker assumption.
+        /// </para>
         /// </summary>
         private void SyncBlockLoadPushValues()
         {
@@ -396,10 +406,20 @@ namespace MeterSimulator.DLMS
                 return;
             }
 
-            object[] latestRow = profile.Buffer[^1];
-            if (latestRow.Length == 0 || latestRow[0] is not GXDateTime rowTime)
+            object[]? latestRow = null;
+            DateTimeOffset latestTime = DateTimeOffset.MinValue;
+            foreach (object[] row in profile.Buffer)
             {
-                CoreLog.Debug($"[Push] {_meter.MeterNo}: Block Load latest row has no usable timestamp, skipping sync");
+                if (row.Length > 0 && row[0] is GXDateTime candidate && candidate.Value > latestTime)
+                {
+                    latestTime = candidate.Value;
+                    latestRow = row;
+                }
+            }
+
+            if (latestRow is null || latestRow[0] is not GXDateTime rowTime)
+            {
+                CoreLog.Debug($"[Push] {_meter.MeterNo}: Block Load buffer has no row with a usable timestamp, skipping sync");
                 return;
             }
 
