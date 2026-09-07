@@ -177,6 +177,16 @@ namespace MeterSimulator.DLMS
         // delta = now − newest, and add it to every concrete timestamp in that
         // profile.  Newest row → exactly now (UTC); older rows keep their exact
         // original spacing (so a daily profile becomes now, now−1d, now−2d …).
+        //
+        // This only runs once, at template load — and the template model is cached
+        // and shared for the whole process lifetime (see TemplateModelCache), so
+        // without a later re-shift the buffer's "latest" row falls further and
+        // further behind real time the longer the process stays up. The two helpers
+        // below (LatestConcreteTimestamp / ShiftProfileTimestamps) are the reusable
+        // core of that same logic — DLMSServerSession.EnsureBufferFreshness calls
+        // them again, per profile, whenever a push finds the buffer has drifted
+        // stale, so "newest row ≈ now" keeps being true for the life of the process,
+        // not just at the moment it started.
         // ════════════════════════════════════════════════════════════════════════
         private static void ShiftBufferTimestamps(GXDLMSObjectCollection objects)
         {
@@ -186,24 +196,14 @@ namespace MeterSimulator.DLMS
             {
                 if (profile.Buffer.Count == 0) continue;
 
-                // Distinct GXDateTime instances (reference-based) so a shared cell
-                // is never shifted twice.  Only concrete Y/M/D timestamps count —
-                // wildcard/template cells (e.g. "*/*/* *:*:*") are left untouched.
-                var stamps = new HashSet<GXDateTime>();
-                foreach (var row in profile.Buffer)
-                    foreach (var cell in row)
-                        if (cell is GXDateTime dt && IsConcreteDate(dt))
-                            stamps.Add(dt);
-
-                if (stamps.Count == 0)
+                DateTimeOffset? latest = LatestConcreteTimestamp(profile);
+                if (latest is null)
                 {
                     CoreLog.Debug($"[Shift] {profile.LogicalName}: no concrete timestamps, skipped");
                     continue;
                 }
 
-                DateTimeOffset latest = stamps.Max(s => s.Value);
-                TimeSpan delta = nowUtc - latest;
-
+                TimeSpan delta = nowUtc - latest.Value;
                 if (delta <= TimeSpan.Zero)
                 {
                     CoreLog.Debug(
@@ -211,13 +211,47 @@ namespace MeterSimulator.DLMS
                     continue;
                 }
 
-                foreach (var dt in stamps)
-                    dt.Value = dt.Value + delta;
-
+                int shifted = ShiftProfileTimestamps(profile, delta);
                 CoreLog.Debug(
-                    $"[Shift] {profile.LogicalName}: {stamps.Count} timestamps +{delta.TotalDays:F2}d " +
+                    $"[Shift] {profile.LogicalName}: {shifted} timestamps +{delta.TotalDays:F2}d " +
                     $"(latest {latest:u} → now {nowUtc:u})");
             }
+        }
+
+        /// <summary>
+        /// The newest concrete (real Y/M/D, not a wildcard template cell) row timestamp in a
+        /// profile's buffer, or null if it has none.
+        /// </summary>
+        public static DateTimeOffset? LatestConcreteTimestamp(GXDLMSProfileGeneric profile)
+        {
+            DateTimeOffset? latest = null;
+            foreach (var row in profile.Buffer)
+                foreach (var cell in row)
+                    if (cell is GXDateTime dt && IsConcreteDate(dt) && (latest is null || dt.Value > latest))
+                        latest = dt.Value;
+            return latest;
+        }
+
+        /// <summary>
+        /// Adds <paramref name="delta"/> to every distinct concrete row timestamp in the profile's
+        /// buffer, preserving each row's spacing relative to the others. Returns how many distinct
+        /// timestamps were shifted.
+        /// </summary>
+        public static int ShiftProfileTimestamps(GXDLMSProfileGeneric profile, TimeSpan delta)
+        {
+            // Distinct GXDateTime instances (reference-based) so a shared cell is never shifted
+            // twice. Only concrete Y/M/D timestamps count — wildcard/template cells (e.g.
+            // "*/*/* *:*:*") are left untouched.
+            var stamps = new HashSet<GXDateTime>();
+            foreach (var row in profile.Buffer)
+                foreach (var cell in row)
+                    if (cell is GXDateTime dt && IsConcreteDate(dt))
+                        stamps.Add(dt);
+
+            foreach (var dt in stamps)
+                dt.Value = dt.Value + delta;
+
+            return stamps.Count;
         }
 
         // A real profile row timestamp has a concrete year/month/day.  Template rows

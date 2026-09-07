@@ -92,35 +92,77 @@ public class PushBlockLoadProfileTests
     /// The Block Load profile's buffer timestamps are rolled forward to "now" at template load
     /// time (MeterObjectLoader.ShiftBufferTimestamps — keeps the demo data looking fresh), so the
     /// latest row's exact date/time is whatever moment the test happens to run, not a fixed value
-    /// from the XML. What's actually checked: the RTC is a real, recent 12-byte COSEM date-time
-    /// whose minute landed on a 30-minute boundary (proving the rounding ran), and the 6 numeric
-    /// columns — which ShiftBufferTimestamps does NOT touch — match the template's static values
-    /// for that row exactly.
+    /// from the XML.
+    ///
+    /// <para>
+    /// This template's buffer is chronologically sorted EXCEPT for one stray, much-older row that
+    /// happens to sit at the last array index — a real data artifact, caught by comparing a live
+    /// push against the template directly rather than a hand-picked hardcoded row. Regression test
+    /// for exactly that bug: an earlier version read <c>Buffer[^1]</c> (the last array slot) and
+    /// pushed that stray row's month-old timestamp on every send. "Latest" must mean the row with
+    /// the MAXIMUM timestamp, found explicitly, matching how ShiftBufferTimestamps itself decides
+    /// what "latest" means (via Max()) — never array position.
+    /// </para>
     /// </summary>
     [Fact]
     public void BuildPushPayloads_BlockLoad_UsesTheLatestRow_WithRtcRoundedToNearestHalfHour()
     {
         DLMSServerSession session = BuildSession();
 
+        // Independently find the true latest row directly from the (shared, already-loaded)
+        // template — same technique ShiftBufferTimestamps and SyncBlockLoadPushValues use — so the
+        // expected values are never hardcoded and can't silently drift out of sync with the data.
+        var profile = TemplateModelCache.Shared
+            .Get(Path.Combine(AppContext.BaseDirectory, "Templates", "SA1231166HP_values.xml"))
+            .FindByLN(ObjectType.ProfileGeneric, "1.0.99.1.0.255") as GXDLMSProfileGeneric;
+        Assert.NotNull(profile);
+        object[] expectedRow = profile!.Buffer
+            .OrderByDescending(row => ((GXDateTime)row[0]).Value)
+            .First();
+        object[] lastArrayRow = profile.Buffer[^1];
+        Assert.NotSame(expectedRow, lastArrayRow); // sanity: this template really does have the anomaly
+
         var parsed = DecodePush(session.BuildPushPayloads(useCiphering: true, pushSetupLogicalName: BlockLoadPushSetupLN)[0]);
 
         var rtcBytes = (byte[])parsed[2];
         // COSEM date-time: year(2 BE), month, day, dow, hour, minute, second, hundredths, deviation(2), status.
         int year = (rtcBytes[0] << 8) | rtcBytes[1];
+        int month = rtcBytes[2];
+        int day = rtcBytes[3];
+        int hour = rtcBytes[5];
         int minute = rtcBytes[6];
         int second = rtcBytes[7];
 
-        Assert.InRange(year, 2024, 2030); // sane, not some default/epoch value
+        // Round the SAME way DLMSServerSession does before comparing — the raw row time can sit in
+        // the last ~15 minutes of an hour (e.g. 16:52), which rounds UP into the next hour (17:00).
+        // Comparing rounded fields (hour/day/month/year) against the row's unrounded fields would
+        // then fail exactly at that boundary despite the push being correct — round the expectation
+        // first so the assertion reflects what the row is actually supposed to produce.
+        DateTimeOffset expectedTime = ((GXDateTime)expectedRow[0]).Value;
+        long blockTicks = TimeSpan.FromMinutes(30).Ticks;
+        long remainder = expectedTime.Ticks % blockTicks;
+        long roundedTicks = remainder < blockTicks / 2 ? expectedTime.Ticks - remainder : expectedTime.Ticks + (blockTicks - remainder);
+        DateTimeOffset expectedRounded = new(roundedTicks, expectedTime.Offset);
+
+        Assert.Equal(expectedRounded.Year, year);
+        Assert.Equal(expectedRounded.Month, month);
+        Assert.Equal(expectedRounded.Day, day);
+        Assert.Equal(expectedRounded.Hour, hour);
+        Assert.Equal(expectedRounded.Minute, minute);
         Assert.True(minute == 0 || minute == 30, $"Expected the rounded minute to be :00 or :30, was :{minute:D2}");
         Assert.Equal(0, second); // rounding to the half-hour must also zero the seconds
 
-        Assert.Equal(253.18, Convert.ToDouble(parsed[3]), precision: 2);      // AverageVoltage
-        Assert.Equal(5.91, Convert.ToDouble(parsed[4]), precision: 2);        // CumulativeEnergyKwhImport
-        Assert.Equal(13.65, Convert.ToDouble(parsed[5]), precision: 2);       // CumulativeEnergyKvahImport
-        Assert.Equal(0.0, Convert.ToDouble(parsed[6]));                      // CumulativeEnergyKwhExport
-        Assert.Equal(0.0, Convert.ToDouble(parsed[7]));                      // CumulativeEnergyKvahExport
-        Assert.Equal(0.2, Convert.ToDouble(parsed[8]), precision: 2);         // AverageCurrent
-        Assert.Equal(0.2, Convert.ToDouble(parsed[9]), precision: 2);         // NeutralCurrent
+        Assert.Equal(Convert.ToDouble(expectedRow[1]), Convert.ToDouble(parsed[3]), precision: 3); // AverageVoltage
+        Assert.Equal(Convert.ToDouble(expectedRow[2]), Convert.ToDouble(parsed[4]), precision: 3); // CumulativeEnergyKwhImport
+        Assert.Equal(Convert.ToDouble(expectedRow[3]), Convert.ToDouble(parsed[5]), precision: 3); // CumulativeEnergyKvahImport
+        Assert.Equal(Convert.ToDouble(expectedRow[4]), Convert.ToDouble(parsed[6]), precision: 3); // CumulativeEnergyKwhExport
+        Assert.Equal(Convert.ToDouble(expectedRow[5]), Convert.ToDouble(parsed[7]), precision: 3); // CumulativeEnergyKvahExport
+        Assert.Equal(Convert.ToDouble(expectedRow[6]), Convert.ToDouble(parsed[8]), precision: 3); // AverageCurrent
+        Assert.Equal(Convert.ToDouble(expectedRow[7]), Convert.ToDouble(parsed[9]), precision: 3); // NeutralCurrent
+
+        // And explicitly: the values must NOT match the stray last-array-slot row (unless it were
+        // ever coincidentally the same, which it isn't for this template).
+        Assert.NotEqual(Convert.ToDouble(lastArrayRow[1]), Convert.ToDouble(parsed[3]));
     }
 
     /// <summary>

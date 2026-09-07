@@ -406,6 +406,8 @@ namespace MeterSimulator.DLMS
                 return;
             }
 
+            EnsureBufferFreshness(profile);
+
             object[]? latestRow = null;
             DateTimeOffset latestTime = DateTimeOffset.MinValue;
             foreach (object[] row in profile.Buffer)
@@ -435,6 +437,57 @@ namespace MeterSimulator.DLMS
             }
 
             CoreLog.Debug($"[Push] {_meter.MeterNo}: Block Load synced from row {rowTime.Value:O} -> rounded {rounded:O}");
+        }
+
+        /// <summary>
+        /// How stale the Block Load buffer's newest row is allowed to get before it is re-shifted
+        /// forward — one capture period, so a buffer that is still within its own cadence of "now"
+        /// is left untouched (the common case: nothing to do on almost every push).
+        /// </summary>
+        private static readonly TimeSpan BlockLoadFreshnessTolerance = TimeSpan.FromMinutes(30);
+
+        /// <summary>
+        /// <see cref="MeterObjectLoader.ShiftBufferTimestamps"/> rolls the Block Load buffer forward
+        /// to "now" exactly once, at template load. The template model is cached and shared for the
+        /// whole process lifetime (see <see cref="TemplateModelCache"/>), and a meter's session is
+        /// built once and never rebuilt (see <see cref="ManyMeterSimulator.Brain.MeterSessionManager"/>),
+        /// so without this, the buffer's "latest" row falls further and further behind real time the
+        /// longer the process stays up — every push (and every HES pull of this same shared profile)
+        /// after that reports an increasingly stale RTC, frozen at whenever the template first loaded.
+        ///
+        /// <para>
+        /// Re-applies the same shift whenever the buffer has drifted more than one capture period
+        /// behind now, so "newest row ≈ now" stays true regardless of how long the process has run or
+        /// how the push was triggered. Mutates the SHARED profile buffer (every meter on this template
+        /// reads the same one), so pull-path reads stay consistent with what gets pushed — and that
+        /// mutation is guarded by <see cref="PushEncodeLock"/> since concurrent pushes for other
+        /// meters on the same template can race here.
+        /// </para>
+        /// </summary>
+        private static void EnsureBufferFreshness(GXDLMSProfileGeneric profile)
+        {
+            DateTimeOffset? latest = MeterObjectLoader.LatestConcreteTimestamp(profile);
+            if (latest is null || DateTimeOffset.UtcNow - latest.Value <= BlockLoadFreshnessTolerance)
+            {
+                return;
+            }
+
+            lock (PushEncodeLock)
+            {
+                // Re-check inside the lock: another meter on this shared template may have already
+                // refreshed the buffer while this thread was waiting for the lock.
+                latest = MeterObjectLoader.LatestConcreteTimestamp(profile);
+                TimeSpan staleness = DateTimeOffset.UtcNow - (latest ?? DateTimeOffset.UtcNow);
+                if (latest is null || staleness <= BlockLoadFreshnessTolerance)
+                {
+                    return;
+                }
+
+                int shifted = MeterObjectLoader.ShiftProfileTimestamps(profile, staleness);
+                CoreLog.Debug(
+                    $"[Push] {profile.LogicalName}: buffer was {staleness.TotalMinutes:F0}m stale, " +
+                    $"re-shifted {shifted} timestamp(s) forward");
+            }
         }
 
         /// <summary>Rounds to the nearest 30-minute mark (:00 or :30), half-up on an exact tie.</summary>
