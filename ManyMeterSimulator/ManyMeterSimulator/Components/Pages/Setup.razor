@@ -9,6 +9,7 @@
 @using ManyMeterSimulator.Brain
 @using ManyMeterSimulator.Diagnostics
 @using ManyMeterSimulator.Networking.Nic
+@using ManyMeterSimulator.Networking.CustomPush
 @using ManyMeterSimulator.Networking.Registry
 @using Microsoft.AspNetCore.Components.Forms
 @inject MeterRegistry MeterRegistry
@@ -84,6 +85,16 @@
                                      ? "Optional — needed only for the custom channel"
                                      : "Wirepas only")"
                                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudSelect T="CustomPushHeaderKind?" @bind-Value="CustomPushHeader"
+                           Label="Custom push header" Disabled="@(!NeedsHesTemplateId(SelectedNic))"
+                           HelperText="Old = HES ten-byte header; New = HES twelve-byte magic header"
+                           Variant="Variant.Outlined" Margin="Margin.Dense">
+                    <MudSelectItem T="CustomPushHeaderKind?" Value="@(null)">(DLMS only / decide later)</MudSelectItem>
+                    <MudSelectItem T="CustomPushHeaderKind?" Value="@CustomPushHeaderKind.Old">Old custom header</MudSelectItem>
+                    <MudSelectItem T="CustomPushHeaderKind?" Value="@CustomPushHeaderKind.New">New custom header</MudSelectItem>
+                </MudSelect>
             </MudItem>
             <MudItem xs="12" sm="6">
                 <MudSelect T="string" @bind-Value="SelectedEnvironment" Label="Environment"
@@ -427,6 +438,7 @@ else
     private string SelectedTemplate { get; set; } = "";
     private NicType SelectedNic { get; set; } = NicType.Tcp4G;
     private int? HesTemplateId { get; set; }
+    private CustomPushHeaderKind? CustomPushHeader { get; set; }
     private string? ErrorMessage;
     private string? UploadMessage;
 
@@ -660,8 +672,10 @@ else
             MeterRegistry.AddBatch(
                 BatchName, SelectedTemplate, MeterCount, SelectedNic,
                 NeedsHesTemplateId(SelectedNic) ? HesTemplateId : null,
+                customPushHeaderKind: NeedsHesTemplateId(SelectedNic) ? CustomPushHeader : null,
                 environmentKey: envKey);
             BatchName = "";
+            CustomPushHeader = null;
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         {

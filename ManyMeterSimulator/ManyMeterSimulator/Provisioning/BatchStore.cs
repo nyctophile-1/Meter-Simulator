@@ -1,4 +1,5 @@
 using ManyMeterSimulator.Networking.Nic;
+using ManyMeterSimulator.Networking.CustomPush;
 
 namespace ManyMeterSimulator.Provisioning;
 
@@ -58,6 +59,8 @@ public sealed record PersistedBatch
 
     /// <summary>HES data-model template id. Null for the DLMS-passthrough NICs.</summary>
     public int? HesTemplateId { get; init; }
+
+    public CustomPushHeaderKind? CustomPushHeaderKind { get; init; }
 
     public long StartIndex { get; init; }
 

@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using ManyMeterSimulator.Networking.CustomPush;
 using ManyMeterSimulator.Networking.Nic;
 
 namespace ManyMeterSimulator.Provisioning;
@@ -34,6 +35,9 @@ public sealed class MeterBatch
     /// one would block a valid DLMS-only setup.
     /// </summary>
     public int? HesTemplateId { get; init; }
+
+    /// <summary>Configured by the operator for a custom Wirepas scheduled-push batch.</summary>
+    public CustomPushHeaderKind? CustomPushHeaderKind { get; init; }
 
     /// <summary>
     /// Name of the DLMS template (XML) every meter in this batch is built from

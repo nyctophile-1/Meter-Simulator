@@ -1,4 +1,5 @@
 using System.Net;
+using ManyMeterSimulator.Networking.CustomPush;
 using ManyMeterSimulator.Networking.Nic;
 using MeterSimulator.Models;
 
@@ -112,7 +113,8 @@ public sealed class MeterRegistry
         int? hesTemplateId = null,
         string? brokerKey = null,
         string? pushTargetKey = null,
-        string? environmentKey = null)
+        string? environmentKey = null,
+        CustomPushHeaderKind? customPushHeaderKind = null)
     {
         if (count <= 0)
         {
@@ -141,6 +143,7 @@ public sealed class MeterRegistry
                 TemplateName = templateName,
                 NicType = nicType,
                 HesTemplateId = hesTemplateId,
+                CustomPushHeaderKind = customPushHeaderKind,
                 StartIndex = _nextIndex,
                 Count = count,
                 EnvironmentKey = Normalize(environmentKey ?? brokerKey ?? pushTargetKey),
@@ -388,6 +391,7 @@ public sealed class MeterRegistry
                     TemplateName = pb.TemplateName,
                     NicType = pb.NicType,
                     HesTemplateId = pb.HesTemplateId,
+                    CustomPushHeaderKind = pb.CustomPushHeaderKind,
                     StartIndex = pb.StartIndex,
                     Count = pb.Count,
                     Status = pb.Status,
@@ -436,6 +440,7 @@ public sealed class MeterRegistry
                     TemplateName = pb.TemplateName,
                     NicType = pb.NicType,
                     HesTemplateId = pb.HesTemplateId,
+                    CustomPushHeaderKind = pb.CustomPushHeaderKind,
                     StartIndex = pb.StartIndex,
                     Count = pb.Count,
                     Status = pb.Status,
@@ -472,6 +477,7 @@ public sealed class MeterRegistry
             TemplateName = b.TemplateName,
             NicType = b.NicType,
             HesTemplateId = b.HesTemplateId,
+            CustomPushHeaderKind = b.CustomPushHeaderKind,
             StartIndex = b.StartIndex,
             Count = b.Count,
             Status = b.Status,
