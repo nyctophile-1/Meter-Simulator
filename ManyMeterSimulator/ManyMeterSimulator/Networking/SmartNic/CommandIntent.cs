@@ -51,7 +51,15 @@ public enum CustomCommandType
     GetBillingProfile = 6,
     GetNamePlate = 24,
     GetSingleActionSchedule = 25,
+    GetVoltageEventProfile = 41,
+    GetCurrentEventProfile = 42,
+    GetPowerEventProfile = 43,
+    GetTransactionEventProfile = 44,
+    GetOtherEventProfile = 45,
+    GetNonRollOverEventProfile = 46,
+    GetControlEventProfile = 47,
     GetRealtimeClock = 48,
+    GetStoredInstantaneousProfile = 50,
     GetDiData = 83,
 }
 

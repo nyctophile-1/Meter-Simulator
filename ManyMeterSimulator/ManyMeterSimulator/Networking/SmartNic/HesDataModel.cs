@@ -140,6 +140,8 @@ public readonly record struct MeterTemplateRow(
     int? EventTemplateId,
     int? MiscTemplateId)
 {
+    public int? MeterProfileHeaderTemplateId { get; init; }
+    public int? EventNonProfileTemplateId { get; init; }
     /// <summary>
     /// The generic HES path treats a template as new-header only when both custom directions use
     /// the 12-byte header. A lone 12-byte length is inconsistent metadata, not a legacy template.

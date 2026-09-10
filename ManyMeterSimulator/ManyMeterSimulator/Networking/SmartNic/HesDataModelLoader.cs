@@ -77,7 +77,11 @@ public sealed class HesDataModelLoader
                 NullableInt(row, "BillTemplateId"),
                 NullableInt(row, "InstantTemplateId"),
                 NullableInt(row, "EventTemplateId"),
-                NullableInt(row, "MiscTemplateId")));
+                NullableInt(row, "MiscTemplateId"))
+            {
+                MeterProfileHeaderTemplateId = NullableInt(row, "MeterProfileHeaderTemplateId"),
+                EventNonProfileTemplateId = NullableInt(row, "EventNonProfileTemplateId"),
+            });
         });
 
     private void LoadFields(HesDataModel model, string path) =>

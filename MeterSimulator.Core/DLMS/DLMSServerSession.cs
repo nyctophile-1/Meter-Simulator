@@ -28,6 +28,7 @@ namespace MeterSimulator.DLMS
     public class DLMSServerSession : GXDLMSSecureServer
     {
         private readonly DLMSMeter _meter;
+        private readonly string _templatePath;
         //private readonly GXNet _network;
         private readonly GXDLMSObjectCollection _objects = new();
 
@@ -69,7 +70,7 @@ namespace MeterSimulator.DLMS
         // from the host's default source address.
         private readonly IPAddress? _sourceAddress;
 
-        public DLMSServerSession(DLMSMeter meter, string templatePath, PushConfig? pushConfig = null, IPAddress? sourceAddress = null)
+        public DLMSServerSession(DLMSMeter meter, string templatePath, PushConfig? pushConfig = null, IPAddress? sourceAddress = null, bool initializeValues = true)
         : base(
             true,
             InterfaceType.WRAPPER)
@@ -85,6 +86,7 @@ namespace MeterSimulator.DLMS
             Ciphering.AuthenticationKey = meter.AuthenticationKey;
             Settings.UseLogicalNameReferencing = true;
             _meter = meter;
+            _templatePath = templatePath;
             _pushConfig = pushConfig;
             _sourceAddress = sourceAddress;
 
@@ -110,7 +112,7 @@ namespace MeterSimulator.DLMS
             // Seed this meter's own value store from the template's defaults. Reads are answered
             // from here (see PreRead), so the shared objects are never consulted for a value and
             // never need to be written to.
-            foreach (var obj in _objectsFromFile)
+            foreach (var obj in initializeValues ? _objectsFromFile : new GXDLMSObjectCollection())
             {
                 if (obj is GXDLMSRegister reg)
                 {
@@ -127,8 +129,11 @@ namespace MeterSimulator.DLMS
             // which would give every meter the last-built meter's serial. Must run after the seeding
             // loop above, which would otherwise overwrite it with the template's serial.
             // (HES reconciles IP-vs-meterno using the serial in the DLMS payload.)
-            ApplySerialOverride();
-            ApplyDeviceIdOverride();
+            if (initializeValues)
+            {
+                ApplySerialOverride();
+                ApplyDeviceIdOverride();
+            }
 
             // InitializeObjects() (legacy, pre-template hardcoded object set) must stay disabled:
             // it registers its own Clock/registers/Daily Load Profile at the SAME OBIS the XML
@@ -188,6 +193,14 @@ namespace MeterSimulator.DLMS
         }
 
         #region Push (outbound DataNotification)
+
+        /// <summary>A separate association over this meter's state, without reseeding its values.</summary>
+        public DLMSServerSession CreateReadAssociation()
+        {
+            var association = new DLMSServerSession(_meter, _templatePath, initializeValues: false);
+            association.Initialize(true);
+            return association;
+        }
 
         // ApplyPushDestinationOverride was removed with the move to a SHARED template model: it
         // wrote PushSetup.Destination onto objects every meter now shares, so the last meter built

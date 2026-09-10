@@ -54,7 +54,9 @@ public static class CustomPullCommandDecoder
             6 => CustomCommandType.GetBillingProfile,
             24 => CustomCommandType.GetNamePlate,
             25 => CustomCommandType.GetSingleActionSchedule,
+            >= 41 and <= 47 => (CustomCommandType)rawCommand,
             48 => CustomCommandType.GetRealtimeClock,
+            50 => CustomCommandType.GetStoredInstantaneousProfile,
             83 or 90 => CustomCommandType.GetDiData, // GetDIEventProfile is sent as GetDIData
             _ => CustomCommandType.Unknown,
         };
@@ -67,12 +69,20 @@ public static class CustomPullCommandDecoder
         CustomCommandType.GetInstantaneousProfile
             or CustomCommandType.GetNamePlate
             or CustomCommandType.GetSingleActionSchedule
-            or CustomCommandType.GetRealtimeClock
-            or CustomCommandType.GetDiData => selector == CustomDataSelector.GetWithoutData,
+            or CustomCommandType.GetRealtimeClock => selector == CustomDataSelector.GetWithoutData,
 
         CustomCommandType.GetBlockLoadProfile
             or CustomCommandType.GetDailyLoadProfile
-            or CustomCommandType.GetBillingProfile => selector is
+            or CustomCommandType.GetBillingProfile
+            or CustomCommandType.GetStoredInstantaneousProfile
+            or CustomCommandType.GetVoltageEventProfile
+            or CustomCommandType.GetCurrentEventProfile
+            or CustomCommandType.GetPowerEventProfile
+            or CustomCommandType.GetTransactionEventProfile
+            or CustomCommandType.GetOtherEventProfile
+            or CustomCommandType.GetNonRollOverEventProfile
+            or CustomCommandType.GetControlEventProfile
+            or CustomCommandType.GetDiData => selector is
                 CustomDataSelector.GetWithoutData or
                 CustomDataSelector.GetWithEntryRange or
                 CustomDataSelector.GetWithDateRange or

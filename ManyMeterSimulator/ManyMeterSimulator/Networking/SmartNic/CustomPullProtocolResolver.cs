@@ -20,7 +20,14 @@ public sealed class CustomPullProtocolResolver
 {
     private readonly HesDataModel _dataModel;
 
-    public CustomPullProtocolResolver(HesDataModel dataModel) => _dataModel = dataModel;
+    private readonly IReadOnlyDictionary<int, uint> _responseMagics;
+
+    public CustomPullProtocolResolver(HesDataModel dataModel,
+        Microsoft.Extensions.Options.IOptions<CustomPullOptions>? options = null)
+    {
+        _dataModel = dataModel;
+        _responseMagics = options?.Value.ResponseMagicNumbers ?? new Dictionary<int, uint>();
+    }
 
     public bool TryResolve(
         MeterBatch batch,
@@ -44,6 +51,17 @@ public sealed class CustomPullProtocolResolver
         if (template.UsesNewHeader)
         {
             IReadOnlyList<uint> magics = _dataModel.GetMagicNumbersForTemplate(templateId);
+            if (_responseMagics.TryGetValue(templateId, out uint selected))
+            {
+                if (!magics.Contains(selected))
+                {
+                    error = $"response magic {selected} is not registered for HES template {templateId}";
+                    return false;
+                }
+                profile = new CustomPullProtocolProfile(templateId, CustomPullWireProfile.NewHeader, selected);
+                error = string.Empty;
+                return true;
+            }
             if (magics.Count != 1)
             {
                 error = magics.Count == 0

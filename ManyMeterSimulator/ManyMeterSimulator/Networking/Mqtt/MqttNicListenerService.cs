@@ -51,6 +51,8 @@ public sealed class MqttNicListenerService : BackgroundService, IMqttPushPublish
     private readonly NetworkRegistry _network;
     private readonly NicCodecFactory _codecs;
     private readonly CustomPullIngress _customPullIngress;
+    private readonly CustomRtcCommand _customRtc;
+    private readonly CustomProfileCommand _customProfiles;
     private readonly ConcurrentDictionary<BrokerBinding, BoundBrokerClient> _clients = new();
 
     /// <summary>
@@ -74,7 +76,9 @@ public sealed class MqttNicListenerService : BackgroundService, IMqttPushPublish
         MeterRegistry registry,
         NetworkRegistry network,
         NicCodecFactory codecs,
-        CustomPullIngress customPullIngress)
+        CustomPullIngress customPullIngress,
+        CustomRtcCommand customRtc,
+        CustomProfileCommand customProfiles)
     {
         _logger = logger;
         _loggerFactory = loggerFactory;
@@ -88,6 +92,8 @@ public sealed class MqttNicListenerService : BackgroundService, IMqttPushPublish
         _network = network;
         _codecs = codecs;
         _customPullIngress = customPullIngress;
+        _customRtc = customRtc;
+        _customProfiles = customProfiles;
     }
 
     /// <summary>Per-binding broker status, for the dashboard and the Network page.</summary>
@@ -485,11 +491,37 @@ public sealed class MqttNicListenerService : BackgroundService, IMqttPushPublish
                 return;
             }
 
-            // The next phase consumes this typed input through the mini-HES association runner.
-            // Do not fall through to Decode: endpoint-13 bytes are not a transparent DLMS WPDU,
-            // and opening the normal brain session here would corrupt ordinary association state.
-            _logger.LogDebug("Meter {Meter}: verified custom request frame {FrameId} awaits mini-HES execution",
-                item.Meter, custom.Inbound!.Value.Request.FrameId);
+            CustomPullInbound inbound = custom.Inbound!.Value;
+            if (inbound.Intent.Command != CustomCommandType.GetRealtimeClock && !CustomProfileCommand.Supports(inbound.Intent.Command))
+            {
+                _logger.LogDebug("Meter {Meter}: custom command {Command} is not implemented", item.Meter, inbound.Intent.Command);
+                return;
+            }
+            // Admission is shared with ordinary requests, but the DLMS association is isolated.
+            if (!TryTouchOrOpenSession(item.Meter, out ConnectionState? customSession)) return;
+            string[] topicParts = item.Envelope.Topic.Split('/');
+            if (topicParts.Length != 4 || topicParts[2].Length == 0 || topicParts[3].Length == 0) return;
+            WarnIfCrossBroker(item);
+            try
+            {
+                IReadOnlyList<byte[]> responses = inbound.Intent.Command == CustomCommandType.GetRealtimeClock
+                    ? [_customRtc.Execute(inbound, cancellationToken)]
+                    : _customProfiles.Execute(inbound, cancellationToken);
+                foreach (byte[] framed in responses)
+                {
+                    NicPublish publish = ManyMeterSimulator.Networking.CustomPush.WirepasCustomPushEnvelope.Create(
+                        topicParts[2], topicParts[3], item.Route.NodeId, 13, framed);
+                    await item.Source.Client.PublishAsync(publish.Topic, publish.Payload, item.Options.PublishQos, cancellationToken);
+                }
+                customSession!.Touch();
+                customSession.RecordExchange();
+                _logger.LogInformation("Meter {Meter}: answered custom {Command} frame {FrameId} in {Packets} packets via {Binding}",
+                    item.Meter, inbound.Intent.Command, inbound.Request.FrameId, responses.Count, item.Source.Binding);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogWarning(ex, "Meter {Meter}: custom {Command} failed", item.Meter, inbound.Intent.Command);
+            }
             return;
         }
 

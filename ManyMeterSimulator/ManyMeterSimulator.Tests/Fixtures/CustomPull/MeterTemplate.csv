@@ -1,0 +1,2 @@
+"Id","TemplateName","PushHeaderLength","PullHeaderLength","PushPayloadType","PullPayloadType","IsFG23","BlockTemplateId","DailyTemplateId","BillTemplateId","InstantTemplateId","EventTemplateId","MiscTemplateId","MeterTemplateId","MeterProfileHeaderTemplateId","EventNonProfileTemplateId"
+"93","Anvil-AMI 1&2-1P (RF)","12","12","2","2","False","49","9","48","9","8","28","93","3","5"
