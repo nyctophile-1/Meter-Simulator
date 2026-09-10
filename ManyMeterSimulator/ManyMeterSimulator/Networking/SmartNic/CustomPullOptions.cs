@@ -21,6 +21,9 @@ public sealed class CustomPullOptions
     public int MaxResponseBytes { get; set; } = 4 * 1024 * 1024;
     public int ReadTimeoutSeconds { get; set; } = 30;
     public int BlockRequestOffsetMinutes { get; set; } = 330;
+    /// <summary>Generated block interval; field-layout exports do not contain capture periods.</summary>
+    public int BlockPeriodMinutes { get; set; } = 15;
+    public Dictionary<int, int> BlockPeriodMinutesByTemplate { get; set; } = new();
     public int ResponseTimestampOffsetMinutes { get; set; } = 330;
     public int[]? EventsWithPowerProfile { get; set; }
 }

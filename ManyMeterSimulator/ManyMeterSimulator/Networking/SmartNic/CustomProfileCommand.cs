@@ -18,7 +18,7 @@ public sealed class CustomProfileCommand(MeterSessionManager sessions, HesDataMo
 {
     private readonly CustomPullOptions _options = options.Value;
 
-    public static bool Supports(CustomCommandType command) => (int)command is 3 or 4 or 5 or 6 or >= 41 and <= 47 or 50 or 83;
+    public static bool Supports(CustomCommandType command) => (int)command is 3 or 4 or 5 or 6 or 21 or >= 41 and <= 47 or 50 or 83;
 
     public IReadOnlyList<byte[]> Execute(CustomPullInbound inbound, CancellationToken cancellationToken)
     {
@@ -34,7 +34,7 @@ public sealed class CustomProfileCommand(MeterSessionManager sessions, HesDataMo
             throw new NotSupportedException("Exported meter profile header does not match the custom framing.");
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(Math.Clamp(_options.ReadTimeoutSeconds, 1, 120)));
-        if (_options.ProfileDataSource == "DataModel")
+        if (_options.ProfileDataSource == "DataModel" || inbound.Intent.Command == CustomCommandType.GRBlockLoadProfile)
         {
             try { return GenerateAndEncode(inbound, template, category, timeout.Token); }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
@@ -52,6 +52,8 @@ public sealed class CustomProfileCommand(MeterSessionManager sessions, HesDataMo
     {
         var (_, kind, templateId, responseType) = Describe(inbound.Intent.Command, template);
         var fields = Fields(templateId, kind, category);
+        if (inbound.Intent.Command == CustomCommandType.GRBlockLoadProfile)
+            return GenerateGapAndEncode(inbound, fields, token);
         int eventId = CustomProfileDataGenerator.EventId(inbound.Intent.Command);
         if (kind == "EVENT")
         {
@@ -81,6 +83,38 @@ public sealed class CustomProfileCommand(MeterSessionManager sessions, HesDataMo
                 packets.Add(packet);
             }
         }
+        return packets;
+    }
+
+    private IReadOnlyList<byte[]> GenerateGapAndEncode(CustomPullInbound inbound,
+        IReadOnlyList<TemplateField> fields, CancellationToken token)
+    {
+        var selection = GapBlockSelection.Create(inbound, _options);
+        token.ThrowIfCancellationRequested();
+        if (selection.Mask == 0) return Frame(inbound, Header(inbound, 100, 0));
+        if (!fields.Any(f => f.DataType == "DateTime"))
+            throw new NotSupportedException("A gap-reading layout must contain a timestamp to identify each selected block.");
+        var selected = new List<byte[]>();
+        // Generate the complete logical window, then retain only the slots whose bits are set.
+        // No DLMS association is opened: these are synthetic, metadata-defined rows.
+        for (int bit = 0; bit < 32; bit++)
+        {
+            token.ThrowIfCancellationRequested();
+            var timestamp = selection.Timestamp(bit);
+            var values = fields.Select(field => CustomProfileDataGenerator.Value(field, inbound.Meter.Index,
+                timestamp, "BLOCK", 0, selection.PeriodMinutes)).ToArray();
+            if (!selection.Includes(bit)) continue;
+            using var row = new MemoryStream();
+            for (int column = 0; column < fields.Count; column++)
+                row.Write(EncodeField(fields[column], values[column], new GXDLMSData(), _options.ResponseTimestampOffsetMinutes));
+            selected.Add(row.ToArray());
+        }
+        using var body = new MemoryStream();
+        body.Write(Header(inbound, 19, checked((byte)selected.Count)));
+        // Generic HES ParseBlock counts frames down, so reverse wire rows for chronological consumption.
+        foreach (byte[] row in selected.AsEnumerable().Reverse()) body.Write(row);
+        var packets = Frame(inbound, body.ToArray());
+        if (packets.Sum(p => p.Length) > _options.MaxResponseBytes) throw new InvalidOperationException("GR response byte limit exceeded.");
         return packets;
     }
 
@@ -167,7 +201,7 @@ public sealed class CustomProfileCommand(MeterSessionManager sessions, HesDataMo
     public static (string Obis, string Kind, int? TemplateId, byte ResponseType) Describe(CustomCommandType command, MeterTemplateRow t) => command switch
     {
         CustomCommandType.GetInstantaneousProfile or CustomCommandType.GetStoredInstantaneousProfile => ("1.0.94.91.0.255", "INSTANT", t.InstantTemplateId, 22),
-        CustomCommandType.GetBlockLoadProfile => ("1.0.99.1.0.255", "BLOCK", t.BlockTemplateId, 19),
+        CustomCommandType.GetBlockLoadProfile or CustomCommandType.GRBlockLoadProfile => ("1.0.99.1.0.255", "BLOCK", t.BlockTemplateId, 19),
         CustomCommandType.GetDailyLoadProfile => ("1.0.99.2.0.255", "DAILY", t.DailyTemplateId, 20),
         CustomCommandType.GetBillingProfile => ("1.0.98.1.0.255", "BILL", t.BillTemplateId, 21),
         >= CustomCommandType.GetVoltageEventProfile and <= CustomCommandType.GetControlEventProfile =>

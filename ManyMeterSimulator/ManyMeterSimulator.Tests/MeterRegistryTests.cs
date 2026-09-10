@@ -49,7 +49,7 @@ public class MeterRegistryTests
 
         Assert.Equal(IPAddress.Parse("fd00:6d65:7472::65"), first);
         Assert.Equal(IPAddress.Parse("fd00:6d65:7472::69"), last);
-        Assert.Equal("MY000000101", MeterRegistry.FormatSerial(second.StartIndex));
+        Assert.Equal("MY00000101", MeterRegistry.FormatSerial(second.StartIndex));
     }
 
     [Fact]
@@ -61,7 +61,7 @@ public class MeterRegistryTests
         BatchPreview preview = registry.PreviewNextBatch(Prefix, 5);
 
         Assert.Equal(IPAddress.Parse("fd00:6d65:7472::65"), preview.FirstAddress);
-        Assert.Equal("MY000000101", preview.FirstSerial);
+        Assert.Equal("MY00000101", preview.FirstSerial);
     }
 
     [Fact]
@@ -103,9 +103,9 @@ public class MeterRegistryTests
     [Fact]
     public void FormatSerial_MatchesExpectedConvention()
     {
-        Assert.Equal("MY000000001", MeterRegistry.FormatSerial(1));
-        Assert.Equal("MY999999999", MeterRegistry.FormatSerial(999_999_999));
-        Assert.Equal(MeterRegistry.MaxIndex, 999_999_999);
+        Assert.Equal("MY00000001", MeterRegistry.FormatSerial(1));
+        Assert.Equal("MY99999999", MeterRegistry.FormatSerial(99_999_999));
+        Assert.Equal(99_999_999, MeterRegistry.MaxIndex);
     }
 
     [Fact]
@@ -191,7 +191,7 @@ public class MeterRegistryTests
     [InlineData(1, "fd00:6d65:7472::1")]
     [InlineData(65_535, "fd00:6d65:7472::ffff")]
     [InlineData(65_536, "fd00:6d65:7472::1:0")]
-    [InlineData(MeterRegistry.MaxIndex, "fd00:6d65:7472::3b9a:c9ff")]
+    [InlineData(MeterRegistry.MaxIndex, "fd00:6d65:7472::5f5:e0ff")]
     public void ComputeAddress_Slash64_IsUnchangedByTheSlash80Support(long index, string expected)
     {
         IPAddress address = MeterAddressing.ComputeAddress("fd00:6d65:7472::/64", index);

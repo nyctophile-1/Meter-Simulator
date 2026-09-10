@@ -41,7 +41,7 @@ public class MeterRefTests
         var meter = new MeterRef(5, NicType.MqttWirepas);
 
         Assert.Equal("5", meter.NodeId);
-        Assert.Equal("MY000000005", meter.Serial);
+        Assert.Equal("MY00000005", meter.Serial);
         Assert.Equal(MeterRegistry.FormatSerial(5), meter.Serial);
     }
 

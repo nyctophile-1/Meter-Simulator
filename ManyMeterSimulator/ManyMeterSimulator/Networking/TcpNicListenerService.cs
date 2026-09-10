@@ -72,8 +72,8 @@ public class TcpNicListenerService : BackgroundService
     {
         _listenSocket = new Socket(AddressFamily.InterNetworkV6, SocketType.Stream, ProtocolType.Tcp);
         _listenSocket.SetSocketOption(SocketOptionLevel.IPv6, SocketOptionName.IPv6Only, true);
-        //_listenSocket.Bind(new IPEndPoint(IPAddress.IPv6Any, _options.ListenPort));
-        //_listenSocket.Listen(backlog: 512);
+        _listenSocket.Bind(new IPEndPoint(IPAddress.IPv6Any, _options.ListenPort));
+        _listenSocket.Listen(backlog: 512);
 
         _logger.LogInformation(
             "TCP NIC listener bound to [::]:{Port} (wildcard). Virtual meter addresses are expected from prefix {Prefix}; " +
@@ -84,17 +84,17 @@ public class TcpNicListenerService : BackgroundService
 
         while (!stoppingToken.IsCancellationRequested)
         {
-            //Socket connection;
-            //try
-            //{
-            //    //connection = await _listenSocket.AcceptAsync(stoppingToken);
-            //}
-            //catch (OperationCanceledException)
-            //{
-            //    break;
-            //}
+            Socket connection;
+            try
+            {
+                connection = await _listenSocket.AcceptAsync(stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
 
-            //_connectionHandlerTasks.Add(HandleConnectionAsync(connection));
+            _connectionHandlerTasks.Add(HandleConnectionAsync(connection));
         }
 
         _logger.LogInformation("Accept loop stopped. Waiting for {Count} in-flight session(s) to finish...", _registry.ActiveCount);

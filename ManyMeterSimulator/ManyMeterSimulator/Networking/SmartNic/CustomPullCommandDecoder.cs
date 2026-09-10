@@ -52,6 +52,7 @@ public static class CustomPullCommandDecoder
             4 or 72 => CustomCommandType.GetBlockLoadProfile, // GetBlockLoadProfileInternal
             5 => CustomCommandType.GetDailyLoadProfile,
             6 => CustomCommandType.GetBillingProfile,
+            21 => CustomCommandType.GRBlockLoadProfile,
             24 => CustomCommandType.GetNamePlate,
             25 => CustomCommandType.GetSingleActionSchedule,
             >= 41 and <= 47 => (CustomCommandType)rawCommand,
@@ -66,6 +67,7 @@ public static class CustomPullCommandDecoder
 
     private static bool IsSelectorAllowed(CustomCommandType command, CustomDataSelector selector) => command switch
     {
+        CustomCommandType.GRBlockLoadProfile => selector == CustomDataSelector.GetWithDateRange,
         CustomCommandType.GetInstantaneousProfile
             or CustomCommandType.GetNamePlate
             or CustomCommandType.GetSingleActionSchedule

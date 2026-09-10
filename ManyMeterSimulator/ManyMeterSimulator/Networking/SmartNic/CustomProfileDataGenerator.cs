@@ -75,7 +75,7 @@ public static class CustomProfileDataGenerator
         return result;
     }
 
-    public static object Value(TemplateField field, long meter, DateTimeOffset timestamp, string kind, int eventId)
+    public static object Value(TemplateField field, long meter, DateTimeOffset timestamp, string kind, int eventId, int blockPeriodMinutes = 15)
     {
         if (field.DataType == "DateTime") return new GXDateTime(timestamp.UtcDateTime);
         string name = field.ParameterName.ToLowerInvariant();
@@ -93,7 +93,7 @@ public static class CustomProfileDataGenerator
         else if (name.StartsWith("maxdemand") || name is "mdw" or "mdva" || name.StartsWith("maximumdemand")) value = kw * 1.2m;
         else if (name.Contains("energy") || name.Contains("kvarh") || name is "netkwh" or "netkvah")
         {
-            value = kind == "BLOCK" ? 8m / 96m : cumulative;
+            value = kind == "BLOCK" ? 8m * blockPeriodMinutes / (24m * 60m) : cumulative;
             if (name.Contains("export")) value *= 0.05m;
             if (name.Contains("kvah")) value /= 0.98m;
             if (name.Contains("tz")) value /= 6m;

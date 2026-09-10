@@ -49,6 +49,7 @@ public enum CustomCommandType
     GetBlockLoadProfile = 4,
     GetDailyLoadProfile = 5,
     GetBillingProfile = 6,
+    GRBlockLoadProfile = 21,
     GetNamePlate = 24,
     GetSingleActionSchedule = 25,
     GetVoltageEventProfile = 41,

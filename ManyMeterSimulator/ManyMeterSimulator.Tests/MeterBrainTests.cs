@@ -35,7 +35,7 @@ public class MeterBrainTests
     {
         const long index = 42;
         var meter = new DLMSMeter(index, "1.0.0.0.0.255", clientAddress: 16, serverAddress: 1);
-        Assert.Equal("MY000000042", meter.MeterNo);
+        Assert.Equal("MY00000042", meter.MeterNo);
 
         var session = new DLMSServerSession(meter, TemplatePath("SA1231166HP_values.xml"));
         session.Initialize(true);
@@ -66,8 +66,8 @@ public class MeterBrainTests
         sessionB.Initialize(true);
 
         // Identity stays per meter even though the object model is shared.
-        Assert.Equal("MY000000001", meterA.GetValue("0.0.96.1.0.255"));
-        Assert.Equal("MY000000002", meterB.GetValue("0.0.96.1.0.255"));
+        Assert.Equal("MY00000001", meterA.GetValue("0.0.96.1.0.255"));
+        Assert.Equal("MY00000002", meterB.GetValue("0.0.96.1.0.255"));
 
         // The two sessions really are sharing one object graph (that is the point) …
         var objA = sessionA.Items.FindByLN(ObjectType.Data, "0.0.96.1.0.255");
@@ -109,7 +109,7 @@ public class MeterIdentityTests
         Assert.Equal(16, MeterIdentity.AuthenticationKey(5).Length);
         Assert.Equal(16, MeterIdentity.HlsKey(5).Length);
         Assert.Equal(8, MeterIdentity.LlsKey(5).Length);
-        Assert.Equal("MY000000005", MeterIdentity.Serial(5));
+        Assert.Equal("MY00000005", MeterIdentity.Serial(5));
     }
 
     /// <summary>
