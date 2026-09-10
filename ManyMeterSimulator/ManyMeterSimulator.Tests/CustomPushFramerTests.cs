@@ -60,4 +60,12 @@ public class CustomPushFramerTests
             0x70, 0x00, 0x00, 0x00, // export kVAh = 112 -> 0.112
         ], payload[11..]);
     }
+
+    [Fact]
+    public void WirepasEnvelope_UsesTheVayuCoreNewNormalDataTopic()
+    {
+        var publish = WirepasCustomPushEnvelope.Create("gw-1", "sink-1", "1197289", 10, [0x01]);
+
+        Assert.Equal("gw-event/received_data/gw-1/sink-1/1197289/10/10", publish.Topic);
+    }
 }

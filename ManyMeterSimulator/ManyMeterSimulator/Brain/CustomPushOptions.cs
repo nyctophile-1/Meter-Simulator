@@ -7,5 +7,5 @@ public sealed class CustomPushOptions
 
     public string WirepasGatewayId { get; set; } = "sim-gw";
     public string WirepasSinkId { get; set; } = "sink1";
-    public uint WirepasEndpoint { get; set; } = 1;
+    public uint WirepasEndpoint { get; set; } = 10;
 }
