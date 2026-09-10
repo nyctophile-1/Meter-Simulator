@@ -40,4 +40,24 @@ public class CustomPushFramerTests
             0x3A, 0xF9, 0xA1, 0x6A, 0x03, 0x12, 0x08, 0x07,
         ], packet);
     }
+
+    [Fact]
+    public void Template93DailyPush_UsesTheLiveEqaDailyFieldLayout()
+    {
+        byte[] payload = Template93.BuildDaily1P(
+            meterIndex: 12,
+            utcNow: DateTimeOffset.FromUnixTimeSeconds(1_788_999_997));
+
+        Assert.Equal(31, payload.Length);
+        Assert.Equal(5, payload[0]);
+        Assert.Equal(1, payload[1]);
+        Assert.Equal(
+        [
+            0x3D, 0xF9, 0xA1, 0x6A, // RTC
+            0x80, 0xB5, 0x01, 0x00, // import kWh = 112000 -> 112.000
+            0x90, 0xDC, 0x01, 0x00, // import kVAh = 122000 -> 122.000
+            0x0C, 0x00, 0x00, 0x00, // export kWh = 12 -> 0.012
+            0x70, 0x00, 0x00, 0x00, // export kVAh = 112 -> 0.112
+        ], payload[11..]);
+    }
 }

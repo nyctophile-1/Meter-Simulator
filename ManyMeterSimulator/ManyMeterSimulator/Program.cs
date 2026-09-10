@@ -70,6 +70,7 @@ builder.Services.Configure<AuthOptions>(builder.Configuration.GetSection(AuthOpt
 builder.Services.Configure<TemplateOptions>(builder.Configuration.GetSection(TemplateOptions.SectionName));
 builder.Services.Configure<BrainOptions>(builder.Configuration.GetSection(BrainOptions.SectionName));
 builder.Services.Configure<PushOptions>(builder.Configuration.GetSection(PushOptions.SectionName));
+builder.Services.Configure<CustomPushOptions>(builder.Configuration.GetSection(CustomPushOptions.SectionName));
 builder.Services.Configure<PersistenceOptions>(builder.Configuration.GetSection(PersistenceOptions.SectionName));
 builder.Services.Configure<NetworkDelayOptions>(builder.Configuration.GetSection(NetworkDelayOptions.SectionName));
 builder.Services.Configure<NetworkHealthOptions>(builder.Configuration.GetSection(NetworkHealthOptions.SectionName));

@@ -47,6 +47,7 @@ public class PushDestinationTests
         var push = new PushCoordinator(
             batches, sessions, network, tcpPush, mqtt, new NicCodecFactory(),
             Options.Create(new PushOptions()),
+            Options.Create(new CustomPushOptions()),
             new ManyMeterSimulator.Diagnostics.SimulatorMetrics(),
             NullLogger<PushCoordinator>.Instance);
 

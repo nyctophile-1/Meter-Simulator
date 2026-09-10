@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using ManyMeterSimulator.Diagnostics;
 using ManyMeterSimulator.Networking.Mqtt;
+using ManyMeterSimulator.Networking.CustomPush;
 using ManyMeterSimulator.Networking.Nic;
 using ManyMeterSimulator.Networking.Push;
 using ManyMeterSimulator.Networking.Registry;
@@ -25,6 +26,7 @@ public sealed class PushCoordinator
     private readonly IMqttPushPublisher _mqtt;
     private readonly NicCodecFactory _codecs;
     private readonly PushOptions _options;
+    private readonly CustomPushOptions _customPushOptions;
     private readonly SimulatorMetrics _metrics;
     private readonly ILogger<PushCoordinator> _logger;
 
@@ -36,6 +38,7 @@ public sealed class PushCoordinator
         IMqttPushPublisher mqtt,
         NicCodecFactory codecs,
         IOptions<PushOptions> options,
+        IOptions<CustomPushOptions> customPushOptions,
         SimulatorMetrics metrics,
         ILogger<PushCoordinator> logger)
     {
@@ -46,6 +49,7 @@ public sealed class PushCoordinator
         _mqtt = mqtt;
         _codecs = codecs;
         _options = options.Value;
+        _customPushOptions = customPushOptions.Value;
         _metrics = metrics;
         _logger = logger;
     }
@@ -269,6 +273,16 @@ public sealed class PushCoordinator
                 "broker connection comes up, then push.");
         }
 
+        if (batch.NicType == NicType.MqttWirepas && batch.HesTemplateId == Template93.HesTemplateId)
+        {
+            if (batch.CustomPushHeaderKind != CustomPushHeaderKind.New)
+            {
+                return PushBatchResult.ForError("HES template 93 custom push requires the new 12-byte header.");
+            }
+
+            return await PushTemplate93DailyAsync(batch, binding, cancellationToken, maximumMeters, selectRandomly);
+        }
+
         INicCodec? codec = _codecs.Create(transport);
         if (codec is null)
         {
@@ -356,6 +370,47 @@ public sealed class PushCoordinator
             "— {RecordsSent} record(s) pushed, {RecordsFailed} failed",
             batch.Id, batch.Name, binding, metersSent, metersFailed, meters.Count, payloadsSent, payloadsFailed);
 
+        return new PushBatchResult(true, meters.Count, metersSent, metersFailed, null);
+    }
+
+    private async Task<PushBatchResult> PushTemplate93DailyAsync(
+        MeterBatch batch, BrokerBinding binding, CancellationToken cancellationToken, int? maximumMeters, bool selectRandomly)
+    {
+        IReadOnlyList<(MeterRef Meter, DLMSServerSession Session)> meters = await _sessions.MaterializeBatchAsync(
+            batch, cancellationToken: cancellationToken, maximumMeters: maximumMeters, selectRandomly: selectRandomly);
+
+        int metersSent = 0, metersFailed = 0;
+        await ProcessInWavesAsync(meters, batch, async pair =>
+        {
+            long startedTicks = Stopwatch.GetTimestamp();
+            try
+            {
+                byte[] body = Template93.BuildDaily1P(pair.Meter.Index, DateTimeOffset.UtcNow);
+                uint frameId = unchecked((uint)Random.Shared.NextInt64());
+                byte[] framed = CustomPushFramer.Frame(body, CustomPushHeaderKind.New, frameId, Template93.MagicNumber);
+                NicPublish publish = WirepasCustomPushEnvelope.Create(
+                    _customPushOptions.WirepasGatewayId,
+                    _customPushOptions.WirepasSinkId,
+                    pair.Meter.NodeId,
+                    _customPushOptions.WirepasEndpoint,
+                    framed);
+
+                bool ok = await _mqtt.TryPublishPushAsync(binding, publish, _options.PublishQos, cancellationToken);
+                _metrics.RecordPushPayloads(batch.NicType, ok ? 1 : 0, ok ? 0 : 1);
+                _metrics.RecordPushMeter(batch.NicType, ok, Stopwatch.GetElapsedTime(startedTicks));
+                if (ok) Interlocked.Increment(ref metersSent); else Interlocked.Increment(ref metersFailed);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Custom push failed for meter {Meter}", pair.Meter);
+                Interlocked.Increment(ref metersFailed);
+                _metrics.RecordPushMeter(batch.NicType, ok: false, Stopwatch.GetElapsedTime(startedTicks));
+            }
+        }, cancellationToken);
+
+        _logger.LogInformation(
+            "Custom daily push batch {BatchId} ({BatchName}) template 93: {Sent} sent, {Failed} failed of {Total} meter(s)",
+            batch.Id, batch.Name, metersSent, metersFailed, meters.Count);
         return new PushBatchResult(true, meters.Count, metersSent, metersFailed, null);
     }
 
