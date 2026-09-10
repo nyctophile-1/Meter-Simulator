@@ -14,6 +14,7 @@ public sealed record CommandIntent(
     MeterRef Meter,
     CustomCommandType Command,
     CustomDataSelector Selector,
+    byte RawCommandType,
     uint ValueFrom,
     uint ValueTo)
 {
@@ -44,12 +45,14 @@ public sealed record CommandIntent(
 public enum CustomCommandType
 {
     Unknown = 0,
-    GetBlockLoadProfile,
-    GetInstantaneousProfile,
-    GetDailyLoadProfile,
-    GetBillingProfile,
-    GetNamePlate,
-    SyncRtc,
+    GetInstantaneousProfile = 3,
+    GetBlockLoadProfile = 4,
+    GetDailyLoadProfile = 5,
+    GetBillingProfile = 6,
+    GetNamePlate = 24,
+    GetSingleActionSchedule = 25,
+    GetRealtimeClock = 48,
+    GetDiData = 83,
 }
 
 /// <summary>
@@ -58,10 +61,12 @@ public enum CustomCommandType
 /// </summary>
 public enum CustomDataSelector
 {
-    Get = 0,
-    GetWithDateRange,
-    GetWithEntryRange,
-    SetWithData,
+    GetWithoutData = 1,
+    SetWithData = 2,
+    SetWithDate = 3,
+    GetWithEntryRange = 4,
+    GetWithDateRange = 5,
+    GetLatestEntriesRange = 6,
 }
 
 /// <summary>

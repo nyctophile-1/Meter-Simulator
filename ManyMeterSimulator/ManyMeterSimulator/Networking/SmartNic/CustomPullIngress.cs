@@ -15,7 +15,8 @@ public readonly record struct CustomPullInbound(
     MeterRef Meter,
     MeterBatch Batch,
     CustomPullProtocolProfile Protocol,
-    CustomPullRequest Request);
+    CustomPullRequest Request,
+    CommandIntent Intent);
 
 public readonly record struct CustomPullIngressResult(
     CustomPullIngressStatus Status,
@@ -92,7 +93,12 @@ public sealed class CustomPullIngress
                 $"custom request node ids from={request.FromNodeId}, to={request.ToNodeId} do not match outer destination {expectedNodeId}");
         }
 
-        return CustomPullIngressResult.Complete(new CustomPullInbound(meter, batch, protocol, request));
+        if (!CustomPullCommandDecoder.TryDecode(meter, request, out CommandIntent intent, out string commandError))
+        {
+            return CustomPullIngressResult.Unsupported(commandError);
+        }
+
+        return CustomPullIngressResult.Complete(new CustomPullInbound(meter, batch, protocol, request, intent));
     }
 
     private static uint MaxNodeId(int width) => width switch
