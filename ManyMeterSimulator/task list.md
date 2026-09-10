@@ -44,14 +44,14 @@ Dependencies: P0.02-P0.06 and applicable width/CRC fixtures.
 
 - [ ] P1.01 — Introduce explicit wire command/selector mapping. Preserve raw command, selector, declared lengths, signed/bits representation, frame ID, and node IDs; expand the domain intent without relying on enum ordinals.
 - [ ] P1.02 — Define typed selections: plain/default, date range, entry range, latest entries, bitmap, typed SET data, SET date. Reject unsupported command/selector combinations.
-- [ ] P1.03 — Replace the permissive request parse with bounded explicit endian reads. Validate width combinations, physical length, trailing words, CRC, fragment fields, semantic DataLength, and unexpected trailing data.
-- [ ] P1.04 — Add endpoint demultiplexing to the existing Wirepas binding. Route endpoint 3 to the current DLMS path and 13 to custom decoding. Keep one `MqttWirepas` meter identity.
+- [x] P1.03 — Replace the permissive request parse with bounded explicit endian reads. Validate width combinations, physical length, trailing words, CRC, fragment fields, semantic DataLength, and unexpected trailing data. Implemented in `CustomPullRequestParser`; batch/template selection is integrated in P2.
+- [x] P1.04 — Add endpoint demultiplexing to the existing Wirepas binding. Route endpoint 3 to the current DLMS path and 13 to custom decoding. Keep one `MqttWirepas` meter identity. Endpoint 13 is safely marked unsupported until the typed execution path lands.
 - [ ] P1.05 — Resolve the meter/batch before selecting its protocol profile. Validate outer address against inner From/To IDs and reject unsupported routing/broadcast forms.
 - [ ] P1.06 — Introduce a typed decode/work seam for DLMS frames versus custom commands; keep the 32-bit custom frame ID out of existing ushort-only APIs.
 - [ ] P1.07 — Carry originating `BoundBrokerClient`, gateway/sink, request ID, endpoint, received time, batch generation, and request fingerprint throughout the operation.
-- [ ] P1.08 — Define unsupported custom fragment handling. Only add reassembly with verified custom framing, bounded state, expiry, duplicate/conflict checks, and binding/meter/frame isolation.
-- [ ] P1.09 — Add golden decoding tests and malformed-input cases at every field boundary. Assert malformed/custom-unsupported messages do not materialize a brain.
-- [ ] P1.10 — Run routing/framing regressions for endpoint 3 and the other NIC codecs; confirm unknown endpoints retain deliberate handling.
+- [x] P1.08 — Define unsupported custom fragment handling. Only add reassembly with verified custom framing, bounded state, expiry, duplicate/conflict checks, and binding/meter/frame isolation. Multi-fragment custom requests are rejected before any brain/session access.
+- [x] P1.09 — Add golden decoding tests and malformed-input cases at every field boundary. Assert malformed/custom-unsupported messages do not materialize a brain. Parser tests cover all supported width profiles, CRC, selector length, declared length, and fragments; endpoint-13 codec test proves no DLMS frame is produced.
+- [x] P1.10 — Run routing/framing regressions for endpoint 3 and the other NIC codecs; confirm unknown endpoints retain deliberate handling. Focused Wirepas/RF2 tests passed on 2026-09-10.
 
 Exit: HES-produced custom bytes decode to the exact expected intent and routing context with no ordinary-DLMS regression.
 

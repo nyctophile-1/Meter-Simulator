@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using ManyMeterSimulator.KimbalSpecifics.Wirepas;
 using ManyMeterSimulator.Networking.Nic;
+using ManyMeterSimulator.Networking.SmartNic;
 using ProtoBuf;
 
 namespace ManyMeterSimulator.Networking.Mqtt.Codecs;
@@ -48,8 +49,14 @@ namespace ManyMeterSimulator.Networking.Mqtt.Codecs;
 /// </summary>
 public sealed class WirepasCodec : INicCodec
 {
-    /// <summary>The DLMS endpoint. Anything else on this topic is OTAP or diagnostics, not ours.</summary>
+    /// <summary>The transparent DLMS endpoint.</summary>
     public const uint DlmsEndpoint = 3;
+
+    /// <summary>
+    /// The smart custom-command endpoint. It shares this physical Wirepas NIC and topic with
+    /// endpoint 3, but its payload is not a DLMS WPDU and must never enter the transparent path.
+    /// </summary>
+    public const uint CustomCommandEndpoint = 13;
 
     /// <summary>Framing bytes — a 5-byte header, the same layout in both directions.</summary>
     public const int FramingLength = 5;
@@ -66,10 +73,10 @@ public sealed class WirepasCodec : INicCodec
 
     public NicTopicPlan TopicPlan { get; } = new(
         Subscribe: NicTopics.WirepasRequestFilter,
-        NodeIdSource: "protobuf send_packet_req.destination_address (requires destination_endpoint == 3; OTAP 255/240 is ignored)",
-        Publish: "gw-event/received_data/{gwId}/{sinkId}/{nodeId}/3/3, gateway and sink echoed from the request",
-        HesExpects: "gw-event/received_data/+/+/+/3/3, and drops anything whose source_endpoint != 3",
-        Framing: "5-byte HEADER both directions (len | totalFrag | thisFrag | frameId2) — verified against a live capture");
+        NodeIdSource: "protobuf send_packet_req.destination_address (endpoint 3 is transparent DLMS; endpoint 13 is smart custom; OTAP 255/240 is ignored)",
+        Publish: "endpoint 3: gw-event/received_data/{gwId}/{sinkId}/{nodeId}/3/3; endpoint 13 is handled by SmartNic",
+        HesExpects: "endpoint 3: received_data/+/+/+/3/3; endpoint 13: received_data/+/+/+/13/13",
+        Framing: "endpoint 3: 5-byte HEADER both directions (len | totalFrag | thisFrag | frameId2) — verified against a live capture");
 
     public bool TryRoute(NicEnvelope envelope, out NicRoute route)
     {
@@ -82,8 +89,10 @@ public sealed class WirepasCodec : INicCodec
             return false;
         }
 
-        // OTAP and diagnostics ride the same topic; only endpoint 3 is a DLMS pull.
-        if (request.destination_endpoint != DlmsEndpoint)
+        // OTAP and diagnostics ride the same topic. Endpoint 13 is a different channel on the
+        // same physical NIC: route it to the meter worker, but keep its command bytes out of the
+        // endpoint-3 DLMS decoder.
+        if (request.destination_endpoint is not (DlmsEndpoint or CustomCommandEndpoint))
         {
             return false;
         }
@@ -96,16 +105,28 @@ public sealed class WirepasCodec : INicCodec
         }
 
         // Parsed once here and carried forward, so Decode never re-parses the same bytes.
-        route = new NicRoute(request.destination_address.ToString(), request);
+        route = new NicRoute(
+            request.destination_address.ToString(),
+            new WirepasRoute(request, request.destination_endpoint == CustomCommandEndpoint));
         return true;
     }
 
     public NicDecodeResult Decode(NicEnvelope envelope, NicRoute route)
     {
-        SendPacketReq? request = route.Parsed as SendPacketReq ?? TryParse(envelope.Payload)?.wirepas?.send_packet_req;
+        WirepasRoute? wirepasRoute = route.Parsed as WirepasRoute;
+        SendPacketReq? request = wirepasRoute?.Request ?? route.Parsed as SendPacketReq ?? TryParse(envelope.Payload)?.wirepas?.send_packet_req;
         if (request?.payload is null)
         {
             return NicDecodeResult.Malformed("no send_packet_req payload");
+        }
+
+        if (wirepasRoute?.IsCustomCommand == true || request.destination_endpoint == CustomCommandEndpoint)
+        {
+            // A custom command is deliberately not represented as a DLMS frame. The next phase
+            // resolves the batch template, applies CustomPullRequestParser, and hands the typed
+            // request to the mini-HES runner. Returning Unsupported here prevents the existing
+            // listener from opening a brain session for endpoint-13 bytes in the meantime.
+            return NicDecodeResult.Unsupported("Wirepas endpoint 13 custom command awaits Smart NIC execution routing");
         }
 
         ReadOnlySpan<byte> framed = request.payload;
@@ -346,4 +367,6 @@ public sealed class WirepasCodec : INicCodec
             return null;
         }
     }
+
+    private sealed record WirepasRoute(SendPacketReq Request, bool IsCustomCommand);
 }

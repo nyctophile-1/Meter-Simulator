@@ -103,6 +103,21 @@ public class WirepasCodecTests
         Assert.NotNull(route.Parsed);   // parsed once, carried forward
     }
 
+    [Fact]
+    public void Routes_Endpoint13WithoutLettingCustomBytesReachTheDlmsBrainPath()
+    {
+        NicEnvelope request = HesRequest(112233, [0x19, 0x01, 0x01], 7, destinationEndpoint: 13);
+
+        Assert.True(Codec.TryRoute(request, out NicRoute route));
+        Assert.Equal("112233", route.NodeId);
+
+        NicDecodeResult result = Codec.Decode(request, route);
+
+        Assert.Equal(NicDecodeStatus.Unsupported, result.Status);
+        Assert.Null(result.DlmsFrame);
+        Assert.Contains("endpoint 13", result.Detail);
+    }
+
     /// <summary>
     /// The live capture showed several OTAP messages per minute on this topic, all on endpoints
     /// 255/240. Decoding those as DLMS would produce a steady stream of phantom errors.
