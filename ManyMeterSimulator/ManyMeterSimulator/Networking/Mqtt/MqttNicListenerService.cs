@@ -4,6 +4,7 @@ using ManyMeterSimulator.Diagnostics;
 using ManyMeterSimulator.MqttBridge;
 using ManyMeterSimulator.Networking.Nic;
 using ManyMeterSimulator.Networking.Registry;
+using ManyMeterSimulator.Networking.SmartNic;
 using ManyMeterSimulator.Provisioning;
 using MeterSimulator.Models;
 using Microsoft.Extensions.Options;
@@ -49,6 +50,7 @@ public sealed class MqttNicListenerService : BackgroundService, IMqttPushPublish
     private readonly MeterRegistry _registry;
     private readonly NetworkRegistry _network;
     private readonly NicCodecFactory _codecs;
+    private readonly CustomPullIngress _customPullIngress;
     private readonly ConcurrentDictionary<BrokerBinding, BoundBrokerClient> _clients = new();
 
     /// <summary>
@@ -71,7 +73,8 @@ public sealed class MqttNicListenerService : BackgroundService, IMqttPushPublish
         IMeterSimBridge bridge,
         MeterRegistry registry,
         NetworkRegistry network,
-        NicCodecFactory codecs)
+        NicCodecFactory codecs,
+        CustomPullIngress customPullIngress)
     {
         _logger = logger;
         _loggerFactory = loggerFactory;
@@ -84,6 +87,7 @@ public sealed class MqttNicListenerService : BackgroundService, IMqttPushPublish
         _registry = registry;
         _network = network;
         _codecs = codecs;
+        _customPullIngress = customPullIngress;
     }
 
     /// <summary>Per-binding broker status, for the dashboard and the Network page.</summary>
@@ -453,6 +457,42 @@ public sealed class MqttNicListenerService : BackgroundService, IMqttPushPublish
     /// </summary>
     private async Task ProcessAsync(NicWorkItem item, CancellationToken cancellationToken)
     {
+        if (item.Codec is ICustomPullRequestCodec customCodec && customCodec.IsCustomPullRoute(item.Route))
+        {
+            if (!customCodec.TryGetCustomPullPayload(item.Route, out ReadOnlyMemory<byte> payload, out string extractionError))
+            {
+                _metrics.RecordMalformedPacket(item.Transport);
+                _logger.LogWarning("Meter {Meter}: malformed endpoint-13 route on {Topic} — {Detail}",
+                    item.Meter, item.Envelope.Topic, extractionError);
+                return;
+            }
+
+            CustomPullIngressResult custom = _customPullIngress.Decode(item.Meter, payload.Span);
+            if (!custom.IsComplete)
+            {
+                if (custom.Status == CustomPullIngressStatus.Malformed)
+                {
+                    _metrics.RecordMalformedPacket(item.Transport);
+                    _logger.LogWarning("Meter {Meter}: malformed custom request on {Topic} — {Detail}",
+                        item.Meter, item.Envelope.Topic, custom.Detail);
+                }
+                else
+                {
+                    _logger.LogDebug("Meter {Meter}: custom request unavailable — {Detail} ({Topic})",
+                        item.Meter, custom.Detail, item.Envelope.Topic);
+                }
+
+                return;
+            }
+
+            // The next phase consumes this typed input through the mini-HES association runner.
+            // Do not fall through to Decode: endpoint-13 bytes are not a transparent DLMS WPDU,
+            // and opening the normal brain session here would corrupt ordinary association state.
+            _logger.LogDebug("Meter {Meter}: verified custom request frame {FrameId} awaits mini-HES execution",
+                item.Meter, custom.Inbound!.Value.Request.FrameId);
+            return;
+        }
+
         // Unwrap first: a packet we cannot read is not evidence about the meter, so there is no
         // point opening a session for it.
         NicDecodeResult decoded = item.Codec.Decode(item.Envelope, item.Route);

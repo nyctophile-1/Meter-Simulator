@@ -127,6 +127,7 @@ builder.Services.AddSingleton<HesDataModel>(sp =>
         .Load(Path.GetFullPath(folder));
 });
 builder.Services.AddSingleton<CustomPullProtocolResolver>();
+builder.Services.AddSingleton<CustomPullIngress>();
 
 // ── Network registry ─────────────────────────────────────────────────────────────────────────
 // Named, validated MQTT brokers and HES push targets that batches bind to (network_registry.md).

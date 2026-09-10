@@ -47,7 +47,7 @@ namespace ManyMeterSimulator.Networking.Mqtt.Codecs;
 /// in pieces we currently report as <see cref="NicDecodeStatus.Unsupported"/>. This is the one
 /// variant where inbound fragmentation is real.
 /// </summary>
-public sealed class WirepasCodec : INicCodec
+public sealed class WirepasCodec : INicCodec, ICustomPullRequestCodec
 {
     /// <summary>The transparent DLMS endpoint.</summary>
     public const uint DlmsEndpoint = 3;
@@ -366,6 +366,24 @@ public sealed class WirepasCodec : INicCodec
             // other traffic — so the caller treats it as "not ours".
             return null;
         }
+    }
+
+    public bool IsCustomPullRoute(NicRoute route) =>
+        route.Parsed is WirepasRoute { IsCustomCommand: true };
+
+    public bool TryGetCustomPullPayload(NicRoute route, out ReadOnlyMemory<byte> payload, out string error)
+    {
+        payload = default;
+        error = string.Empty;
+
+        if (route.Parsed is not WirepasRoute { IsCustomCommand: true, Request.payload: { } requestPayload })
+        {
+            error = "route does not carry an endpoint-13 Wirepas payload";
+            return false;
+        }
+
+        payload = requestPayload;
+        return true;
     }
 
     private sealed record WirepasRoute(SendPacketReq Request, bool IsCustomCommand);

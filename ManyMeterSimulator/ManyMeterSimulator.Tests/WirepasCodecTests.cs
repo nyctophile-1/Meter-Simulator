@@ -2,6 +2,7 @@ using ManyMeterSimulator.KimbalSpecifics.Wirepas;
 using ManyMeterSimulator.Networking.Mqtt;
 using ManyMeterSimulator.Networking.Mqtt.Codecs;
 using ManyMeterSimulator.Networking.Nic;
+using ManyMeterSimulator.Networking.SmartNic;
 using ProtoBuf;
 using Xunit;
 
@@ -25,10 +26,15 @@ public class WirepasCodecTests
 
     private const string RequestTopic = "gw-request/send_data/DEMO100175/sink2";
 
-    /// <summary>Builds a downlink exactly as HES does: protobuf envelope wrapping a HEADER-framed payload.</summary>
+    /// <summary>Builds a HES downlink; endpoint 3 is header-framed, endpoint 13 is raw custom bytes.</summary>
     private static NicEnvelope HesRequest(uint nodeId, byte[] dlms, ushort frameId, uint destinationEndpoint = 3)
     {
-        byte[] framed = HesHeaderFrame(dlms, frameId);
+        // Endpoint 3 is transparent DLMS and carries HES's five-byte RF header. Endpoint 13 is
+        // the custom protocol: Core serializes CustomPullCommandPayload directly into the
+        // Wirepas protobuf, with its own packet length/frame/node fields and no DLMS header.
+        byte[] framed = destinationEndpoint == WirepasCodec.CustomCommandEndpoint
+            ? dlms
+            : HesHeaderFrame(dlms, frameId);
 
         var message = new GenericMessage
         {
@@ -110,6 +116,11 @@ public class WirepasCodecTests
 
         Assert.True(Codec.TryRoute(request, out NicRoute route));
         Assert.Equal("112233", route.NodeId);
+
+        ICustomPullRequestCodec customCodec = Codec;
+        Assert.True(customCodec.IsCustomPullRoute(route));
+        Assert.True(customCodec.TryGetCustomPullPayload(route, out ReadOnlyMemory<byte> customPayload, out string extractionError), extractionError);
+        Assert.Equal(new byte[] { 0x19, 0x01, 0x01 }, customPayload.ToArray());
 
         NicDecodeResult result = Codec.Decode(request, route);
 
