@@ -20,7 +20,7 @@ namespace ManyMeterSimulator.Networking.SmartNic;
 public sealed class HesDataModel
 {
     private readonly Dictionary<uint, int> _templateByMagic = new();
-    private readonly Dictionary<int, uint> _magicByTemplate = new();
+    private readonly Dictionary<int, List<uint>> _magicsByTemplate = new();
     private readonly Dictionary<int, MeterTemplateRow> _templates = new();
     private readonly Dictionary<(int ProfileTemplateId, string ProfileType), List<TemplateField>> _fields = new();
     private readonly Dictionary<(int Profile, string Category, string Parameter), AttributeMapping> _attributes = new();
@@ -37,10 +37,19 @@ public sealed class HesDataModel
     {
         _templateByMagic[magicNumber] = templateId;
 
-        // Reverse direction is what the simulator actually needs: we ARE the meter, so we emit a
-        // magic number chosen by our template. Keep the first mapping for a template — later rows
-        // are historical re-assignments.
-        _magicByTemplate.TryAdd(templateId, magicNumber);
+        // Reverse direction is what the simulator actually needs: we ARE the meter, so it emits a
+        // magic number for its template. Retain every candidate: choosing an arbitrary historical
+        // mapping would produce a response which the HES may decode as a different template.
+        if (!_magicsByTemplate.TryGetValue(templateId, out List<uint>? magics))
+        {
+            magics = new List<uint>();
+            _magicsByTemplate[templateId] = magics;
+        }
+
+        if (!magics.Contains(magicNumber))
+        {
+            magics.Add(magicNumber);
+        }
     }
 
     internal void AddTemplate(MeterTemplateRow row) => _templates[row.Id] = row;
@@ -71,9 +80,28 @@ public sealed class HesDataModel
     public bool TryGetTemplateByMagic(uint magicNumber, out int templateId) =>
         _templateByMagic.TryGetValue(magicNumber, out templateId);
 
-    /// <summary>The magic number to put in our response header for this template, if it has one.</summary>
-    public bool TryGetMagicForTemplate(int templateId, out uint magicNumber) =>
-        _magicByTemplate.TryGetValue(templateId, out magicNumber);
+    /// <summary>
+    /// Returns every magic number that has been mapped to a template. Callers which need to emit a
+    /// header must reject zero or multiple values unless an explicit operator selection exists.
+    /// </summary>
+    public IReadOnlyList<uint> GetMagicNumbersForTemplate(int templateId) =>
+        _magicsByTemplate.TryGetValue(templateId, out List<uint>? magics)
+            ? magics
+            : Array.Empty<uint>();
+
+    /// <summary>Returns a response magic only when the template's mapping is unambiguous.</summary>
+    public bool TryGetMagicForTemplate(int templateId, out uint magicNumber)
+    {
+        IReadOnlyList<uint> magics = GetMagicNumbersForTemplate(templateId);
+        if (magics.Count == 1)
+        {
+            magicNumber = magics[0];
+            return true;
+        }
+
+        magicNumber = 0;
+        return false;
+    }
 
     public bool TryGetTemplate(int templateId, out MeterTemplateRow template) =>
         _templates.TryGetValue(templateId, out template!);
@@ -112,8 +140,11 @@ public readonly record struct MeterTemplateRow(
     int? EventTemplateId,
     int? MiscTemplateId)
 {
-    /// <summary>The new 12-byte custom header is the only one carrying a magic number.</summary>
-    public bool UsesNewHeader => PullHeaderLength == 12;
+    /// <summary>
+    /// The generic HES path treats a template as new-header only when both custom directions use
+    /// the 12-byte header. A lone 12-byte length is inconsistent metadata, not a legacy template.
+    /// </summary>
+    public bool UsesNewHeader => PushHeaderLength == 12 && PullHeaderLength == 12;
 
     /// <summary>Node id width, per HES's NodeIdBytesBasedOnTemplate.</summary>
     public int NodeIdBytes => PullHeaderLength == 12 || IsFG23 ? 4 : 3;

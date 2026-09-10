@@ -120,6 +120,26 @@ public class HesDataModelTests
             // Reverse direction: we are the meter, so we emit the magic number for OUR template.
             Assert.True(model.TryGetMagicForTemplate(122, out uint magic));
             Assert.Equal(168823084u, magic);
+            Assert.Equal(new[] { 168823084u }, model.GetMagicNumbersForTemplate(122));
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Fact]
+    public void MultipleMagicMappingsRemainVisibleAndCannotBeChosenImplicitly()
+    {
+        string dir = WriteFixture(("MagicNumberMapping.csv",
+            "\"MagicNumber\",\"TemplateId\"\n\"100\",\"122\"\n\"200\",\"122\"\n"));
+
+        try
+        {
+            HesDataModel model = LoadFrom(dir);
+
+            Assert.Equal(new[] { 100u, 200u }, model.GetMagicNumbersForTemplate(122));
+            Assert.False(model.TryGetMagicForTemplate(122, out _));
         }
         finally
         {

@@ -10,11 +10,13 @@ using ManyMeterSimulator.Networking.Mqtt.Codecs;
 using ManyMeterSimulator.Networking.Nic;
 using ManyMeterSimulator.Networking.Push;
 using ManyMeterSimulator.Networking.Registry;
+using ManyMeterSimulator.Networking.SmartNic;
 using ManyMeterSimulator.Provisioning;
 using ManyMeterSimulator.Settings;
 using ManyMeterSimulator.Testing;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.Extensions.Options;
 using MudBlazor.Services;
 using Serilog;
 
@@ -71,6 +73,7 @@ builder.Services.Configure<TemplateOptions>(builder.Configuration.GetSection(Tem
 builder.Services.Configure<BrainOptions>(builder.Configuration.GetSection(BrainOptions.SectionName));
 builder.Services.Configure<PushOptions>(builder.Configuration.GetSection(PushOptions.SectionName));
 builder.Services.Configure<CustomPushOptions>(builder.Configuration.GetSection(CustomPushOptions.SectionName));
+builder.Services.Configure<CustomPullOptions>(builder.Configuration.GetSection(CustomPullOptions.SectionName));
 builder.Services.Configure<PersistenceOptions>(builder.Configuration.GetSection(PersistenceOptions.SectionName));
 builder.Services.Configure<NetworkDelayOptions>(builder.Configuration.GetSection(NetworkDelayOptions.SectionName));
 builder.Services.Configure<NetworkHealthOptions>(builder.Configuration.GetSection(NetworkHealthOptions.SectionName));
@@ -113,6 +116,17 @@ builder.Services.AddSingleton<BadCommSettings>();
 // their status, and the allocation cursor survive restarts/reboots/redeployments.
 builder.Services.AddSingleton<IBatchStore, JsonBatchStore>();
 builder.Services.AddSingleton<MeterRegistry>();
+builder.Services.AddSingleton<HesDataModel>(sp =>
+{
+    CustomPullOptions options = sp.GetRequiredService<IOptions<CustomPullOptions>>().Value;
+    string folder = Path.IsPathRooted(options.DataModelDirectory)
+        ? options.DataModelDirectory
+        : Path.Combine(sp.GetRequiredService<IHostEnvironment>().ContentRootPath, options.DataModelDirectory);
+
+    return new HesDataModelLoader(sp.GetRequiredService<ILogger<HesDataModelLoader>>())
+        .Load(Path.GetFullPath(folder));
+});
+builder.Services.AddSingleton<CustomPullProtocolResolver>();
 
 // ── Network registry ─────────────────────────────────────────────────────────────────────────
 // Named, validated MQTT brokers and HES push targets that batches bind to (network_registry.md).
