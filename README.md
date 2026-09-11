@@ -1,6 +1,10 @@
 # Meter-Simulator
 Meter Simulation Service
 
+## Deployment
+
+For the Observability server, follow the [DRISHTI deployment SOP](deploy/drishti-deployment-sop.md), including access, build, deployment, verification, and rollback steps.
+
 This project is a DLMS/COSEM Meter Simulation Service built in .NET, designed to simulate smart energy meters for testing and development purposes. It enables end-to-end validation of HES, head-end systems, and DLMS clients without requiring physical meters.
 
 ## Key Features
