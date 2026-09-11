@@ -25,6 +25,8 @@ public sealed class TestPlan
     /// <summary>Session length = latest task end time (offset + duration).</summary>
     public int TotalDurationMinutes =>
         Tasks.Count == 0 ? 0 : Tasks.Max(t => t.EndsAtMinute);
+    public bool RunsUntilStopped => Tasks.Any(t => t.RunsUntilStopped);
+    public string DurationLabel => RunsUntilStopped ? "until stopped" : $"{TotalDurationMinutes} min";
 
     public string DisplayName => string.IsNullOrWhiteSpace(Name) ? Id : Name;
     public bool IsFieldLocked(string field) => LockedFields.Contains(field);

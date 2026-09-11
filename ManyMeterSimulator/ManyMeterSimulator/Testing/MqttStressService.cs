@@ -7,6 +7,8 @@ public sealed record MqttStressState(string Phase = "Idle", string? Detail = nul
     DateTimeOffset? PreparedAtUtc = null, TimeSpan PreparationTime = default, MqttPushSummary? Result = null)
 {
     public MqttPushRequest? Request { get; init; }
+    public MqttLoopOptions? Loop { get; init; }
+    public long? CompletedCycles { get; init; }
     public bool IsActive => Phase is "Connecting" or "Preparing" or "Ready" or "Sending" or "Stopping";
     public bool IsBusy => IsActive && Phase != "Ready";
 }
@@ -24,10 +26,12 @@ public sealed class MqttStressService(PushCoordinator push, IHostApplicationLife
     public event Action? Changed;
     public MqttStressState State { get { lock (_sync) return _state; } }
 
-    public void Start(MqttPushRequest request, bool prepare)
+    public void Start(MqttPushRequest request, bool prepare, MqttLoopOptions? loop = null)
     {
         request = request with { BatchIds = request.BatchIds.ToArray() };
         request.Validate();
+        loop?.Validate();
+        if (prepare && loop is not null) throw new ArgumentException("Continuous loops generate fresh payloads; prepared data is single-use.");
         lock (_sync)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
@@ -35,13 +39,13 @@ public sealed class MqttStressService(PushCoordinator push, IHostApplicationLife
                 throw new InvalidOperationException("Stop or finish the current MQTT stress run first.");
             _cts?.Dispose();
             _cts = CancellationTokenSource.CreateLinkedTokenSource(lifetime.ApplicationStopping);
-            _state = new MqttStressState("Connecting", "Opening publish-only connections; no payloads sent yet.") { Request = request };
-            _operation = Task.Run(() => StartAsync(request, prepare, _cts.Token));
+            _state = new MqttStressState("Connecting", "Opening publish-only connections; no payloads sent yet.") { Request = request, Loop = loop };
+            _operation = Task.Run(() => StartAsync(request, prepare, loop, _cts.Token));
         }
         Changed?.Invoke();
     }
 
-    private async Task StartAsync(MqttPushRequest request, bool prepare, CancellationToken ct)
+    private async Task StartAsync(MqttPushRequest request, bool prepare, MqttLoopOptions? loop, CancellationToken ct)
     {
         MqttPushRun? run = null;
         bool keep = false;
@@ -61,13 +65,20 @@ public sealed class MqttStressService(PushCoordinator push, IHostApplicationLife
             }
             else
             {
-                SetState(new MqttStressState("Sending", "Generating and publishing. Watch incoming message rate in EMQX."));
-                var result = await run.SendLiveAsync();
-                SetState(new MqttStressState("Completed", Result: result));
+                SetState(new MqttStressState("Sending", loop is null
+                    ? "Generating and publishing one fleet pass. Watch incoming message rate in EMQX."
+                    : $"Looping with fresh payloads {(loop.DurationMinutes == 0 ? "until stopped" : $"for {loop.DurationMinutes} minutes")}. Watch incoming message rate in EMQX."));
+                if (loop is null)
+                    SetState(new MqttStressState("Completed", Result: await run.SendLiveAsync()));
+                else
+                {
+                    var result = await run.SendLoopAsync(loop);
+                    SetState(new MqttStressState("Completed", Result: result.Totals) { CompletedCycles = result.CompletedCycles });
+                }
             }
         }
-        catch (OperationCanceledException) { SetState(new MqttStressState("Stopped", run?.InvalidReason ?? "Run stopped. In-flight delivery may be unconfirmed.")); }
-        catch (Exception ex) { SetState(new MqttStressState("Failed", ex.Message)); }
+        catch (OperationCanceledException) { SetState(new MqttStressState(run?.InvalidReason is null ? "Stopped" : "Failed", run?.InvalidReason ?? "Run stopped. In-flight delivery may be unconfirmed.", Result: run?.LoopResult?.Totals) { CompletedCycles = run?.LoopResult?.CompletedCycles }); }
+        catch (Exception ex) { SetState(new MqttStressState("Failed", ex.Message, Result: run?.LoopResult?.Totals) { CompletedCycles = run?.LoopResult?.CompletedCycles }); }
         finally
         {
             if (!keep && run is not null)
@@ -132,7 +143,8 @@ public sealed class MqttStressService(PushCoordinator push, IHostApplicationLife
             lock (_sync)
             {
                 _stopping = false;
-                _state = new MqttStressState("Stopped", "Prepared data and publishing connections released.");
+                _state = _state with { Phase = "Stopped", Detail = "Publishing connections released. In-flight delivery may be unconfirmed.",
+                    PreparedMeters = 0, PreparedMessages = 0, PreparedBytes = 0, PreparedAtUtc = null };
             }
             Changed?.Invoke();
         }
@@ -140,7 +152,8 @@ public sealed class MqttStressService(PushCoordinator push, IHostApplicationLife
 
     private void SetState(MqttStressState state)
     {
-        lock (_sync) if (!_stopping) _state = state with { Request = state.Request ?? _state.Request };
+        lock (_sync) _state = state with { Phase = _stopping ? "Stopping" : state.Phase,
+            Request = state.Request ?? _state.Request, Loop = state.Loop ?? _state.Loop };
         Changed?.Invoke();
     }
 

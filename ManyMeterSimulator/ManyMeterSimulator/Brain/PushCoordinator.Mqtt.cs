@@ -82,6 +82,8 @@ public sealed partial class PushCoordinator
         INicCodec? codec = null;
         if (custom)
         {
+            if (request.PushSetupLogicalName is not null and not MqttPushProfiles.CustomDaily)
+                throw new InvalidOperationException($"Batch '{batch.Name}' supports only template 93 custom daily push. Select All supported profiles or Daily.");
             if (batch.CustomPushHeaderKind != CustomPushHeaderKind.New)
                 throw new InvalidOperationException("HES template 93 custom push requires the new 12-byte header.");
         }
@@ -90,6 +92,11 @@ public sealed partial class PushCoordinator
             codec = _codecs.Create(binding.Transport)
                 ?? throw new InvalidOperationException($"No push codec for {binding.Transport}.");
             _ = codec.EncodePush("0", new byte[] { 0 });
+            var session = _sessions.GetOrCreate(new MeterRef(batch.StartIndex, batch.NicType));
+            IReadOnlyList<string> profiles;
+            lock (session) profiles = session.GetPushSetupLogicalNames();
+            if (profiles.Count == 0 || request.PushSetupLogicalName is { } selected && !profiles.Contains(selected))
+                throw new InvalidOperationException($"Batch '{batch.Name}' has no non-empty push setup for {MqttPushProfiles.Label(request.PushSetupLogicalName)}.");
         }
 
         long count = Math.Min(batch.Count, request.MaximumMetersPerBatch ?? int.MaxValue);

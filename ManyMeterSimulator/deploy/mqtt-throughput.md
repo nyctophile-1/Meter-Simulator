@@ -10,6 +10,33 @@ Start and bind the desired MQTT batches on Setup/Network, then open **Testing â†
 Select batches, profile, QoS, publishers per broker/transport, concurrent meters and an optional
 per-batch meter limit. Use the same workload settings when comparing runs.
 
+**Continuous MQTT stress loop** is available in the Run mode dropdown. Set duration to `0`
+to run until Stop, or set a minute duration (up to seven days). Each cycle generates fresh
+payloads for the selected fleet and reuses the same publisher pools. Set wave size and pause
+after each pass to `0` for uninterrupted maximum-speed sending. Pauses apply after completing
+the preceding wave/pass; cycles never overlap. Stop and duration deadlines interrupt active
+publishes and pauses. A cycle with zero successful publishes stops the loop with an error.
+
+For a saved test, edit your custom **Push Burst Loop** plan and change its job type to
+**MQTT Stress Loop**, or add a new job of that type to any custom plan. Select an environment,
+MQTT batches, profile, QoS, publishers, concurrency and optional subset/pacing settings.
+Custom plans can now change their job list/type and timing; supplied base plans keep their
+existing rules. Start the batches before running the plan. Duration `0` means until stopped;
+scheduled offsets still apply. Closing a browser tab does not stop a server-side loop.
+Loops are not automatically resumed after an application restart.
+
+**All supported profiles** sends every non-empty PushSetup configured in each selected DLMS
+template, as separate payloads. The dropdown discovers all such setups, including uploaded
+templates, rather than listing only Instantaneous and Block Load. It does not create missing
+daily, billing or event layouts. Template 93 custom push supports only the verified daily
+layout. Selecting a specific profile requires it to exist on every selected batch; unsupported
+selections fail before publishers open instead of silently sending a different profile.
+
+Stopped plans retain cumulative client publish/meter-send totals and full-pass count, including
+completed work in the interrupted pass. These counts include repeats, not unique meters.
+The MQTT task result is separate from the standard best-minute benchmark scores. It retains
+constant-size totals, not per-cycle/per-message histories. EMQX remains the source for TPS.
+
 - **Send live** opens publish-only connections, then generates and sends one push per selected
   meter with bounded concurrency. Wave size `0` means continuous sending until that finite fleet
   is exhausted. A positive wave size and pause reproduce paced sends.

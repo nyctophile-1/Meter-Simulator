@@ -329,6 +329,10 @@ namespace MeterSimulator.DLMS
             return payloads;
         }
 
+        /// <summary>Available push setups without encoding or advancing invocation counters.</summary>
+        public IReadOnlyList<string> GetPushSetupLogicalNames() => _objects.OfType<GXDLMSPushSetup>()
+            .Where(p => p.PushObjectList.Count > 0).Select(p => p.LogicalName).Distinct().ToArray();
+
         private static byte[] Concat(byte[][] frames)
         {
             if (frames.Length == 1)

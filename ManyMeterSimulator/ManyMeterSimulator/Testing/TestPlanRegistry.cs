@@ -71,6 +71,7 @@ public sealed class TestPlanRegistry
 
     public void AddPlan(TestPlan plan)
     {
+        foreach (var loop in plan.Tasks.OfType<MqttStressLoopTask>()) loop.Validate();
         ArgumentException.ThrowIfNullOrWhiteSpace(plan.Name);
 
         lock (_lock)
@@ -87,6 +88,7 @@ public sealed class TestPlanRegistry
 
     public void UpdatePlan(TestPlan updated)
     {
+        foreach (var loop in updated.Tasks.OfType<MqttStressLoopTask>()) loop.Validate();
         lock (_lock)
         {
             int idx = _plans.FindIndex(p => string.Equals(p.Id, updated.Id, StringComparison.OrdinalIgnoreCase));

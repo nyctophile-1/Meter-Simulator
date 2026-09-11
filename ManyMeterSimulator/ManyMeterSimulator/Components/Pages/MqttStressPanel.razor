@@ -11,13 +11,24 @@
     <MudText Typo="Typo.h6">MQTT stress</MudText>
     <MudText Class="mb-4 mud-text-secondary">
         Send live, or prepare payloads in memory and fire them together. Use the EMQX dashboard for incoming message rate.
-        Each run sends one push per selected meter.
+        A pass sends all selected profiles for every selected meter. Continuous loops rebuild and repeat passes using the same connections.
     </MudText>
     @if (Disabled)
     {
         <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">Finish the active test or push loop before starting a stress run.</MudAlert>
     }
     <MudGrid>
+        <MudItem xs="12">
+            <MudSelect T="bool" Label="Run mode" @bind-Value="_continuous" Disabled="@Locked" Variant="Variant.Outlined">
+                <MudSelectItem T="bool" Value="false">Single pass / prepared burst</MudSelectItem>
+                <MudSelectItem T="bool" Value="true">Continuous MQTT stress loop</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+        @if (_continuous)
+        {
+            <MudItem xs="12" sm="6"><MudNumericField T="int" Label="Loop duration (minutes, 0 = until stopped)" @bind-Value="_duration" Min="0" Max="10080" Disabled="@Locked" Variant="Variant.Outlined" /></MudItem>
+            <MudItem xs="12" sm="6"><MudNumericField T="int" Label="Pause after each full pass (seconds, 0 = none)" @bind-Value="_cyclePause" Min="0" Max="3600" Disabled="@Locked" Variant="Variant.Outlined" /></MudItem>
+        }
         <MudItem xs="12">
             <MudSelect T="int" Label="Running MQTT batches" MultiSelection="true" @bind-SelectedValues="_batchIds"
                        Disabled="@Locked" Variant="Variant.Outlined">
@@ -28,12 +39,7 @@
             </MudSelect>
         </MudItem>
         <MudItem xs="12" sm="6" md="4">
-            <MudSelect T="string" Label="Profile" @bind-Value="_profile" Disabled="@Locked" Variant="Variant.Outlined">
-                <MudSelectItem T="string" Value='@("all")'>All configured profiles</MudSelectItem>
-                <MudSelectItem T="string" Value='@("0.0.25.9.0.255")'>Instantaneous</MudSelectItem>
-                <MudSelectItem T="string" Value='@("0.5.25.9.0.255")'>Block load</MudSelectItem>
-            </MudSelect>
-            <MudText Typo="Typo.caption">Template 93 custom push always sends its supported daily profile.</MudText>
+            <MqttProfileSelect BatchIds="_batchIds" @bind-Value="_profile" Disabled="@Locked" />
         </MudItem>
         <MudItem xs="12" sm="6" md="4">
             <MudSelect T="int" Label="Publishers per broker / transport" @bind-Value="_publishers" Disabled="@Locked" Variant="Variant.Outlined">
@@ -58,10 +64,10 @@
         </MudItem>
         <MudItem xs="12" sm="6" md="4">
             <MudNumericField T="int" Label="Prepared memory (MiB)" @bind-Value="_memoryMiB"
-                             Min="1" Max="16384" Disabled="@Locked" Variant="Variant.Outlined" />
+                             Min="1" Max="16384" Disabled="@(Locked || _continuous)" Variant="Variant.Outlined" />
         </MudItem>
         <MudItem xs="12" sm="6">
-            <MudNumericField T="int" Label="Live wave size (0 = continuous)" @bind-Value="_waveSize"
+            <MudNumericField T="int" Label="Live wave size (0 = whole pass)" @bind-Value="_waveSize"
                              Min="0" Max="1000000" Disabled="@Locked" Variant="Variant.Outlined" />
         </MudItem>
         <MudItem xs="12" sm="6">
@@ -78,8 +84,8 @@
         <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">Ciphering is enabled. Use live sending so invocation counters are generated close to transmission.</MudAlert>
     }
     <div style="display:flex;gap:12px;flex-wrap:wrap;">
-        <MudButton Variant="Variant.Outlined" Disabled="@(Locked || !_batchIds.Any())" OnClick="@(() => Start(false))">Send live</MudButton>
-        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(Locked || !_batchIds.Any() || Push.Options.UseCiphering)" OnClick="@(() => Start(true))">Prepare</MudButton>
+        <MudButton Variant="Variant.Outlined" Disabled="@(Locked || !_batchIds.Any())" OnClick="@(() => Start(false))">@(_continuous ? "Start continuous loop" : "Send live")</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(Locked || _continuous || !_batchIds.Any() || Push.Options.UseCiphering)" OnClick="@(() => Start(true))">Prepare</MudButton>
         <MudButton Variant="Variant.Filled" Color="Color.Success" Disabled="@(_state.Phase != "Ready" || Disabled)" OnClick="Fire">Fire prepared burst</MudButton>
         <MudButton Variant="Variant.Outlined" Color="Color.Error" Disabled="@(!_state.IsActive || _state.Phase == "Stopping")" OnClick="Stress.StopAsync">
             @(_state.Phase == "Ready" ? "Discard prepared data" : "Stop")
@@ -96,8 +102,9 @@
     }
     @if (_state.Result is { } result)
     {
+        @if (_state.CompletedCycles is { } cycles) { <MudText>Completed fleet passes: @cycles.ToString("N0")</MudText> }
         <MudText>Completed publishes: @result.MessagesSent.ToString("N0") · failed/unconfirmed: @result.MessagesFailed.ToString("N0") · send duration: @result.SendTime.TotalSeconds.ToString("F2") s</MudText>
-        <MudText>Meters: @result.MetersSent.ToString("N0") sent · @result.MetersFailed.ToString("N0") failed · @result.MetersSkipped.ToString("N0") without payloads</MudText>
+        <MudText>Meter sends (including repeats): @result.MetersSent.ToString("N0") sent · @result.MetersFailed.ToString("N0") failed · @result.MetersSkipped.ToString("N0") without payloads</MudText>
         @if (result.Error is not null) { <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2">@result.Error</MudAlert> }
         <MudText Typo="Typo.caption">Publish completion is a client result. QoS 0 does not confirm broker receipt; HES persistence is measured separately.</MudText>
     }
@@ -110,6 +117,8 @@
     private string _profile = "all";
     private int _publishers = 8, _qos = 2, _concurrency = 64, _memoryMiB = 256, _waveSize, _wavePause;
     private int? _meterLimit;
+    private bool _continuous;
+    private int _duration, _cyclePause;
     private MqttStressState _state = new();
     private bool _disposed;
     private bool Locked => Disabled || _state.IsActive;
@@ -131,6 +140,9 @@
         _meterLimit = request.MaximumMetersPerBatch;
         _waveSize = request.ChunkSize;
         _wavePause = request.ChunkIntervalSeconds;
+        _continuous = _state.Loop is not null;
+        _duration = _state.Loop?.DurationMinutes ?? 0;
+        _cyclePause = _state.Loop?.CyclePauseSeconds ?? 0;
     }
     private void Start(bool prepare)
     {
@@ -145,7 +157,7 @@
                 BatchIds = ids, PublisherCount = _publishers, Qos = _qos, MaxConcurrency = _concurrency,
                 MaximumMetersPerBatch = _meterLimit, PushSetupLogicalName = _profile == "all" ? null : _profile,
                 PreparedMemoryMiB = _memoryMiB, ChunkSize = _waveSize, ChunkIntervalSeconds = _wavePause,
-            }, prepare);
+            }, prepare, _continuous ? new MqttLoopOptions { DurationMinutes = _duration, CyclePauseSeconds = _cyclePause } : null);
         }
         catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
     }

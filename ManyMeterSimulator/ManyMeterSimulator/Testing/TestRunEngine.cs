@@ -66,11 +66,12 @@ public sealed class TestRunEngine : IAsyncDisposable
 
     public bool IsActive
     {
-        get { lock (_lock) return _active is { Status: TestRunStatus.Scheduled or TestRunStatus.Running }; }
+        get { lock (_lock) return _runTask is { IsCompleted: false } || _active is { Status: TestRunStatus.Scheduled or TestRunStatus.Running }; }
     }
 
     public void ScheduleRun(TestPlan plan, string runLabel, DateTimeOffset startAt)
     {
+        foreach (var loop in plan.Tasks.OfType<MqttStressLoopTask>()) loop.Validate();
         string? configurationError = GetBaseConfigurationError(plan);
         if (configurationError is not null)
             throw new InvalidOperationException(configurationError);
@@ -89,9 +90,14 @@ public sealed class TestRunEngine : IAsyncDisposable
                 Status = TestRunStatus.Scheduled,
                 ScheduledStartUtc = startAt,
                 TotalDurationMinutes = plan.TotalDurationMinutes,
+                RunsUntilStopped = plan.RunsUntilStopped,
             };
 
             _runTask = Task.Run(() => RunAsync(plan, runLabel, startAt, _active, _cts.Token));
+            // Publish the final idle state after cleanup, including failed runs (which do not
+            // raise RunCompleted), so controls unlock without a page reload.
+            _ = _runTask.ContinueWith(_ => Changed?.Invoke(), CancellationToken.None,
+                TaskContinuationOptions.None, TaskScheduler.Default);
         }
 
         Changed?.Invoke();
@@ -219,11 +225,43 @@ public sealed class TestRunEngine : IAsyncDisposable
             PullListenerTask pull => await RunPullListenerAsync(pull, taskStart, end, state, ct),
             BurstPushTask burst => await RunBurstPushAsync(burst, end, state, ct),
             PartialPushTask partial => await RunPartialPushAsync(partial, end, state, ct),
+            MqttStressLoopTask mqtt => await RunMqttStressLoopAsync(mqtt, state, ct),
             _ => new TaskRunResult(task),
         };
     }
 
     // ── Task runners ────────────────────────────────────────────────────────────────────────────
+
+    private async Task<TaskRunResult> RunMqttStressLoopAsync(MqttStressLoopTask task, TestRunState state, CancellationToken ct)
+    {
+        MqttPushRun? run = null;
+        string? error = null;
+        try
+        {
+            lock (_lock) state.LastSummary = $"[{task.DisplayLabel}] opening MQTT publishers";
+            Changed?.Invoke();
+            if (task.Request.BatchIds.Any(id => !_meters.Batches.Any(b => b.Id == id && b.Status == BatchStatus.Running
+                && string.Equals(b.EnvironmentKey, task.EnvironmentKey, StringComparison.OrdinalIgnoreCase))))
+                throw new InvalidOperationException("Every selected MQTT batch must be running and belong to the task environment.");
+            run = await _push.OpenMqttRunAsync(task.Request, ct);
+            lock (_lock) state.LastSummary = $"[{task.DisplayLabel}] repeating fresh payloads {task.DurationLabel}; watch incoming rate in EMQX";
+            Changed?.Invoke();
+            await run.SendLoopAsync(task.LoopOptions);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+        catch (Exception ex)
+        {
+            error = run?.InvalidReason ?? ex.Message;
+            lock (_lock)
+            {
+                if (state.Status == TestRunStatus.Running) state.Status = TestRunStatus.Failed;
+                state.LastSummary = $"[{task.DisplayLabel}] {error}";
+                _cts?.Cancel(); // Do not leave sibling infinite tasks running after a failed test.
+            }
+        }
+        finally { if (run is not null) await run.DisposeAsync(); }
+        return new TaskRunResult(task, mqttLoop: run?.LoopResult, error: error);
+    }
 
     private async Task<TaskRunResult> RunPushLoopAsync(PushLoopTask task, DateTimeOffset end, TestRunState state, CancellationToken ct)
     {
@@ -707,6 +745,8 @@ public sealed class TestRunEngine : IAsyncDisposable
         return new TaskRunReport
         {
             TaskId = r.Task.TaskId,
+            MqttLoop = r.MqttLoop,
+            Error = r.Error,
             TaskType = r.Task.Type,
             TaskLabel = r.Task.DisplayLabel,
             OffsetMinutes = r.Task.OffsetMinutes,
@@ -888,13 +928,17 @@ public sealed class TestRunEngine : IAsyncDisposable
         public double AvgConcurrentSessions { get; }
         public double SessionRatePerMin { get; }
         public List<MinuteScoreRecord> MinuteScores { get; }
+        public MqttLoopSummary? MqttLoop { get; }
+        public string? Error { get; }
 
         public TaskRunResult(TestTask task, List<TickRecord>? ticks = null, int burstCount = 0,
             int pullsReceived = 0, int pullsAnswered = 0, double pullP95Ms = 0,
             int peakConcurrent = 0, double avgConcurrent = 0, double sessionRatePerMin = 0,
-            List<MinuteScoreRecord>? minuteScores = null)
+            List<MinuteScoreRecord>? minuteScores = null, MqttLoopSummary? mqttLoop = null, string? error = null)
         {
             Task = task;
+            MqttLoop = mqttLoop;
+            Error = error;
             Ticks = ticks ?? new List<TickRecord>();
             BurstCount = burstCount;
             PullsReceived = pullsReceived;
@@ -919,7 +963,9 @@ public sealed class TestRunEngine : IAsyncDisposable
     /// <summary>Samples process CPU usage on a background thread.</summary>
     private sealed class CpuSampler : IDisposable
     {
-        private readonly List<double> _samples = new();
+        private readonly object _sampleLock = new();
+        private double _sampleSum;
+        private long _sampleCount;
         private readonly System.Threading.Timer _timer;
         private DateTimeOffset _lastTime = DateTimeOffset.UtcNow;
         private TimeSpan _lastCpu;
@@ -933,7 +979,7 @@ public sealed class TestRunEngine : IAsyncDisposable
 
         public double AveragePct
         {
-            get { lock (_samples) return _samples.Count == 0 ? 0 : _samples.Average(); }
+            get { lock (_sampleLock) return _sampleCount == 0 ? 0 : _sampleSum / _sampleCount; }
         }
 
         private void Sample()
@@ -948,7 +994,7 @@ public sealed class TestRunEngine : IAsyncDisposable
                 double pct = wallMs > 0 ? cpuMs / (wallMs * Environment.ProcessorCount) * 100.0 : 0;
                 _lastTime = now;
                 _lastCpu = cpu;
-                lock (_samples) _samples.Add(Math.Min(100, pct));
+                lock (_sampleLock) { _sampleSum += Math.Min(100, pct); _sampleCount++; }
             }
             catch { }
         }

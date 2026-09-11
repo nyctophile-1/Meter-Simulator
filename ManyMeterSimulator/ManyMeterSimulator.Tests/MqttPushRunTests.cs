@@ -15,7 +15,7 @@ using Microsoft.Extensions.Options;
 
 namespace ManyMeterSimulator.Tests;
 
-public class MqttPushRunTests
+public partial class MqttPushRunTests
 {
     [Fact]
     public async Task StressServiceArmsWithoutPublishing_ThenFiresAndReleasesThePool()
@@ -229,6 +229,8 @@ public class MqttPushRunTests
         public ConcurrentQueue<NicPublish> Messages { get; } = new();
         public List<RecordingPool> Pools { get; } = [];
         public bool Reject { get; set; }
+        public Func<CancellationToken, Task>? BeforePublish { get; set; }
+        public Action? AfterPublish { get; set; }
         public bool HasClient(BrokerBinding binding) => true;
         public Task<bool> TryPublishPushAsync(BrokerBinding binding, NicPublish publish, int qos, CancellationToken cancellationToken)
             => throw new InvalidOperationException("The serialized listener publisher must not be used for push.");
@@ -245,12 +247,14 @@ public class MqttPushRunTests
     {
         public bool Disposed { get; private set; }
         public bool IsConnected => !Disposed;
-        public Task<MqttPushDelivery> PublishMeterAsync(IReadOnlyList<NicPublish> messages, CancellationToken cancellationToken)
+        public async Task<MqttPushDelivery> PublishMeterAsync(IReadOnlyList<NicPublish> messages, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (owner.BeforePublish is { } before) await before(cancellationToken);
             foreach (var message in messages) owner.Messages.Enqueue(message);
-            return Task.FromResult(owner.Reject ? new MqttPushDelivery(0, messages.Count, "Broker rejected a publish.")
-                : new MqttPushDelivery(messages.Count, 0));
+            owner.AfterPublish?.Invoke();
+            return owner.Reject ? new MqttPushDelivery(0, messages.Count, "Broker rejected a publish.")
+                : new MqttPushDelivery(messages.Count, 0);
         }
         public ValueTask DisposeAsync() { Disposed = true; return ValueTask.CompletedTask; }
     }

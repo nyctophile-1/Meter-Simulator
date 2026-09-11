@@ -65,6 +65,9 @@ public sealed class TestRunReport
 
 public sealed class TaskRunReport
 {
+    // Constant-size loop result; EMQX is the source for incoming broker rate.
+    public Brain.MqttLoopSummary? MqttLoop { get; init; }
+    public string? Error { get; init; }
     public string TaskId { get; init; } = "";
     public TestTaskType TaskType { get; init; }
     public string TaskLabel { get; init; } = "";
@@ -175,13 +178,15 @@ public sealed class TestRunState
     /// the elapsed % it reached instead of ticking forever off wall-clock.</summary>
     public DateTimeOffset? EndUtc { get; set; }
     public int TotalDurationMinutes { get; init; }
+    public bool RunsUntilStopped { get; init; }
+    public string DurationLabel => RunsUntilStopped ? "until stopped" : $"{TotalDurationMinutes} min";
     public string? LastSummary { get; set; }
 
     public double ElapsedPct
     {
         get
         {
-            if (ActualStartUtc is null || TotalDurationMinutes <= 0) return 0;
+            if (ActualStartUtc is null || TotalDurationMinutes <= 0 || RunsUntilStopped) return 0;
             DateTimeOffset until = EndUtc ?? DateTimeOffset.UtcNow;
             return Math.Min(100,
                 (until - ActualStartUtc.Value).TotalMinutes * 100.0 / TotalDurationMinutes);

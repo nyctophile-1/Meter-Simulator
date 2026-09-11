@@ -36,12 +36,27 @@ public sealed record MqttPushRequest
 public sealed record MqttPushSummary(long MetersSent, long MetersFailed, long MetersSkipped,
     long MessagesSent, long MessagesFailed, TimeSpan SendTime, string? Error);
 
+public sealed record MqttLoopOptions
+{
+    /// <summary>Zero runs until stopped. The duration includes publishing and cycle pauses.</summary>
+    public int DurationMinutes { get; init; }
+    public int CyclePauseSeconds { get; init; }
+
+    public void Validate()
+    {
+        if (DurationMinutes is < 0 or > 10080) throw new ArgumentException("Loop duration must be 0 (until stopped) to 10080 minutes.");
+        if (CyclePauseSeconds is < 0 or > 3600) throw new ArgumentException("Cycle pause must be 0 to 3600 seconds.");
+    }
+}
+
+public sealed record MqttLoopSummary(long CompletedCycles, MqttPushSummary Totals);
+
 internal sealed record MqttPushSource(int BatchId, long Count, BrokerBinding Binding,
     Func<IEnumerable<MeterRef>> Meters, Func<MeterRef, IReadOnlyList<NicPublish>> Build,
     Func<bool> IsCurrent);
 
 /// <summary>
-/// A finite run with preconnected publishers. Prepared bytes are consumed once. Dispose after
+/// A run with preconnected publishers. Prepared bytes are consumed once; live loops rebuild each cycle. Dispose after
 /// preparation/sending has stopped; cancellation interrupts outstanding publishes and pool waits.
 /// No broker polling or throughput sampling is performed here.
 /// </summary>
@@ -62,6 +77,8 @@ public sealed class MqttPushRun : IAsyncDisposable
     private string? _invalidReason;
     private readonly object _lifetimeSync = new();
     internal Action<bool?, TimeSpan>? MeterCompleted { get; set; }
+    public MqttLoopSummary? LoopResult { get; private set; }
+    private MqttPushSummary? _lastPass;
 
     internal MqttPushRun(MqttPushSource[] sources, IReadOnlyDictionary<BrokerBinding, IMqttPushPool> pools,
         MqttPushRequest request, bool ciphering, CancellationTokenSource stop,
@@ -161,6 +178,63 @@ public sealed class MqttPushRun : IAsyncDisposable
         int expectedState = prepared ? 2 : 0;
         if (Interlocked.CompareExchange(ref _state, 3, expectedState) != expectedState)
             throw new InvalidOperationException("This run is not ready or has already been consumed. Prepare a new dataset.");
+        try { return await SendPassAsync(prepared, _stop.Token); }
+        finally { _prepared = null; Volatile.Write(ref _state, 4); }
+    }
+
+    /// <summary>Reuses connections, regenerates every pass, and retains only cumulative totals.</summary>
+    public async Task<MqttLoopSummary> SendLoopAsync(MqttLoopOptions options)
+    {
+        options.Validate();
+        if (Interlocked.CompareExchange(ref _state, 3, 0) != 0)
+            throw new InvalidOperationException("This run has already been used.");
+        using var duration = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token);
+        if (options.DurationMinutes > 0) duration.CancelAfter(TimeSpan.FromMinutes(options.DurationMinutes));
+        var sw = Stopwatch.StartNew();
+        long cycles = 0;
+        var totals = new MqttPushSummary(0, 0, 0, 0, 0, TimeSpan.Zero, null);
+        try
+        {
+            while (true)
+            {
+                duration.Token.ThrowIfCancellationRequested();
+                _lastPass = null;
+                MqttPushSummary pass;
+                try
+                {
+                    pass = await SendPassAsync(false, duration.Token);
+                    cycles++;
+                }
+                finally
+                {
+                    // SendPass also snapshots confirmed work if Stop interrupts a fleet pass.
+                    if (_lastPass is { } done)
+                        totals = new MqttPushSummary(totals.MetersSent + done.MetersSent,
+                            totals.MetersFailed + done.MetersFailed, totals.MetersSkipped + done.MetersSkipped,
+                            totals.MessagesSent + done.MessagesSent, totals.MessagesFailed + done.MessagesFailed,
+                            sw.Elapsed, totals.Error ?? done.Error);
+                    LoopResult = new MqttLoopSummary(cycles, totals with { SendTime = sw.Elapsed });
+                }
+                if (pass.MessagesSent == 0)
+                    throw new InvalidOperationException(pass.Error ?? "The selected meters/profiles produced no successful MQTT publishes. Loop stopped.");
+                if (options.CyclePauseSeconds > 0)
+                    await Task.Delay(TimeSpan.FromSeconds(options.CyclePauseSeconds), duration.Token);
+            }
+        }
+        catch (OperationCanceledException) when (duration.IsCancellationRequested && !_stop.IsCancellationRequested)
+        {
+            // A configured duration is successful completion; explicit Stop remains cancellation.
+        }
+        finally
+        {
+            LoopResult = new MqttLoopSummary(cycles, totals with { SendTime = sw.Elapsed });
+            Volatile.Write(ref _state, 4);
+        }
+        return LoopResult;
+    }
+
+    private async Task<MqttPushSummary> SendPassAsync(bool prepared, CancellationToken cancellationToken)
+    {
         long metersSent = 0, metersFailed = 0, skipped = 0, messagesSent = 0, messagesFailed = 0;
         string? firstError = null;
         var sw = Stopwatch.StartNew();
@@ -180,12 +254,12 @@ public sealed class MqttPushRun : IAsyncDisposable
             foreach (var wave in waves)
             {
                 if (!firstWave && _request.ChunkIntervalSeconds > 0)
-                    await Task.Delay(TimeSpan.FromSeconds(_request.ChunkIntervalSeconds), _stop.Token);
+                    await Task.Delay(TimeSpan.FromSeconds(_request.ChunkIntervalSeconds), cancellationToken);
                 firstWave = false;
                 await Parallel.ForEachAsync(wave, new ParallelOptions
                 {
                     MaxDegreeOfParallelism = _request.MaxConcurrency,
-                    CancellationToken = _stop.Token,
+                    CancellationToken = cancellationToken,
                 }, async (workItem, ct) =>
                 {
                     long started = MeterCompleted is null ? 0 : Stopwatch.GetTimestamp();
@@ -220,8 +294,7 @@ public sealed class MqttPushRun : IAsyncDisposable
         }
         finally
         {
-            _prepared = null;
-            Volatile.Write(ref _state, 4);
+            _lastPass = new MqttPushSummary(metersSent, metersFailed, skipped, messagesSent, messagesFailed, sw.Elapsed, firstError);
         }
     }
 

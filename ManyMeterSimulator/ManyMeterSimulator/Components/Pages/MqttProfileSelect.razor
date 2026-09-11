@@ -1,0 +1,43 @@
+@using ManyMeterSimulator.Brain
+@inject MeterRegistry Meters
+@inject TemplateRegistry Templates
+
+<MudSelect T="string" Label="Profile" Value="@Value" ValueChanged="ValueChanged" Disabled="@Disabled" Variant="Variant.Outlined" Margin="Margin.Dense">
+    <MudSelectItem T="string" Value='@("all")'>All supported profiles</MudSelectItem>
+    @foreach (var profile in _profiles)
+    {
+        <MudSelectItem T="string" Value="@profile.LogicalName">@profile.Label (@profile.LogicalName)</MudSelectItem>
+    }
+</MudSelect>
+<MudText Typo="Typo.caption">All sends every non-empty push setup in each batch's template. Template 93 custom push supports daily only. A specific profile must be supported by every selected batch.</MudText>
+@if (_error is not null) { <MudText Color="Color.Error" Typo="Typo.caption">@_error</MudText> }
+
+@code {
+    [Parameter] public IEnumerable<int> BatchIds { get; set; } = [];
+    [Parameter] public string Value { get; set; } = "all";
+    [Parameter] public EventCallback<string> ValueChanged { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    private IReadOnlyList<MqttPushProfile> _profiles = [];
+    private string? _signature, _error;
+
+    protected override void OnParametersSet()
+    {
+        var batches = Meters.Batches.Where(b => BatchIds.Contains(b.Id)).ToArray();
+        string signature = string.Join("|", batches.Select(b => $"{b.Id}:{b.TemplateName}:{b.NicType}:{b.HesTemplateId}"));
+        if (_signature == signature) return;
+        _signature = signature;
+        _error = null;
+        var profiles = new List<MqttPushProfile>();
+        foreach (var batch in batches)
+        {
+            if (MqttPushProfiles.IsCustomDaily(batch))
+                profiles.Add(new(MqttPushProfiles.CustomDaily, MqttPushProfiles.Label(MqttPushProfiles.CustomDaily)));
+            else
+            {
+                try { profiles.AddRange(MqttPushProfiles.ReadTemplate(Templates.ResolveOrThrow(batch.TemplateName))); }
+                catch (Exception ex) { _error = $"Cannot read profiles for {batch.Name}: {ex.Message}"; }
+            }
+        }
+        _profiles = profiles.DistinctBy(p => p.LogicalName).OrderBy(p => p.Label).ToArray();
+    }
+}
