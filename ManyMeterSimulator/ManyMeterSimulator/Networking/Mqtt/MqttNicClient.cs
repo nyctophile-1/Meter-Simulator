@@ -184,14 +184,14 @@ public sealed class MqttNicClient : IAsyncDisposable
     }
 
     /// <summary>
-    /// Publishes one message. Serialized, since MQTTnet's client is not safe for concurrent publish.
+    /// Publishes one pull reply at a time on the listener connection. Push uses a separate pool.
     ///
     /// The broker's acknowledgement is checked rather than discarded: at QoS 1/2 a failure here
     /// means the broker never took the message, which is a completely different problem from the
     /// broker taking it and no one being subscribed. Without this the two are indistinguishable
     /// from our side.
     /// </summary>
-    public async Task PublishAsync(string topic, byte[] payload, int qos, CancellationToken cancellationToken)
+    public async Task<bool> PublishAsync(string topic, byte[] payload, int qos, CancellationToken cancellationToken)
     {
         MqttApplicationMessage message = new MqttApplicationMessageBuilder()
             .WithTopic(topic)
@@ -220,6 +220,7 @@ public sealed class MqttNicClient : IAsyncDisposable
         {
             _logger.LogDebug("{Nic}: broker accepted publish to {Topic} ({ReasonCode})", _nic, topic, result.ReasonCode);
         }
+        return result.IsSuccess;
     }
 
     private async Task HandleMessageAsync(MqttApplicationMessageReceivedEventArgs args)

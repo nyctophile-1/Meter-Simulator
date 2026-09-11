@@ -1,0 +1,154 @@
+@using ManyMeterSimulator.Brain
+@using ManyMeterSimulator.Networking.Nic
+@using ManyMeterSimulator.Testing
+@inject MqttStressService Stress
+@inject PushCoordinator Push
+@inject MeterRegistry Meters
+@inject ISnackbar Snackbar
+@implements IDisposable
+
+<MudPaper Outlined="true" Class="pa-5">
+    <MudText Typo="Typo.h6">MQTT stress</MudText>
+    <MudText Class="mb-4 mud-text-secondary">
+        Send live, or prepare payloads in memory and fire them together. Use the EMQX dashboard for incoming message rate.
+        Each run sends one push per selected meter.
+    </MudText>
+    @if (Disabled)
+    {
+        <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">Finish the active test or push loop before starting a stress run.</MudAlert>
+    }
+    <MudGrid>
+        <MudItem xs="12">
+            <MudSelect T="int" Label="Running MQTT batches" MultiSelection="true" @bind-SelectedValues="_batchIds"
+                       Disabled="@Locked" Variant="Variant.Outlined">
+                @foreach (var batch in Meters.Batches.Where(b => NicTypes.IsMqtt(b.NicType) && b.Status == BatchStatus.Running))
+                {
+                    <MudSelectItem T="int" Value="@batch.Id">@batch.Name (@batch.Count.ToString("N0") meters · @batch.NicType)</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="4">
+            <MudSelect T="string" Label="Profile" @bind-Value="_profile" Disabled="@Locked" Variant="Variant.Outlined">
+                <MudSelectItem T="string" Value='@("all")'>All configured profiles</MudSelectItem>
+                <MudSelectItem T="string" Value='@("0.0.25.9.0.255")'>Instantaneous</MudSelectItem>
+                <MudSelectItem T="string" Value='@("0.5.25.9.0.255")'>Block load</MudSelectItem>
+            </MudSelect>
+            <MudText Typo="Typo.caption">Template 93 custom push always sends its supported daily profile.</MudText>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="4">
+            <MudSelect T="int" Label="Publishers per broker / transport" @bind-Value="_publishers" Disabled="@Locked" Variant="Variant.Outlined">
+                @foreach (int count in new[] { 1, 4, 8, 16, 32, 64 })
+                { <MudSelectItem T="int" Value="@count">@count</MudSelectItem> }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="4">
+            <MudSelect T="int" Label="Publish QoS" @bind-Value="_qos" Disabled="@Locked" Variant="Variant.Outlined">
+                <MudSelectItem T="int" Value="0">0 — no acknowledgement</MudSelectItem>
+                <MudSelectItem T="int" Value="1">1 — at least once</MudSelectItem>
+                <MudSelectItem T="int" Value="2">2 — exactly once (MQTT hop)</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="4">
+            <MudNumericField T="int?" Label="Meter limit per batch (empty = all)" @bind-Value="_meterLimit"
+                             Min="1" Disabled="@Locked" Variant="Variant.Outlined" />
+        </MudItem>
+        <MudItem xs="12" sm="6" md="4">
+            <MudNumericField T="int" Label="Concurrent meters" @bind-Value="_concurrency"
+                             Min="1" Max="1024" Disabled="@Locked" Variant="Variant.Outlined" />
+        </MudItem>
+        <MudItem xs="12" sm="6" md="4">
+            <MudNumericField T="int" Label="Prepared memory (MiB)" @bind-Value="_memoryMiB"
+                             Min="1" Max="16384" Disabled="@Locked" Variant="Variant.Outlined" />
+        </MudItem>
+        <MudItem xs="12" sm="6">
+            <MudNumericField T="int" Label="Live wave size (0 = continuous)" @bind-Value="_waveSize"
+                             Min="0" Max="1000000" Disabled="@Locked" Variant="Variant.Outlined" />
+        </MudItem>
+        <MudItem xs="12" sm="6">
+            <MudNumericField T="int" Label="Pause between live waves (seconds)" @bind-Value="_wavePause"
+                             Min="0" Max="3600" Disabled="@Locked" Variant="Variant.Outlined" />
+        </MudItem>
+    </MudGrid>
+    <MudText Typo="Typo.caption" Class="mt-3 mb-3">
+        Prepared memory estimates payloads, topics and dataset bookkeeping; meter sessions and temporary encoding buffers use additional RAM.
+        Prepared Fire has no wave pauses. Data is single-use; prepare again for another burst.
+    </MudText>
+    @if (Push.Options.UseCiphering)
+    {
+        <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">Ciphering is enabled. Use live sending so invocation counters are generated close to transmission.</MudAlert>
+    }
+    <div style="display:flex;gap:12px;flex-wrap:wrap;">
+        <MudButton Variant="Variant.Outlined" Disabled="@(Locked || !_batchIds.Any())" OnClick="@(() => Start(false))">Send live</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(Locked || !_batchIds.Any() || Push.Options.UseCiphering)" OnClick="@(() => Start(true))">Prepare</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Success" Disabled="@(_state.Phase != "Ready" || Disabled)" OnClick="Fire">Fire prepared burst</MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Error" Disabled="@(!_state.IsActive || _state.Phase == "Stopping")" OnClick="Stress.StopAsync">
+            @(_state.Phase == "Ready" ? "Discard prepared data" : "Stop")
+        </MudButton>
+    </div>
+    <MudDivider Class="my-4" />
+    <MudText Typo="Typo.subtitle1">@_state.Phase</MudText>
+    @if (_state.IsBusy) { <MudProgressLinear Indeterminate="true" Class="my-2" /> }
+    @if (_state.Detail is not null) { <MudText>@_state.Detail</MudText> }
+    @if (_state.PreparedAtUtc is not null)
+    {
+        <MudText>@_state.PreparedMessages.ToString("N0") MQTT messages from @_state.PreparedMeters.ToString("N0") meters · @((_state.PreparedBytes / 1048576d).ToString("F1")) MiB estimated · prepared in @_state.PreparationTime.TotalSeconds.ToString("F2") s</MudText>
+        <MudText Typo="Typo.caption">Payload generation started at @_state.PreparedAtUtc.Value.LocalDateTime.ToString("HH:mm:ss"). Open the EMQX dashboard before firing.</MudText>
+    }
+    @if (_state.Result is { } result)
+    {
+        <MudText>Completed publishes: @result.MessagesSent.ToString("N0") · failed/unconfirmed: @result.MessagesFailed.ToString("N0") · send duration: @result.SendTime.TotalSeconds.ToString("F2") s</MudText>
+        <MudText>Meters: @result.MetersSent.ToString("N0") sent · @result.MetersFailed.ToString("N0") failed · @result.MetersSkipped.ToString("N0") without payloads</MudText>
+        @if (result.Error is not null) { <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2">@result.Error</MudAlert> }
+        <MudText Typo="Typo.caption">Publish completion is a client result. QoS 0 does not confirm broker receipt; HES persistence is measured separately.</MudText>
+    }
+    <MudText Typo="Typo.caption" Class="mt-4">Independent broker baseline: use deploy/emqtt-bench.ps1 or deploy/emqtt-bench.sh as described in deploy/mqtt-throughput.md.</MudText>
+</MudPaper>
+
+@code {
+    [Parameter] public bool Disabled { get; set; }
+    private IReadOnlyCollection<int> _batchIds = Array.Empty<int>();
+    private string _profile = "all";
+    private int _publishers = 8, _qos = 2, _concurrency = 64, _memoryMiB = 256, _waveSize, _wavePause;
+    private int? _meterLimit;
+    private MqttStressState _state = new();
+    private bool _disposed;
+    private bool Locked => Disabled || _state.IsActive;
+
+    protected override void OnInitialized() { ReadState(); Stress.Changed += OnChanged; }
+    private void OnChanged() { if (!_disposed) _ = InvokeAsync(() => { ReadState(); StateHasChanged(); }); }
+    private void ReadState()
+    {
+        _state = Stress.State;
+        // The active run is shared across browsers and survives tab navigation; always display
+        // its frozen settings before offering Fire, even in a newly mounted panel.
+        if (_state.Request is not { } request) return;
+        _batchIds = request.BatchIds;
+        _profile = request.PushSetupLogicalName ?? "all";
+        _publishers = request.PublisherCount;
+        _qos = request.Qos;
+        _concurrency = request.MaxConcurrency;
+        _memoryMiB = request.PreparedMemoryMiB;
+        _meterLimit = request.MaximumMetersPerBatch;
+        _waveSize = request.ChunkSize;
+        _wavePause = request.ChunkIntervalSeconds;
+    }
+    private void Start(bool prepare)
+    {
+        try
+        {
+            if (Disabled) throw new InvalidOperationException("Finish the active test or push loop first.");
+            var ids = _batchIds.ToArray();
+            if (ids.Any(id => !Meters.Batches.Any(b => b.Id == id && b.Status == BatchStatus.Running)))
+                throw new InvalidOperationException("Every selected batch must still be running.");
+            Stress.Start(new MqttPushRequest
+            {
+                BatchIds = ids, PublisherCount = _publishers, Qos = _qos, MaxConcurrency = _concurrency,
+                MaximumMetersPerBatch = _meterLimit, PushSetupLogicalName = _profile == "all" ? null : _profile,
+                PreparedMemoryMiB = _memoryMiB, ChunkSize = _waveSize, ChunkIntervalSeconds = _wavePause,
+            }, prepare);
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+    private void Fire() { try { if (!Disabled) Stress.Fire(); } catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); } }
+    public void Dispose() { _disposed = true; Stress.Changed -= OnChanged; }
+}

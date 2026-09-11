@@ -1,8 +1,8 @@
 namespace ManyMeterSimulator.Networking.Mqtt;
 
 /// <summary>
-/// The slice of the MQTT listener that outbound push needs: is there a live broker connection for
-/// this binding, and publish one message on it.
+/// Resolves a live broker binding and opens publish-only pools for outbound push. The legacy
+/// single-message method remains available on the listener connection.
 ///
 /// <para>
 /// A narrow interface rather than a dependency on the whole hosted service, so
@@ -20,4 +20,7 @@ public interface IMqttPushPublisher
     /// the caller can report rather than silently drop.
     /// </summary>
     Task<bool> TryPublishPushAsync(BrokerBinding binding, NicPublish publish, int qos, CancellationToken cancellationToken);
+
+    Task<IMqttPushPool> OpenPoolAsync(BrokerBinding binding, int publisherCount, int qos,
+        int publishTimeoutSeconds, CancellationToken cancellationToken);
 }

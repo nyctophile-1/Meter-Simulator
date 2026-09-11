@@ -16,6 +16,7 @@
 @inject TestPlanRegistry TestPlans
 @inject TestRunEngine RunEngine
 @inject TestRunStore RunStore
+@inject MqttStressService MqttStress
 @inject ISnackbar Snackbar
 @inject IJSRuntime JS
 @implements IDisposable
@@ -309,7 +310,7 @@
                 </div>
                 <div class="wf-actions">
                     <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Success"
-                               Disabled="@(_testRunActive||plan.Tasks.Count==0||BaseConfigurationError(plan) is not null)"
+                               Disabled="@(_testRunActive||MqttStress.State.IsActive||plan.Tasks.Count==0||BaseConfigurationError(plan) is not null)"
                                OnClick="@(()=>OpenRunDialog(plan))">Run</MudButton>
                     <MudButton Size="Size.Small" Variant="Variant.Outlined"
                                OnClick="@(()=>OpenEditPlan(plan))">Edit</MudButton>
@@ -353,7 +354,7 @@
             <div class="wf-header">
                 <div style="flex:1;min-width:0;"><div class="wf-title">@plan.DisplayName</div></div>
                 <div class="wf-actions">
-                    <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Success" Disabled="@(_testRunActive||plan.Tasks.Count==0)" OnClick="@(()=>OpenRunDialog(plan))">Run</MudButton>
+                    <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Success" Disabled="@(_testRunActive||MqttStress.State.IsActive||plan.Tasks.Count==0)" OnClick="@(()=>OpenRunDialog(plan))">Run</MudButton>
                     <MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="@(()=>OpenEditPlan(plan))">Edit</MudButton>
                     <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Error" OnClick="@(()=>DeletePlan(plan))">Delete</MudButton>
                 </div>
@@ -518,7 +519,7 @@
             <div class="sec-sub">Ad-hoc checks against a live batch. Base results come from the <b>Test Push</b> plan.</div>
         </div>
         <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Loop"
-                   OnClick="OpenLoopDialog" Disabled="@_testRunActive">Loop push</MudButton>
+                   OnClick="OpenLoopDialog" Disabled="@(_testRunActive || MqttStress.State.IsActive)">Loop push</MudButton>
     </div>
 
     <MudSelect T="string" Label="Profile" @bind-Value="_pushProfileFilter" Dense="true" Variant="Variant.Outlined"
@@ -583,7 +584,7 @@
                     </div>
                     <div style="width:110px;flex-shrink:0;text-align:right;">
                         <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
-                                   Disabled="@(_pushingBatchIds.Contains(b.Id) || _testRunActive)"
+                                   Disabled="@(_pushingBatchIds.Contains(b.Id) || _testRunActive || MqttStress.State.IsActive)"
                                    OnClick="@(() => SendPushAsync(b.Id))">
                             @(_pushingBatchIds.Contains(b.Id) ? "Sending..." : "Send")
                         </MudButton>
@@ -593,6 +594,9 @@
         </div>
     }
 </div>
+</MudTabPanel>
+<MudTabPanel Text="MQTT stress">
+    <MqttStressPanel Disabled="@(_testRunActive || _scheduleState.IsRunning || _pushingBatchIds.Count > 0)" />
 </MudTabPanel>
 </MudTabs>
 
@@ -1184,6 +1188,7 @@
     protected override void OnInitialized()
     {
         Refresh();
+        MqttStress.Changed += OnStressChanged;
         Schedule.Changed += OnScheduleChanged;
         TestPlans.Changed += OnPlansChanged;
         RunEngine.Changed += OnRunChanged;
@@ -1209,6 +1214,7 @@
             .OrderBy(p => p.Name).ToList();
     }
 
+    private void OnStressChanged() => InvokeAsync(StateHasChanged);
     private void OnScheduleChanged() => InvokeAsync(() => { _scheduleState = Schedule.State; StateHasChanged(); });
     private void OnPlansChanged() => InvokeAsync(() => { _plans = TestPlans.Plans; StateHasChanged(); });
     private void OnRunChanged() => InvokeAsync(() => { _activeRun = RunEngine.ActiveRun; _testRunActive = RunEngine.IsActive; StateHasChanged(); });
@@ -1238,6 +1244,7 @@
 
     private async Task SendPushAsync(int batchId)
     {
+        if (MqttStress.State.IsActive) return;
         _pushingBatchIds.Add(batchId);
         try
         {
@@ -1257,7 +1264,7 @@
     }
 
     private void OpenLoopDialog() { _loopBatchIds = _scheduleState.BatchIds.ToList(); _loopIntervalMin = _scheduleState.IntervalMinutes > 0 ? _scheduleState.IntervalMinutes : PushScheduleService.AllowedIntervalMinutes[0]; _loopOpen = true; }
-    private void StartLoop() { try { Schedule.Start(_loopBatchIds.ToList(), _loopIntervalMin); _loopOpen = false; } catch (ArgumentException ex) { Snackbar.Add(ex.Message, Severity.Error); } }
+    private void StartLoop() { if (MqttStress.State.IsActive) return; try { Schedule.Start(_loopBatchIds.ToList(), _loopIntervalMin); _loopOpen = false; } catch (ArgumentException ex) { Snackbar.Add(ex.Message, Severity.Error); } }
     private void StopLoop() { Schedule.Stop(); }
 
     // Run
@@ -1266,7 +1273,7 @@
     {
         if (_runPlan is null) return;
         DateTimeOffset at = DateTimeOffset.UtcNow;
-        try { RunEngine.ScheduleRun(_runPlan, _runLabel, at); _runOpen = false; Snackbar.Add("Run started.", Severity.Info); }
+        try { if (MqttStress.State.IsActive) throw new InvalidOperationException("Stop the MQTT stress run first."); RunEngine.ScheduleRun(_runPlan, _runLabel, at); _runOpen = false; Snackbar.Add("Run started.", Severity.Info); }
         catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
     }
     private void StopRun() { RunEngine.StopNow(); }
@@ -1512,5 +1519,5 @@
     private static string StatusRowClass(BatchStatus s) => s switch { BatchStatus.Running => "is-running", BatchStatus.Starting => "is-starting", BatchStatus.Stopped => "is-stopped", _ => "is-idle" };
     private static string NicLabel(NicType n) => n switch { NicType.Tcp4G => "4G TCP", NicType.Mqtt4G => "4G MQTT", NicType.Mqtt4GImg => "4G IMG", NicType.MqttWirepas => "RF Wirepas", NicType.MqttKmesh => "RF Kmesh", _ => n.ToString() };
 
-    public void Dispose() { Schedule.Changed -= OnScheduleChanged; TestPlans.Changed -= OnPlansChanged; RunEngine.Changed -= OnRunChanged; RunEngine.RunCompleted -= OnRunCompleted; _timer?.Dispose(); }
+    public void Dispose() { MqttStress.Changed -= OnStressChanged; Schedule.Changed -= OnScheduleChanged; TestPlans.Changed -= OnPlansChanged; RunEngine.Changed -= OnRunChanged; RunEngine.RunCompleted -= OnRunCompleted; _timer?.Dispose(); }
 }

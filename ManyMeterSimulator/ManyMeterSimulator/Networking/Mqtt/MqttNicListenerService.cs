@@ -132,8 +132,19 @@ public sealed class MqttNicListenerService : BackgroundService, IMqttPushPublish
             return false;
         }
 
-        await bound.Client.PublishAsync(publish.Topic, publish.Payload, qos, cancellationToken);
-        return true;
+        return await bound.Client.PublishAsync(publish.Topic, publish.Payload, qos, cancellationToken);
+    }
+
+    public async Task<IMqttPushPool> OpenPoolAsync(BrokerBinding binding, int publisherCount, int qos,
+        int publishTimeoutSeconds, CancellationToken cancellationToken)
+    {
+        if (!_clients.TryGetValue(binding, out var bound))
+            throw new InvalidOperationException($"No live MQTT binding for {binding}. Start the batch first.");
+        BrokerEndpoint? endpoint = _network.Broker(binding.BrokerKey);
+        if (endpoint is null || !endpoint.Enabled || !bound.Matches(endpoint))
+            throw new InvalidOperationException("Broker configuration changed; wait for its connection to restart.");
+        return await MqttPushPool.ConnectAsync(_options.ConnectionFor(endpoint), publisherCount, qos,
+            publishTimeoutSeconds, cancellationToken);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)

@@ -166,6 +166,7 @@ builder.Services.AddSingleton<ITestPlanStore, JsonTestPlanStore>();
 builder.Services.AddSingleton<TestPlanRegistry>();
 builder.Services.AddSingleton<TestRunStore>();
 builder.Services.AddSingleton<TestRunEngine>();
+builder.Services.AddSingleton<MqttStressService>();
 
 // Bridge selection: the real in-process brain (default) or the echo stand-in (framing only).
 string bridgeMode = builder.Configuration.GetValue("Brain:Mode", "Brain") ?? "Brain";

@@ -51,8 +51,13 @@ public sealed class PushOptions
     /// </summary>
     public int ChunkIntervalSeconds { get; set; } = 5;
 
-    /// <summary>QoS for MQTT push publishes. HES clamps its own subscribe QoS to 2, so 2 is safe.</summary>
+    /// <summary>Outgoing push QoS, independent of the pull listener's subscription QoS.</summary>
     public int PublishQos { get; set; } = 2;
+
+    /// <summary>Publish-only MQTT connections per broker/transport, reused for an entire push.</summary>
+    public int PublisherCount { get; set; } = 8;
+
+    public int PublishTimeoutSeconds { get; set; } = 10;
 
     /// <summary>
     /// How long a TCP push waits for the connect before giving up on that meter. Bounded because a

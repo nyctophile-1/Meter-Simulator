@@ -63,6 +63,21 @@ public class PushDestinationTests
 
         public bool HasClient(ManyMeterSimulator.Networking.Mqtt.BrokerBinding binding) => Connected;
 
+        public Task<IMqttPushPool> OpenPoolAsync(BrokerBinding binding, int publisherCount, int qos,
+            int publishTimeoutSeconds, CancellationToken cancellationToken) =>
+            Task.FromResult<IMqttPushPool>(new StubPool(this));
+
+        private sealed class StubPool(StubPushPublisher owner) : IMqttPushPool
+        {
+            public bool IsConnected => owner.Connected;
+            public Task<MqttPushDelivery> PublishMeterAsync(IReadOnlyList<NicPublish> messages, CancellationToken cancellationToken)
+            {
+                owner.Published += messages.Count;
+                return Task.FromResult(new MqttPushDelivery(messages.Count, 0));
+            }
+            public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        }
+
         public Task<bool> TryPublishPushAsync(
             ManyMeterSimulator.Networking.Mqtt.BrokerBinding binding,
             ManyMeterSimulator.Networking.Mqtt.NicPublish publish,
