@@ -25,10 +25,27 @@ namespace MeterSimulator.DLMS
         public bool AllSent => Failed == 0 && Sent > 0;
     }
 
+    /// <summary>Read-only current metadata for one profile buffer.</summary>
+    public readonly record struct ProfileBufferState(
+        string LogicalName,
+        string? Description,
+        uint CapturePeriodSeconds,
+        uint Capacity,
+        uint EntriesInUse,
+        DateTimeOffset? LatestCaptureAtUtc);
+
+    /// <summary>Result of appending one generated profile record.</summary>
+    public readonly record struct ProfileCaptureResult(
+        string LogicalName,
+        DateTimeOffset CapturedAtUtc,
+        int RetainedCount,
+        int EvictedCount);
+
     public class DLMSServerSession : GXDLMSSecureServer
     {
         private readonly DLMSMeter _meter;
         private readonly string _templatePath;
+        private readonly bool _shiftProfileTimestamps;
         //private readonly GXNet _network;
         private readonly GXDLMSObjectCollection _objects = new();
 
@@ -70,7 +87,13 @@ namespace MeterSimulator.DLMS
         // from the host's default source address.
         private readonly IPAddress? _sourceAddress;
 
-        public DLMSServerSession(DLMSMeter meter, string templatePath, PushConfig? pushConfig = null, IPAddress? sourceAddress = null, bool initializeValues = true)
+        public DLMSServerSession(
+            DLMSMeter meter,
+            string templatePath,
+            PushConfig? pushConfig = null,
+            IPAddress? sourceAddress = null,
+            bool initializeValues = true,
+            bool shiftProfileTimestamps = true)
         : base(
             true,
             InterfaceType.WRAPPER)
@@ -87,6 +110,7 @@ namespace MeterSimulator.DLMS
             Settings.UseLogicalNameReferencing = true;
             _meter = meter;
             _templatePath = templatePath;
+            _shiftProfileTimestamps = shiftProfileTimestamps;
             _pushConfig = pushConfig;
             _sourceAddress = sourceAddress;
 
@@ -107,7 +131,7 @@ namespace MeterSimulator.DLMS
             // meter built from it references the same objects (see TemplateModelCache for why this
             // is safe). _objectsFromFile therefore holds borrowed, READ-ONLY objects — never write
             // to them; per-meter divergence belongs in _meter.
-            _objectsFromFile = TemplateModelCache.Shared.Get(templatePath);
+            _objectsFromFile = TemplateModelCache.Shared.Get(templatePath, shiftProfileTimestamps);
 
             // Seed this meter's own value store from the template's defaults. Reads are answered
             // from here (see PreRead), so the shared objects are never consulted for a value and
@@ -197,7 +221,11 @@ namespace MeterSimulator.DLMS
         /// <summary>A separate association over this meter's state, without reseeding its values.</summary>
         public DLMSServerSession CreateReadAssociation()
         {
-            var association = new DLMSServerSession(_meter, _templatePath, initializeValues: false);
+            var association = new DLMSServerSession(
+                _meter,
+                _templatePath,
+                initializeValues: false,
+                shiftProfileTimestamps: _shiftProfileTimestamps);
             association.Initialize(true);
             return association;
         }
@@ -333,6 +361,290 @@ namespace MeterSimulator.DLMS
         public IReadOnlyList<string> GetPushSetupLogicalNames() => _objects.OfType<GXDLMSPushSetup>()
             .Where(p => p.PushObjectList.Count > 0).Select(p => p.LogicalName).Distinct().ToArray();
 
+        /// <summary>
+        /// Returns the current profile-buffer metadata. The profile objects are normally shared
+        /// template schema, but a simulation working XML is loaded on its own path and is therefore
+        /// safe to mutate under the owning session lock.
+        /// </summary>
+        public IReadOnlyList<ProfileBufferState> GetProfileBufferStates() => _objectsFromFile
+            .OfType<GXDLMSProfileGeneric>()
+            .Select(profile => new ProfileBufferState(
+                profile.LogicalName,
+                profile.Description,
+                profile.CapturePeriod,
+                profile.ProfileEntries,
+                profile.EntriesInUse,
+                LatestProfileTimestamp(profile)))
+            .OrderBy(profile => profile.LogicalName, StringComparer.Ordinal)
+            .ToArray();
+
+        /// <summary>
+        /// Appends one simulated capture to a profile buffer and evicts the oldest timestamped
+        /// record when the profile has reached its configured capacity. Values are copied from the
+        /// latest source row unless a caller has explicitly supplied an increment for that capture
+        /// object's logical name. This deliberately does not infer electrical meaning from column
+        /// position or an OBIS name.
+        ///
+        /// Callers must hold this session's lock. The profile must come from a per-meter working
+        /// XML; mutating a shared template model would leak a record into other meters.
+        /// </summary>
+        public ProfileCaptureResult AppendProfileCapture(
+            string profileLogicalName,
+            DateTimeOffset capturedAtUtc,
+            IReadOnlyDictionary<string, decimal>? incrementsByCaptureObject = null)
+        {
+            if (_shiftProfileTimestamps)
+            {
+                throw new InvalidOperationException(
+                    "Cannot append simulated records to a shared/rebased template. Load a per-meter working XML with timestamp shifting disabled.");
+            }
+
+            if (_objectsFromFile.FindByLN(ObjectType.ProfileGeneric, profileLogicalName) is not GXDLMSProfileGeneric profile)
+            {
+                throw new InvalidOperationException($"Profile '{profileLogicalName}' is not present in this meter model.");
+            }
+
+            if (profile.ProfileEntries == 0)
+            {
+                throw new InvalidOperationException($"Profile '{profileLogicalName}' has no configured record capacity.");
+            }
+
+            object[]? sourceRow = LatestProfileRow(profile);
+            if (sourceRow is null)
+            {
+                throw new InvalidOperationException($"Profile '{profileLogicalName}' has no seed row from which to generate a capture.");
+            }
+
+            object[] row = new object[sourceRow.Length];
+            for (int index = 0; index < sourceRow.Length; index++)
+            {
+                object? value = CloneProfileCell(sourceRow[index]);
+                if (index < profile.CaptureObjects.Count)
+                {
+                    GXDLMSObject captureObject = profile.CaptureObjects[index].Key;
+                    if (captureObject is GXDLMSClock)
+                    {
+                        value = new GXDateTime(capturedAtUtc.UtcDateTime);
+                    }
+                    else if (incrementsByCaptureObject is not null
+                        && incrementsByCaptureObject.TryGetValue(captureObject.LogicalName, out decimal increment))
+                    {
+                        value = AddIncrement(value, increment, profileLogicalName, captureObject.LogicalName);
+                    }
+                }
+
+                row[index] = value!;
+            }
+
+            if (ProfileRowTimestamp(profile, row) != capturedAtUtc)
+            {
+                throw new InvalidOperationException(
+                    $"Profile '{profileLogicalName}' has no clock capture column, so its generated record cannot be timestamped safely.");
+            }
+
+            profile.Buffer.Add(row);
+            int evicted = 0;
+            while (profile.Buffer.Count > profile.ProfileEntries)
+            {
+                int oldest = FindOldestProfileRow(profile);
+                if (oldest < 0)
+                {
+                    profile.Buffer.RemoveAt(profile.Buffer.Count - 1);
+                    throw new InvalidOperationException(
+                        $"Profile '{profileLogicalName}' exceeded capacity but has a record with no usable capture timestamp. No record was retained.");
+                }
+
+                profile.Buffer.RemoveAt(oldest);
+                evicted++;
+            }
+
+            profile.EntriesInUse = (uint)profile.Buffer.Count;
+            foreach (var item in profile.CaptureObjects.Select((item, index) => (Capture: item, Index: index)))
+            {
+                // DLMSMeter stores the value returned for an object's normal value attribute
+                // (attribute 2). Some profile columns instead capture attributes such as an
+                // extended register's CaptureTime. Storing those by logical name would overwrite
+                // the register value with a timestamp and corrupt the model when it is saved.
+                if (item.Index >= row.Length
+                    || item.Capture.Value.AttributeIndex != 2
+                    || item.Capture.Key is not (GXDLMSRegister or GXDLMSData))
+                {
+                    continue;
+                }
+
+                _meter.SetValue(item.Capture.Key.LogicalName, row[item.Index]);
+            }
+
+            return new ProfileCaptureResult(profileLogicalName, capturedAtUtc, profile.Buffer.Count, evicted);
+        }
+
+        /// <summary>
+        /// Serializes the complete current object model to a working XML path. The caller owns
+        /// atomic replacement and validation, because persistence policy belongs to the host.
+        /// </summary>
+        public void SaveWorkingModel(string destinationPath)
+        {
+            if (string.IsNullOrWhiteSpace(destinationPath))
+            {
+                throw new ArgumentException("A working XML destination is required.", nameof(destinationPath));
+            }
+
+            if (_shiftProfileTimestamps)
+            {
+                throw new InvalidOperationException(
+                    "Only an isolated profile-simulation working model may be saved. " +
+                    "The shared template model is read-only.");
+            }
+
+            // A profile row is persisted directly on the working object graph. Register and Data
+            // values, however, are deliberately held in this meter's own value store while the
+            // server is running. Copy them onto this *isolated* graph before serialization so a
+            // restart seeds the same current values that a pull would have returned.
+            SyncWorkingModelValuesForPersistence();
+
+            _objectsFromFile.Save(destinationPath, new GXXmlWriterSettings
+            {
+                Values = true,
+                IgnoreDefaultValues = false,
+                // false converts UTC captures through the host timezone; true keeps meter time.
+                UseMeterTime = true,
+            });
+
+            // Gurux's meter-time writer appends Z to a value that already carries +00:00, yielding
+            // +00:00Z. Its own XML reader expands the Z into another +00:00 and cannot reload it.
+            // Normalize the redundant UTC suffix while the XML is still a private temp snapshot.
+            string xml = File.ReadAllText(destinationPath);
+            File.WriteAllText(destinationPath, xml.Replace("+00:00Z", "Z", StringComparison.Ordinal));
+        }
+
+        private void SyncWorkingModelValuesForPersistence()
+        {
+            foreach (GXDLMSObject obj in _objectsFromFile)
+            {
+                switch (obj)
+                {
+                    case GXDLMSRegister register:
+                    {
+                        object? value = _meter.GetValue(register.LogicalName);
+                        if (value is not null)
+                        {
+                            register.Value = value;
+                        }
+
+                        break;
+                    }
+                    case GXDLMSData data:
+                    {
+                        object? value = _meter.GetValue(data.LogicalName);
+                        if (value is not null)
+                        {
+                            data.Value = value;
+                        }
+
+                        break;
+                    }
+                }
+            }
+        }
+
+        private static DateTimeOffset? LatestProfileTimestamp(GXDLMSProfileGeneric profile)
+        {
+            DateTimeOffset? latest = null;
+            foreach (object[] row in profile.Buffer)
+            {
+                DateTimeOffset? timestamp = ProfileRowTimestamp(profile, row);
+                if (timestamp is not null && (latest is null || timestamp > latest))
+                {
+                    latest = timestamp;
+                }
+            }
+
+            return latest;
+        }
+
+        private static object[]? LatestProfileRow(GXDLMSProfileGeneric profile)
+        {
+            object[]? latestRow = null;
+            DateTimeOffset latest = DateTimeOffset.MinValue;
+            foreach (object[] row in profile.Buffer)
+            {
+                DateTimeOffset? timestamp = ProfileRowTimestamp(profile, row);
+                if (timestamp is not null && timestamp > latest)
+                {
+                    latest = timestamp.Value;
+                    latestRow = row;
+                }
+            }
+
+            return latestRow;
+        }
+
+        private static int FindOldestProfileRow(GXDLMSProfileGeneric profile)
+        {
+            int oldestIndex = -1;
+            DateTimeOffset oldest = DateTimeOffset.MaxValue;
+            for (int index = 0; index < profile.Buffer.Count; index++)
+            {
+                DateTimeOffset? timestamp = ProfileRowTimestamp(profile, profile.Buffer[index]);
+                if (timestamp is not null && timestamp < oldest)
+                {
+                    oldest = timestamp.Value;
+                    oldestIndex = index;
+                }
+            }
+
+            return oldestIndex;
+        }
+
+        private static DateTimeOffset? ProfileRowTimestamp(GXDLMSProfileGeneric profile, object[] row)
+        {
+            for (int index = 0; index < profile.CaptureObjects.Count && index < row.Length; index++)
+            {
+                if (profile.CaptureObjects[index].Key is GXDLMSClock && row[index] is GXDateTime timestamp)
+                {
+                    return timestamp.Value;
+                }
+            }
+
+            return null;
+        }
+
+        private static object? CloneProfileCell(object? value) => value switch
+        {
+            GXDateTime timestamp => new GXDateTime(timestamp.Value.UtcDateTime),
+            byte[] bytes => bytes.ToArray(),
+            _ => value,
+        };
+
+        private static object AddIncrement(object? value, decimal increment, string profileLogicalName, string captureLogicalName)
+        {
+            try
+            {
+                return value switch
+                {
+                    byte number => checked((byte)(number + increment)),
+                    sbyte number => checked((sbyte)(number + increment)),
+                    short number => checked((short)(number + increment)),
+                    ushort number => checked((ushort)(number + increment)),
+                    int number => checked((int)(number + increment)),
+                    uint number => checked((uint)(number + increment)),
+                    long number => checked((long)(number + increment)),
+                    ulong number => checked((ulong)(number + increment)),
+                    float number => checked(number + (float)increment),
+                    double number => checked(number + (double)increment),
+                    decimal number => number + increment,
+                    null => throw new InvalidOperationException("The seed value is null."),
+                    _ => throw new InvalidOperationException($"The seed value type '{value.GetType().Name}' is not numeric."),
+                };
+            }
+            catch (Exception exception) when (exception is OverflowException or InvalidOperationException)
+            {
+                throw new InvalidOperationException(
+                    $"Cannot apply increment {increment} to '{captureLogicalName}' in profile '{profileLogicalName}'. {exception.Message}",
+                    exception);
+            }
+        }
+
         private static byte[] Concat(byte[][] frames)
         {
             if (frames.Length == 1)
@@ -423,7 +735,10 @@ namespace MeterSimulator.DLMS
                 return;
             }
 
-            EnsureBufferFreshness(profile);
+            if (_shiftProfileTimestamps)
+            {
+                EnsureBufferFreshness(profile);
+            }
 
             object[]? latestRow = null;
             DateTimeOffset latestTime = DateTimeOffset.MinValue;

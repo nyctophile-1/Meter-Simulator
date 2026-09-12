@@ -1,6 +1,14 @@
 # Profile simulation plan
 
-Date: 2026-09-12. Status: proposal; implementation awaits the supplied XML and confirmation of the open contracts below.
+Date: 2026-09-12. Status: the safe simulation foundation is implemented; profile semantics and push delivery remain gated on the supplied XML and confirmation of the open contracts below.
+
+## Foundation implementation status
+
+The simulator now has an opt-in, fixed-period capture foundation. `ProfileSimulation` is disabled by default and has no configured profiles. When an operator explicitly enables it and supplies a profile logical name, the scheduler advances only completed numeric capture boundaries, writes the generated rows to a separate working XML for each meter, and never alters the source template.
+
+Working XML state is isolated under `ProfileSimulation:StateFolder` by batch and meter. Each write is validated before becoming current, retains one validated previous XML for recovery, checks the original template fingerprint before reuse, and evicts timestamped rows by the XML `ProfileEntries` capacity. The save also preserves the meter's current Data/Register values. A working model is loaded without timestamp rebasing, so an existing capture timestamp remains unchanged after restart.
+
+This foundation deliberately does **not** infer field semantics, synthesize billing/daily/event calendar records, or deliver profile pushes. The present sender cannot encode a selected saved DP, billing, or event row as a receiver-compatible push without a confirmed profile-to-push mapping. Automatic push, manual latest-record push, history replay, outbox/retry state, calendar rules for zero-period profiles, DST handling, and the supplied-template capability report remain pending. The automated checks currently prove fixed-period generation, bounded retention, XML round trip, previous-snapshot recovery, and reload/idempotency using `HP_Template_111.xml`; they do not prove HES receiver ingestion.
 
 ## Outcome
 

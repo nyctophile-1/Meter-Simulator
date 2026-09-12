@@ -6,13 +6,13 @@
 - [x] Record user-approved Start simulation, per-profile automatic push, Send Push Now, and explicit Push saved history semantics.
 - [ ] Receive target XML and confirm critical behavior listed in plan.md.
 - [ ] Produce template capability/mapping report and preview records.
-- [ ] Implement common meter data engine and calendar scheduling.
-- [ ] Add history/checkpoints and durable pending delivery.
-- [ ] Implement working XML save/restore, atomic snapshot commits, and per-profile oldest-record eviction.
-- [ ] Verify save/load fidelity, interrupted-save recovery, capacity limits, and pending-push survival after eviction.
+- [~] Implement fixed-period profile capture and bounded fleet scheduling. Implemented for explicitly configured numeric capture periods; daily, billing, event, DST, and electrical-value semantics remain pending confirmation.
+- [~] Add history/checkpoints and durable pending delivery. Working XML checkpoints and recovery exist; simulation metadata and the delivery outbox/retry state remain pending.
+- [x] Implement working XML save/restore, validated atomic replacement, and per-profile oldest-record eviction.
+- [~] Verify save/load fidelity, interrupted-save recovery, capacity limits, and pending-push survival after eviction. XML round-trip, recovery, capacity, reload, and idempotency tests exist; there is no pending-push queue yet.
 - [ ] Connect block, DP, billing, and event pushes to exact captured records.
 - [ ] Reconcile normal/custom pulls with the same meter data source.
-- [ ] Add operator controls and bounded fleet scheduling.
+- [~] Add operator controls and bounded fleet scheduling. The bounded hosted scheduler is registered behind disabled configuration; operator controls remain in the viewer/control workstream.
 - [ ] Implement independent generation and automatic-push controls; queue only future captures while enabled.
 - [ ] Implement Send Push Now from the latest saved record without creating or retimestamping data.
 - [ ] Implement explicit bounded saved-history push selection and preserve failed-delivery retry eligibility.

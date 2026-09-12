@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Net;
 using ManyMeterSimulator.Networking;
 using ManyMeterSimulator.Networking.Nic;
+using ManyMeterSimulator.ProfileSimulation;
 using ManyMeterSimulator.Provisioning;
 using MeterSimulator.DLMS;
 using MeterSimulator.Models;
@@ -31,6 +32,7 @@ public sealed class MeterSessionManager
     private readonly BrainOptions _options;
     private readonly TcpOptions _tcpOptions;
     private readonly ILogger<MeterSessionManager> _logger;
+    private readonly ProfileSimulationStateStore? _profileStateStore;
 
     // Lazy so each meter's session is constructed exactly once even under concurrent first-touch.
     private readonly ConcurrentDictionary<long, Lazy<DLMSServerSession>> _sessions = new();
@@ -43,13 +45,15 @@ public sealed class MeterSessionManager
         TemplateRegistry templates,
         IOptions<BrainOptions> options,
         IOptions<TcpOptions> tcpOptions,
-        ILogger<MeterSessionManager> logger)
+        ILogger<MeterSessionManager> logger,
+        ProfileSimulationStateStore? profileStateStore = null)
     {
         _meterRegistry = meterRegistry;
         _templates = templates;
         _options = options.Value;
         _tcpOptions = tcpOptions.Value;
         _logger = logger;
+        _profileStateStore = profileStateStore;
     }
 
     /// <summary>Number of meters with a live session.</summary>
@@ -65,6 +69,28 @@ public sealed class MeterSessionManager
     /// In-flight connections keep the instance they already resolved; new ones rebuild from template.
     /// </summary>
     public void Clear() => _sessions.Clear();
+
+    /// <summary>
+    /// Drops only one batch's materialized sessions. Used when a simulation working-state mode is
+    /// enabled for that batch so the next access reloads its per-meter working XML rather than the
+    /// immutable source template.
+    /// </summary>
+    public void ClearBatch(int batchId)
+    {
+        MeterBatch? batch = _meterRegistry.Batches.FirstOrDefault(candidate => candidate.Id == batchId);
+        if (batch is null)
+        {
+            return;
+        }
+
+        foreach (long index in _sessions.Keys)
+        {
+            if (index >= batch.StartIndex && index <= batch.EndIndex)
+            {
+                _sessions.TryRemove(index, out _);
+            }
+        }
+    }
 
     /// <summary>
     /// Returns the authoritative session for a meter, building it once on first touch.
@@ -95,7 +121,15 @@ public sealed class MeterSessionManager
         MeterBatch batch = _meterRegistry.GetBatchForIndex(meterRef.Index)
             ?? throw new InvalidOperationException($"Meter {meterRef} belongs to no batch (no template).");
 
-        string templatePath = _templates.ResolveOrThrow(batch.TemplateName);
+        string sourceTemplatePath = _templates.ResolveOrThrow(batch.TemplateName);
+        string templatePath = sourceTemplatePath;
+        bool shiftProfileTimestamps = true;
+        if (_profileStateStore is not null
+            && _profileStateStore.TryGetOrCreate(batch, meterRef.Index, sourceTemplatePath, out ProfileWorkingModel workingModel))
+        {
+            templatePath = workingModel.ModelPath;
+            shiftProfileTimestamps = false;
+        }
 
         var meter = new DLMSMeter(meterRef.Index, _options.LogicalName, _options.ClientAddress, _options.ServerAddress);
 
@@ -107,7 +141,12 @@ public sealed class MeterSessionManager
             ? MeterAddressing.ComputeAddress(_tcpOptions.AddressPrefix, meterRef.Index)
             : null;
 
-        var session = new DLMSServerSession(meter, templatePath, pushConfig: null, sourceAddress: sourceAddress);
+        var session = new DLMSServerSession(
+            meter,
+            templatePath,
+            pushConfig: null,
+            sourceAddress: sourceAddress,
+            shiftProfileTimestamps: shiftProfileTimestamps);
         session.Initialize(true);
 
         _logger.LogDebug(
@@ -115,6 +154,25 @@ public sealed class MeterSessionManager
             meterRef, meterRef.Index, meter.MeterNo, batch.TemplateName);
 
         return session;
+    }
+
+    /// <summary>Saves a meter's working XML after the caller has changed its profile state.</summary>
+    public void SaveProfileWorkingState(MeterRef meter, DLMSServerSession session)
+    {
+        if (_profileStateStore is null || !_profileStateStore.Enabled)
+        {
+            throw new InvalidOperationException("Profile simulation working-state persistence is disabled.");
+        }
+
+        MeterBatch batch = _meterRegistry.GetBatchForIndex(meter.Index)
+            ?? throw new InvalidOperationException($"Meter {meter} belongs to no batch.");
+        string sourceTemplatePath = _templates.ResolveOrThrow(batch.TemplateName);
+        if (!_profileStateStore.TryGetOrCreate(batch, meter.Index, sourceTemplatePath, out ProfileWorkingModel model))
+        {
+            throw new InvalidOperationException("No working XML could be resolved for the simulated meter.");
+        }
+
+        _profileStateStore.Save(model, session.SaveWorkingModel);
     }
 
     /// <summary>
