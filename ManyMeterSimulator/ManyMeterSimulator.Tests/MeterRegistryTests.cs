@@ -335,7 +335,7 @@ public class MeterRegistryTests
     /// literal legacy JSON rather than against anything the current code can produce.
     /// </summary>
     [Fact]
-    public void JsonBatchStore_ReadsALegacyFileWithNoNicType_AsTcp()
+    public void JsonBatchStore_ResetsLegacyFleetOnce_ThenPreservesNewFleet()
     {
         string dir = Path.Combine(Path.GetTempPath(), $"mms-batchstore-{Guid.NewGuid():N}");
         string path = Path.Combine(dir, "batches.json");
@@ -362,13 +362,12 @@ public class MeterRegistryTests
 
             var registry = new MeterRegistry(new JsonBatchStore(path));
 
-            MeterBatch reloaded = Assert.Single(registry.Batches);
-            Assert.Equal(NicType.Tcp4G, reloaded.NicType);
-            Assert.Equal("legacy", reloaded.Name);
-            Assert.Equal(BatchStatus.Running, reloaded.Status);
-
-            // The allocation cursor must survive too — reissuing indices is what the store prevents.
-            Assert.Equal("11", registry.PreviewNextBatch(Prefix, 1).FirstNodeId);
+            Assert.Empty(registry.Batches);
+            Assert.Equal("1000000001", registry.PreviewNextBatch(Prefix, 1).FirstNodeId);
+            registry.AddBatch("new fleet", "meter.xml", 10);
+            var restarted = new MeterRegistry(new JsonBatchStore(path));
+            Assert.Equal("new fleet", Assert.Single(restarted.Batches).Name);
+            Assert.Equal("1000000011", restarted.PreviewNextBatch(Prefix, 1).FirstNodeId);
         }
         finally
         {

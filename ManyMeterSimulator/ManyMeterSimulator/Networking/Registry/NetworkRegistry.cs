@@ -24,6 +24,7 @@ public sealed class NetworkRegistry
     public const string DefaultBrokerKey = "default";
 
     private readonly Dictionary<string, HesEnvironment> _environments = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, DatabaseConnection> _databases = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _lock = new();
     private readonly INetworkRegistryStore _store;
     private readonly ILogger<NetworkRegistry>? _logger;
@@ -58,6 +59,32 @@ public sealed class NetworkRegistry
             {
                 return _environments.Values.OrderBy(e => e.Key, StringComparer.OrdinalIgnoreCase).ToArray();
             }
+        }
+    }
+
+    public IReadOnlyList<DatabaseConnection> Databases
+    {
+        get { lock (_lock) return _databases.Values.OrderBy(db => db.Key, StringComparer.OrdinalIgnoreCase).ToArray(); }
+    }
+
+    public void SaveDatabase(DatabaseConnection database, bool editing)
+    {
+        database.Validate();
+        lock (_lock)
+        {
+            if (_databases.ContainsKey(database.Key) != editing)
+                throw new ArgumentException(editing ? "Database connection no longer exists." : "Database connection name is already taken.");
+            _databases[database.Key] = database;
+            Persist();
+        }
+    }
+
+    public void DeleteDatabase(string key)
+    {
+        lock (_lock)
+        {
+            _databases.Remove(key);
+            Persist();
         }
     }
 
@@ -358,7 +385,7 @@ public sealed class NetworkRegistry
     {
         lock (_lock)
         {
-            return new NetworkRegistrySnapshot { Environments = _environments.Values.ToList() };
+            return new NetworkRegistrySnapshot { Environments = _environments.Values.ToList(), Databases = _databases.Values.ToList() };
         }
     }
 
@@ -369,8 +396,11 @@ public sealed class NetworkRegistry
     /// </summary>
     public void ImportSnapshot(NetworkRegistrySnapshot snapshot)
     {
+        ValidateDatabases(snapshot.Databases);
         lock (_lock)
         {
+            _databases.Clear();
+            foreach (var db in snapshot.Databases) _databases.Add(db.Key, db);
             _environments.Clear();
 
             // Prefer the new unified format; fall back to migrating legacy broker+push lists.
@@ -395,9 +425,12 @@ public sealed class NetworkRegistry
     private void LoadFromStore()
     {
         NetworkRegistrySnapshot snapshot = _store.Load();
+        ValidateDatabases(snapshot.Databases, allowMissingSecret: true);
 
         lock (_lock)
         {
+            _databases.Clear();
+            foreach (var db in snapshot.Databases) _databases.Add(db.Key, db);
             _environments.Clear();
 
             if (snapshot.Environments.Count > 0)
@@ -507,7 +540,18 @@ public sealed class NetworkRegistry
         _store.Save(new NetworkRegistrySnapshot
         {
             Environments = _environments.Values.ToList(),
+            Databases = _databases.Values.ToList(),
         });
+    }
+
+    private static void ValidateDatabases(IEnumerable<DatabaseConnection> databases, bool allowMissingSecret = false)
+    {
+        var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var database in databases)
+        {
+            if (!allowMissingSecret || database.ConnectionString.Length > 0) database.Validate();
+            if (!keys.Add(database.Key)) throw new ArgumentException("Duplicate database connection name.");
+        }
     }
 
     private static string DescribeBatches(IReadOnlyList<string> batches) =>

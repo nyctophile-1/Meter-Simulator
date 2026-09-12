@@ -33,8 +33,10 @@ public sealed class MeterSessionManager
     private readonly ILogger<MeterSessionManager> _logger;
 
     // Lazy so each meter's session is constructed exactly once even under concurrent first-touch.
-    private readonly ConcurrentDictionary<long, Lazy<DLMSServerSession>> _sessions = new();
+    private ConcurrentDictionary<long, Lazy<DLMSServerSession>> _sessions = new();
     private readonly ConcurrentDictionary<int, BatchMaterializationProgress> _startingProgress = new();
+    private readonly object _startLock = new();
+    private readonly Dictionary<int, (MeterBatch Batch, CancellationTokenSource Cancellation)> _starts = new();
 
     public event Action<BatchMaterializationProgress>? OnProgressChanged;
 
@@ -50,6 +52,7 @@ public sealed class MeterSessionManager
         _options = options.Value;
         _tcpOptions = tcpOptions.Value;
         _logger = logger;
+        _meterRegistry.Changed += CancelInactiveStarts;
     }
 
     /// <summary>Number of meters with a live session.</summary>
@@ -64,7 +67,28 @@ public sealed class MeterSessionManager
     /// reuses an address (numbering restarts at 1) doesn't resolve a stale, previously-built session.
     /// In-flight connections keep the instance they already resolved; new ones rebuild from template.
     /// </summary>
-    public void Clear() => _sessions.Clear();
+    public void Clear()
+    {
+        lock (_startLock)
+        {
+            foreach (var start in _starts.Values) start.Cancellation.Cancel();
+            Interlocked.Exchange(ref _sessions, new());
+            _startingProgress.Clear();
+        }
+    }
+
+    private void CancelInactiveStarts()
+    {
+        lock (_startLock)
+        {
+            foreach (var start in _starts.Values)
+            {
+                if (start.Batch.Status != BatchStatus.Starting ||
+                    !ReferenceEquals(_meterRegistry.GetBatchForIndex(start.Batch.StartIndex), start.Batch))
+                    start.Cancellation.Cancel();
+            }
+        }
+    }
 
     /// <summary>
     /// Returns the authoritative session for a meter, building it once on first touch.
@@ -73,8 +97,11 @@ public sealed class MeterSessionManager
     /// no-template gate).
     /// </summary>
     public DLMSServerSession GetOrCreate(MeterRef meter)
+        => GetOrCreate(meter, _sessions);
+
+    private DLMSServerSession GetOrCreate(MeterRef meter, ConcurrentDictionary<long, Lazy<DLMSServerSession>> sessions)
     {
-        Lazy<DLMSServerSession> lazy = _sessions.GetOrAdd(
+        Lazy<DLMSServerSession> lazy = sessions.GetOrAdd(
             meter.Index,
             _ => new Lazy<DLMSServerSession>(() => Build(meter), LazyThreadSafetyMode.ExecutionAndPublication));
 
@@ -85,7 +112,7 @@ public sealed class MeterSessionManager
         catch
         {
             // Don't cache a failed build — a later attempt (e.g. after the template is fixed) should retry.
-            _sessions.TryRemove(meter.Index, out _);
+            sessions.TryRemove(meter.Index, out _);
             throw;
         }
     }
@@ -101,7 +128,7 @@ public sealed class MeterSessionManager
 
         // For TCP meters the source address of an outbound push MUST be the meter's own IPv6 (the
         // same address HES pulls from) so the receiver correlates the push by source IP. MQTT meters
-        // have no per-meter IP, so no source binding. The periodic-timer PushConfig stays null —
+        // reserve an IP but do not use a TCP source binding. The periodic-timer PushConfig stays null —
         // push is on-demand (the dashboard "Send Push" button drives DLMSServerSession.PushNow).
         IPAddress? sourceAddress = meterRef.Nic == NicType.Tcp4G
             ? MeterAddressing.ComputeAddress(_tcpOptions.AddressPrefix, meterRef.Index)
@@ -121,34 +148,55 @@ public sealed class MeterSessionManager
     /// Starts a batch asynchronously: marks status as Starting, materializes all meter sessions in
     /// background chunks without blocking the UI thread, and sets status to Running upon completion.
     /// </summary>
-    public async Task StartBatchAsync(int batchId, CancellationToken cancellationToken = default)
+    public Task StartBatchAsync(int batchId, CancellationToken cancellationToken = default)
     {
         MeterBatch? batch = _meterRegistry.Batches.FirstOrDefault(b => b.Id == batchId);
-        if (batch is null) return;
+        return batch is null ? Task.CompletedTask : StartBatchAsync(batch, cancellationToken);
+    }
 
-        _meterRegistry.TryMarkStarting(batchId);
+    public async Task StartBatchAsync(MeterBatch batch, CancellationToken cancellationToken = default)
+    {
+        int batchId = batch.Id;
+        CancellationTokenSource startCancellation;
+        lock (_startLock)
+        {
+            if (_starts.ContainsKey(batchId)) return;
+            if (!_meterRegistry.TryMarkStarting(batch)) return;
+            startCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            _starts.Add(batchId, (batch, startCancellation));
+            CancelInactiveStarts();
+        }
         long total = batch.EndIndex - batch.StartIndex + 1;
         var initialProgress = new BatchMaterializationProgress(batch.Id, 0, total);
         _startingProgress[batch.Id] = initialProgress;
-        OnProgressChanged?.Invoke(initialProgress);
-
-        await Task.Yield();
-
         try
         {
-            await MaterializeBatchAsync(batch, cancellationToken: cancellationToken);
-            _meterRegistry.TryStart(batchId);
+            OnProgressChanged?.Invoke(initialProgress);
+            await MaterializeBatchAsync(batch, cancellationToken: startCancellation.Token);
+            startCancellation.Token.ThrowIfCancellationRequested();
+            _meterRegistry.TryCompleteStart(batch);
+        }
+        catch (OperationCanceledException)
+        {
+            // Shutdown retains start intent; operator Stop/Delete/Reset has already changed it.
+            throw;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to start batch {BatchId} ({BatchName})", batchId, batch.Name);
-            _meterRegistry.TryStop(batchId);
+            _meterRegistry.TryCompleteStart(batch, BatchStatus.Stopped);
             throw;
         }
         finally
         {
             _startingProgress.TryRemove(batchId, out _);
-            var finalProgress = new BatchMaterializationProgress(batch.Id, total, total);
+            lock (_startLock)
+            {
+                _starts.Remove(batchId);
+                startCancellation.Dispose();
+            }
+            var finalProgress = new BatchMaterializationProgress(batch.Id,
+                batch.Status == BatchStatus.Running ? total : 0, total);
             OnProgressChanged?.Invoke(finalProgress);
         }
     }
@@ -175,6 +223,7 @@ public sealed class MeterSessionManager
         bool selectRandomly = false)
     {
         long total = Math.Min(batch.EndIndex - batch.StartIndex + 1, Math.Max(0, maximumMeters ?? int.MaxValue));
+        var sessions = _sessions;
 
         // A partial benchmark must not repeatedly favour the first meter IDs in a batch. Generate
         // a unique random sample before materializing sessions; full-batch callers keep the cheap
@@ -209,7 +258,8 @@ public sealed class MeterSessionManager
         {
             long index = selectedIndexes is null ? batch.StartIndex + ordinal : selectedIndexes[ordinal];
             var meter = new MeterRef(index, batch.NicType);
-            result[ordinal] = (meter, GetOrCreate(meter));
+            ct.ThrowIfCancellationRequested();
+            result[ordinal] = (meter, GetOrCreate(meter, sessions));
 
             long count = Interlocked.Increment(ref materialized);
             if (count % progressStride == 0 || count == total)

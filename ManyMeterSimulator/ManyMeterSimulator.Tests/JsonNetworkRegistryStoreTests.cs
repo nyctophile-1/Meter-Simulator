@@ -18,6 +18,40 @@ public class JsonNetworkRegistryStoreTests : IDisposable
         }
     }
 
+    [Theory]
+    [InlineData(DatabaseProvider.SqlServer, "Server=localhost;Database=hes;User ID=test;Password=s3cret")]
+    [InlineData(DatabaseProvider.PostgreSql, "Host=localhost;Database=hes;Username=test;Password=s3cret")]
+    public void DatabaseConnections_PersistEncrypted_AndSurviveEnvironmentEdits(DatabaseProvider provider, string connectionString)
+    {
+        var registry = new NetworkRegistry(NewStore());
+        registry.SaveDatabase(new DatabaseConnection { Key = "hes-db", Provider = provider, ConnectionString = connectionString }, false);
+        registry.AddEnvironment(new HesEnvironment { Key = "hes", BrokerHost = "localhost" }, false);
+        Assert.DoesNotContain("s3cret", File.ReadAllText(FilePath));
+        var restored = new NetworkRegistry(NewStore());
+        var database = Assert.Single(restored.Databases);
+        Assert.Equal(provider, database.Provider);
+        Assert.Equal(connectionString, database.ConnectionString);
+        using var connection = database.CreateConnection();
+        Assert.Equal("hes", connection.Database);
+        restored.ImportSnapshot(registry.Snapshot());
+        Assert.Equal(connectionString, Assert.Single(restored.Databases).ConnectionString);
+        restored.DeleteDatabase("hes-db");
+        Assert.Empty(new NetworkRegistry(NewStore()).Databases);
+        Assert.Single(new NetworkRegistry(NewStore()).Environments);
+    }
+
+    [Fact]
+    public void InvalidDatabaseImport_DoesNotReplaceExistingEndpoints()
+    {
+        var registry = new NetworkRegistry(NewStore());
+        registry.AddEnvironment(new HesEnvironment { Key = "keep", BrokerHost = "localhost" }, false);
+        Assert.Throws<ArgumentException>(() => registry.ImportSnapshot(new NetworkRegistrySnapshot
+        {
+            Databases = [new DatabaseConnection { Key = "bad", ConnectionString = "invalid" }],
+        }));
+        Assert.Equal("keep", Assert.Single(registry.Environments).Key);
+    }
+
     private JsonNetworkRegistryStore NewStore(ISecretProtector? protector = null) =>
         new(FilePath, protector ?? new ReversingProtector());
 

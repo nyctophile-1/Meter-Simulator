@@ -75,7 +75,7 @@ public sealed class CustomPullIngress
             return CustomPullIngressResult.Unsupported(profileError);
         }
 
-        if (meter.Index > MaxNodeId(protocol.WireProfile.NodeIdBytes))
+        if (MeterNodeIds.Value(meter.Index) > MaxNodeId(protocol.WireProfile.NodeIdBytes))
         {
             return CustomPullIngressResult.Unsupported(
                 $"meter node id {meter.NodeId} does not fit the template's {protocol.WireProfile.NodeIdBytes}-byte field");
@@ -86,7 +86,7 @@ public sealed class CustomPullIngress
             return CustomPullIngressResult.Malformed(parseError ?? "custom request could not be parsed");
         }
 
-        uint expectedNodeId = checked((uint)meter.Index);
+        uint expectedNodeId = MeterNodeIds.Value(meter.Index);
         if (request.FromNodeId != expectedNodeId || request.ToNodeId != expectedNodeId)
         {
             return CustomPullIngressResult.Malformed(

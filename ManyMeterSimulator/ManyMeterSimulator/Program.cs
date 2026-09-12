@@ -149,6 +149,7 @@ builder.Services.AddDataProtection()
 builder.Services.AddSingleton<ISecretProtector, DataProtectionSecretProtector>();
 builder.Services.AddSingleton<INetworkRegistryStore, JsonNetworkRegistryStore>();
 builder.Services.AddSingleton<EndpointProber>();
+builder.Services.AddSingleton<DatabaseConnectionProber>();
 builder.Services.AddSingleton<NetworkRegistry>();
 // Registered after MeterRegistry: it is the one place that sees both registries, which is what
 // lets neither of them depend on the other.
@@ -179,6 +180,7 @@ else
     builder.Services.AddSingleton<IMeterSimBridge, BrainMeterSimBridge>();
 }
 
+builder.Services.AddHostedService<BatchRecoveryService>();
 builder.Services.AddHostedService<TcpNicListenerService>();
 // NIC-agnostic housekeeping (idle reaping + metrics summary) — serves every NIC, not just TCP.
 builder.Services.AddHostedService<SessionMaintenanceService>();
@@ -198,6 +200,8 @@ builder.Services.AddSingleton<MqttNicListenerService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<MqttNicListenerService>());
 // Same instance, seen as the narrow push-publish interface by PushCoordinator.
 builder.Services.AddSingleton<IMqttPushPublisher>(sp => sp.GetRequiredService<MqttNicListenerService>());
+builder.Services.AddSingleton<IMqttRoutingPublisher, MqttRoutingPublisher>();
+builder.Services.AddHostedService<MqttRoutingService>();
 
 // Registered after the listener: for a broker that is IN USE the monitor reports that client's live
 // status rather than probing, since a probe can succeed while the real client is stuck in backoff.
@@ -253,31 +257,6 @@ MeterSimulator.Diagnostics.CoreLog.Configure(
                 migrated, defaultKey);
     }
 
-    // Restore materialized meter sessions for batches that were running before restart.
-    // Their persisted state only says they were active before shutdown; their meter sessions are
-    // not in memory yet. Route restoration through StartBatchAsync so each batch visibly moves to
-    // Loading, publishes its materialization progress, and becomes Running only when ready.
-    var sessionManager = app.Services.GetRequiredService<MeterSessionManager>();
-    var runningBatches = meterRegistry.Batches.Where(b => b.Status == BatchStatus.Running).ToList();
-    if (runningBatches.Count > 0)
-    {
-        var logger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("ManyMeterSimulator.Startup");
-        var restores = runningBatches.Select(async batch =>
-        {
-            try
-            {
-                await sessionManager.StartBatchAsync(batch.Id);
-                logger.LogInformation("Reloaded {Count} meter sessions for batch {BatchId} ({BatchName}) on startup",
-                    batch.Count, batch.Id, batch.Name);
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Failed to reload batch {BatchId} ({BatchName}) on startup", batch.Id, batch.Name);
-            }
-        }).ToArray();
-
-        _ = Task.WhenAll(restores);
-    }
 }
 
 if (!app.Environment.IsDevelopment())

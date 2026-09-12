@@ -18,7 +18,7 @@ public class MeterRefTests
     [InlineData(1)]
     [InlineData(1005)]
     [InlineData(70_000)]        // past a 16-bit boundary
-    [InlineData(999_999_999)]
+    [InlineData(99_999_999)]
     public void TcpAddress_AndNodeId_ResolveToTheSameMeter(long index)
     {
         IPAddress address = MeterAddressing.ComputeAddress(Prefix, index);
@@ -40,16 +40,16 @@ public class MeterRefTests
     {
         var meter = new MeterRef(5, NicType.MqttWirepas);
 
-        Assert.Equal("5", meter.NodeId);
+        Assert.Equal("1000000005", meter.NodeId);
         Assert.Equal("MY00000005", meter.Serial);
         Assert.Equal(MeterRegistry.FormatSerial(5), meter.Serial);
     }
 
     /// <summary>A fixed-width node id from a topic or protobuf field must still resolve.</summary>
     [Theory]
-    [InlineData("1005", 1005)]
-    [InlineData("0001005", 1005)]
-    [InlineData("00000000001", 1)]
+    [InlineData("1000001005", 1005)]
+    [InlineData("0001000001005", 1005)]
+    [InlineData("01000000001", 1)]
     public void TryFromNodeId_ToleratesZeroPadding(string nodeId, long expected)
     {
         Assert.True(MeterRef.TryFromNodeId(nodeId, NicType.Mqtt4G, out MeterRef meter));
@@ -63,6 +63,10 @@ public class MeterRefTests
     [InlineData("not-a-node")]
     [InlineData("0")]           // index is 1-based; 0 is not a meter
     [InlineData("-4")]
+    [InlineData("1")]
+    [InlineData("1000000000")]
+    [InlineData("1100000000")]
+    [InlineData("+1000000001")]
     public void TryFromNodeId_RejectsJunk(string? nodeId)
     {
         Assert.False(MeterRef.TryFromNodeId(nodeId, NicType.Mqtt4G, out MeterRef meter));
@@ -80,5 +84,5 @@ public class MeterRefTests
         Assert.NotEqual(new MeterRef(7, NicType.Mqtt4G), new MeterRef(8, NicType.Mqtt4G));
     }
 
-    private static string MeterIdentityNodeId(long index) => MeterSimulator.Models.MeterIdentity.NodeId(index);
+    private static string MeterIdentityNodeId(long index) => MeterNodeIds.Format(index);
 }

@@ -9,8 +9,8 @@ namespace ManyMeterSimulator.Provisioning;
 
 /// <summary>
 /// Download endpoint for a batch's meter registration list (index, node id, serial, IPv6, port) —
-/// the same shape the HES is registered with. Node id is present for every NIC; the IPv6 and port
-/// columns are blank for the MQTT NICs, which have no per-meter address. Streamed rather than built
+/// the same shape the HES is registered with. Every NIC has a reserved node id, IPv6 and TCP port;
+/// the selected NIC determines which transport is active. Streamed rather than built
 /// in memory so a large batch (millions of meters) downloads without materialising the whole file.
 /// Any authenticated user may download.
 /// </summary>
@@ -28,8 +28,7 @@ public static class BatchEndpoints
                 }
 
                 string prefix = tcp.Value.AddressPrefix;
-                bool isTcp = batch.NicType == NicType.Tcp4G;
-                string port = isTcp ? tcp.Value.ListenPort.ToString() : string.Empty;
+                string port = tcp.Value.ListenPort.ToString();
                 string templateName = batch.TemplateName;
                 string nic = batch.NicType.ToString();
                 string fileName = $"batch-{SanitizeFileName(batch.Name)}-meters.csv";
@@ -41,9 +40,9 @@ public static class BatchEndpoints
                     await writer.WriteLineAsync("\"index\",\"nodeid\",\"serial\",\"nic\",\"ipv6\",\"port\",\"template\"");
                     foreach ((long index, IPAddress address, string serial) in registry.GetMeters(batch, prefix))
                     {
-                        string ip = isTcp ? address.ToString() : string.Empty;
+                        string ip = address.ToString();
                         await writer.WriteLineAsync(
-                            $"\"{index}\",\"{MeterIdentity.NodeId(index)}\",\"{serial}\",\"{nic}\",\"{ip}\",\"{port}\",\"{templateName}\"");
+                            $"\"{index}\",\"{MeterNodeIds.Format(index)}\",\"{serial}\",\"{nic}\",\"{ip}\",\"{port}\",\"{EscapeCsv(templateName)}\"");
                     }
                 }, "text/csv", fileName);
             })
@@ -70,17 +69,16 @@ public static class BatchEndpoints
 
                     foreach (MeterBatch batch in batches)
                     {
-                        bool isTcp = batch.NicType == NicType.Tcp4G;
-                        string port = isTcp ? tcpPort : string.Empty;
+                        string port = tcpPort;
                         string nic = batch.NicType.ToString();
                         string batchName = EscapeCsv(batch.Name);
                         string templateName = EscapeCsv(batch.TemplateName);
 
                         foreach ((long index, IPAddress address, string serial) in registry.GetMeters(batch, prefix))
                         {
-                            string ip = isTcp ? address.ToString() : string.Empty;
+                            string ip = address.ToString();
                             await writer.WriteLineAsync(
-                                $"\"{index}\",\"{MeterIdentity.NodeId(index)}\",\"{serial}\",\"{nic}\",\"{ip}\",\"{port}\",\"{templateName}\",\"{batchName}\"");
+                                $"\"{index}\",\"{MeterNodeIds.Format(index)}\",\"{serial}\",\"{nic}\",\"{ip}\",\"{port}\",\"{templateName}\",\"{batchName}\"");
                         }
                     }
                 }, "text/csv", "all-meters.csv");

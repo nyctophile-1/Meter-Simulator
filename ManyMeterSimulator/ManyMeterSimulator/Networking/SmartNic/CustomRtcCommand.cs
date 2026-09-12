@@ -70,7 +70,7 @@ public sealed class CustomRtcCommand(MeterSessionManager sessions)
     {
         ValidateProfile(inbound.Protocol);
         bool modern = inbound.Protocol.WireProfile == CustomPullWireProfile.NewHeader;
-        if (!modern && inbound.Meter.Index > 0xFFFFFF)
+        if (!modern && MeterNodeIds.Value(inbound.Meter.Index) > 0xFFFFFF)
             throw new NotSupportedException("This legacy HES response layout carries only a 24-bit RF node ID.");
         // HES GetDateTime subtracts 330 minutes; GetRTC adds them back for JsonResponse.Value.
         // Encode the DLMS clock's wall time, not the host timezone's interpretation of it.
@@ -81,14 +81,15 @@ public sealed class CustomRtcCommand(MeterSessionManager sessions)
         {
             body[1] = 0x01; // low nibble: one row; high nibble: clock status zero
             body[2] = (byte)'M'; body[3] = (byte)'Y';
+            // This field is the numeric meter serial, not the RF node address.
             BinaryPrimitives.WriteUInt32LittleEndian(body.AsSpan(4), checked((uint)inbound.Meter.Index));
         }
         else
         {
-            uint node = checked((uint)inbound.Meter.Index);
+            uint node = MeterNodeIds.Value(inbound.Meter.Index);
             body[1] = (byte)node; body[2] = (byte)(node >> 8); body[3] = (byte)(node >> 16);
             body[4] = (byte)'M'; body[5] = (byte)'Y';
-            BinaryPrimitives.WriteUInt32LittleEndian(body.AsSpan(6), node);
+            BinaryPrimitives.WriteUInt32LittleEndian(body.AsSpan(6), checked((uint)inbound.Meter.Index));
             body[11] = 1;
         }
         int at = modern ? 11 : 12;

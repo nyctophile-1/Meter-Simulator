@@ -1,3 +1,5 @@
+using ManyMeterSimulator.Networking.Nic;
+
 namespace ManyMeterSimulator.Networking.Mqtt;
 
 /// <summary>
@@ -9,6 +11,21 @@ namespace ManyMeterSimulator.Networking.Mqtt;
 /// </summary>
 public static class NicTopics
 {
+    public const string FakeRoutingPrefix = "FakeRouting/";
+
+    public static string FakeRouting(string nodeId, NicType nicType)
+    {
+        var transport = nicType switch
+        {
+            NicType.Tcp4G => "4",
+            NicType.Mqtt4G or NicType.Mqtt4GImg => "3",
+            NicType.MqttWirepas => "2",
+            NicType.MqttKmesh => "1",
+            _ => throw new ArgumentOutOfRangeException(nameof(nicType), nicType, "Unknown routing transport.")
+        };
+        return FakeRoutingPrefix + nodeId + "/" + transport;
+    }
+
     // ── Direct 4G (variants c, d) — node id is IN the topic ──
     public const string Direct4GRequestFilter = "PollRequest/#";
     public const string Direct4GResponsePrefix = "PollResponse/";

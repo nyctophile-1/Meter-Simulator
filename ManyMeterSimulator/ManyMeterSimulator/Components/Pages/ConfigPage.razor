@@ -66,7 +66,7 @@ else
                 <td class="col-flex">
                     <MudText Typo="Typo.body1">Network</MudText>
                     <MudText Typo="Typo.caption" Class="mud-text-secondary">
-                        MQTT brokers and HES push targets. Broker passwords are plaintext in this file so it is portable — treat it as a secret.
+                        Environments and database connections. Exported passwords and connection strings are plaintext; treat the file as a secret.
                     </MudText>
                 </td>
                 <td style="text-align:right">
@@ -254,10 +254,10 @@ else
             return;
         }
 
-        int brokers, pushTargets;
+        int environments, databases;
         try
         {
-            (brokers, pushTargets) = ConfigBundles.PreviewNetwork(json);
+            (environments, databases) = ConfigBundles.PreviewNetwork(json);
         }
         catch (ArgumentException ex)
         {
@@ -267,8 +267,8 @@ else
 
         bool? confirmed = await DialogService.ShowMessageBoxAsync(
             "Replace all network endpoints?",
-            $"This file holds {brokers} broker(s) and {pushTargets} push target(s). Importing REPLACES " +
-            "every current broker and push target. Broker passwords in the file are re-encrypted under " +
+            $"This file holds {environments} environment(s) and {databases} database connection(s). Importing REPLACES " +
+            "all current environments and database connections. Credentials in the file are re-encrypted under " +
             "this host. Batches keep their bindings by name. This cannot be undone.",
             yesText: "Replace endpoints", cancelText: "Cancel");
 
@@ -280,7 +280,7 @@ else
         try
         {
             (int b, int p) = ConfigBundles.ImportNetwork(json);
-            Snackbar.Add($"Imported {b} broker(s) and {p} push target(s).", Severity.Success);
+            Snackbar.Add($"Imported {b} environment(s) and {p} database connection(s).", Severity.Success);
         }
         catch (ArgumentException ex)
         {

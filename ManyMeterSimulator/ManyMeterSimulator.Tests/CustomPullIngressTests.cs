@@ -14,30 +14,30 @@ public class CustomPullIngressTests
     public void ResolvesTheBatchBeforeParsingAndProducesTypedInboundWork()
     {
         MeterRegistry registry = RegistryFor(templateId: 41, startIndex: 42);
-        var ingress = new CustomPullIngress(registry, ResolverForLegacyTemplate(41));
+        var ingress = new CustomPullIngress(registry, ResolverForLegacyTemplate(41, fourBytes: true));
 
         CustomPullIngressResult result = ingress.Decode(
             new MeterRef(42, NicType.MqttWirepas),
-            Request(CustomPullWireProfile.Legacy, 42, 42));
+            Request(CustomPullWireProfile.LegacyFg23, 1000000042, 1000000042));
 
         Assert.True(result.IsComplete, result.Detail);
         Assert.Equal(41, result.Inbound!.Value.Protocol.HesTemplateId);
-        Assert.Equal(42u, result.Inbound!.Value.Request.FromNodeId);
-        Assert.Equal(42u, result.Inbound!.Value.Request.ToNodeId);
+        Assert.Equal(1000000042u, result.Inbound!.Value.Request.FromNodeId);
+        Assert.Equal(1000000042u, result.Inbound!.Value.Request.ToNodeId);
     }
 
     [Fact]
     public void RejectsInnerNodeIdsThatDoNotMatchTheWirepasDestination()
     {
         MeterRegistry registry = RegistryFor(templateId: 41, startIndex: 42);
-        var ingress = new CustomPullIngress(registry, ResolverForLegacyTemplate(41));
+        var ingress = new CustomPullIngress(registry, ResolverForLegacyTemplate(41, fourBytes: true));
 
         CustomPullIngressResult result = ingress.Decode(
             new MeterRef(42, NicType.MqttWirepas),
-            Request(CustomPullWireProfile.Legacy, 41, 42));
+            Request(CustomPullWireProfile.LegacyFg23, 1000000041, 1000000042));
 
         Assert.Equal(CustomPullIngressStatus.Malformed, result.Status);
-        Assert.Contains("do not match outer destination 42", result.Detail);
+        Assert.Contains("do not match outer destination 1000000042", result.Detail);
     }
 
     [Fact]
@@ -56,7 +56,7 @@ public class CustomPullIngressTests
     [Fact]
     public void RejectsLegacyThreeByteTemplateForAnUnrepresentableMeterId()
     {
-        const long tooLargeForThreeBytes = 0x01_00_00_00;
+        const long tooLargeForThreeBytes = 1;
         MeterRegistry registry = RegistryFor(templateId: 41, startIndex: tooLargeForThreeBytes);
         var ingress = new CustomPullIngress(registry, ResolverForLegacyTemplate(41));
 
@@ -127,7 +127,7 @@ public class CustomPullIngressTests
         return registry;
     }
 
-    private static CustomPullProtocolResolver ResolverForLegacyTemplate(int templateId)
+    private static CustomPullProtocolResolver ResolverForLegacyTemplate(int templateId, bool fourBytes = false)
     {
         string folder = Path.Combine(Path.GetTempPath(), $"custom-pull-ingress-{Guid.NewGuid():N}");
         Directory.CreateDirectory(folder);
@@ -135,7 +135,7 @@ public class CustomPullIngressTests
         {
             File.WriteAllText(Path.Combine(folder, "MeterTemplate.csv"),
                 "\"Id\",\"TemplateName\",\"PushHeaderLength\",\"PullHeaderLength\",\"IsFG23\"\n" +
-                $"\"{templateId}\",\"legacy\",\"10\",\"10\",\"0\"\n");
+                $"\"{templateId}\",\"legacy\",\"10\",\"10\",\"{(fourBytes ? 1 : 0)}\"\n");
             HesDataModel model = new HesDataModelLoader(NullLogger<HesDataModelLoader>.Instance).Load(folder);
             return new CustomPullProtocolResolver(model);
         }

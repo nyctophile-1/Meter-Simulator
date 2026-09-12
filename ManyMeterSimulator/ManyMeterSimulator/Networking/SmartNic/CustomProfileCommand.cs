@@ -273,7 +273,7 @@ public sealed class CustomProfileCommand(MeterSessionManager sessions, HesDataMo
     public static byte[] Header(CustomPullInbound inbound, byte profile, byte rows)
     {
         bool modern = inbound.Protocol.WireProfile == CustomPullWireProfile.NewHeader;
-        uint node = checked((uint)inbound.Meter.Index);
+        uint node = ManyMeterSimulator.Provisioning.MeterNodeIds.Value(inbound.Meter.Index);
         if (!modern && node > 0xFFFFFF) throw new NotSupportedException("Legacy profile header has a 24-bit node ID.");
         if (modern && rows > 15) throw new ArgumentOutOfRangeException(nameof(rows));
         byte[] body = new byte[modern ? 11 : 12];
@@ -281,13 +281,13 @@ public sealed class CustomProfileCommand(MeterSessionManager sessions, HesDataMo
         if (modern)
         {
             body[1] = rows; body[2] = (byte)'M'; body[3] = (byte)'Y';
-            BinaryPrimitives.WriteUInt32LittleEndian(body.AsSpan(4), node);
+            BinaryPrimitives.WriteUInt32LittleEndian(body.AsSpan(4), checked((uint)inbound.Meter.Index));
         }
         else
         {
             body[1] = (byte)node; body[2] = (byte)(node >> 8); body[3] = (byte)(node >> 16);
             body[4] = (byte)'M'; body[5] = (byte)'Y';
-            BinaryPrimitives.WriteUInt32LittleEndian(body.AsSpan(6), node); body[11] = rows;
+            BinaryPrimitives.WriteUInt32LittleEndian(body.AsSpan(6), checked((uint)inbound.Meter.Index)); body[11] = rows;
         }
         return body;
     }

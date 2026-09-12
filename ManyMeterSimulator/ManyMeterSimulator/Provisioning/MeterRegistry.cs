@@ -71,11 +71,18 @@ public sealed class MeterRegistry
         }
     }
 
+    public long RemainingCapacity
+    {
+        get { lock (_lock) return MaxIndex - _nextIndex + 1; }
+    }
+
     /// <summary>What the next batch of the given size would reserve, without reserving anything yet.</summary>
     public BatchPreview PreviewNextBatch(string addressPrefixCidr, long count)
     {
         lock (_lock)
         {
+            if (count <= 0 || count > MaxIndex - _nextIndex + 1)
+                throw new ArgumentOutOfRangeException(nameof(count), "Requested range exceeds remaining meter capacity.");
             long start = _nextIndex;
             long end = start + count - 1;
             return new BatchPreview(
@@ -83,8 +90,8 @@ public sealed class MeterRegistry
                 MeterAddressing.ComputeAddress(addressPrefixCidr, end),
                 FormatSerial(start),
                 FormatSerial(end),
-                MeterIdentity.NodeId(start),
-                MeterIdentity.NodeId(end));
+                MeterNodeIds.Format(start),
+                MeterNodeIds.Format(end));
         }
     }
 
@@ -129,7 +136,7 @@ public sealed class MeterRegistry
         MeterBatch added;
         lock (_lock)
         {
-            if (_nextIndex + count - 1 > MaxIndex)
+            if (count > MaxIndex - _nextIndex + 1)
             {
                 long remaining = MaxIndex - _nextIndex + 1;
                 throw new InvalidOperationException(
@@ -254,7 +261,32 @@ public sealed class MeterRegistry
 
     public bool TryMarkStarting(int batchId) => TrySetStatus(batchId, BatchStatus.Starting);
 
+    public bool TryMarkStarting(MeterBatch expected)
+    {
+        lock (_lock)
+        {
+            if (!_batches.Contains(expected)) return false;
+            expected.Status = BatchStatus.Starting;
+            Persist();
+        }
+        Changed?.Invoke();
+        return true;
+    }
+
     public bool TryStop(int batchId) => TrySetStatus(batchId, BatchStatus.Stopped);
+
+    /// <summary>A completed loader must not restart a stopped, deleted, or replaced batch.</summary>
+    public bool TryCompleteStart(MeterBatch expected, BatchStatus status = BatchStatus.Running)
+    {
+        lock (_lock)
+        {
+            if (!_batches.Contains(expected) || expected.Status != BatchStatus.Starting) return false;
+            expected.Status = status;
+            Persist();
+        }
+        Changed?.Invoke();
+        return true;
+    }
 
     public bool Delete(int batchId)
     {
@@ -307,7 +339,7 @@ public sealed class MeterRegistry
 
     /// <summary>
     /// First/last address of a batch's own range - O(1), doesn't enumerate the whole batch.
-    /// Only meaningful for <see cref="NicType.Tcp4G"/> batches; the MQTT NICs are reached by node id.
+    /// Reserved for every NIC; TCP activates these addresses and MQTT currently uses node ids.
     /// </summary>
     public (IPAddress First, IPAddress Last) GetAddressRange(MeterBatch batch, string addressPrefixCidr) =>
         (MeterAddressing.ComputeAddress(addressPrefixCidr, batch.StartIndex),
@@ -319,7 +351,7 @@ public sealed class MeterRegistry
     /// provisioning. O(1).
     /// </summary>
     public (string First, string Last) GetNodeIdRange(MeterBatch batch) =>
-        (MeterIdentity.NodeId(batch.StartIndex), MeterIdentity.NodeId(batch.EndIndex));
+        (MeterNodeIds.Format(batch.StartIndex), MeterNodeIds.Format(batch.EndIndex));
 
     /// <summary>
     /// The batch that owns this meter index, or null if the index isn't part of any batch. The
@@ -467,7 +499,7 @@ public sealed class MeterRegistry
     /// <summary>Builds a snapshot of current state. Caller must hold <see cref="_lock"/>.</summary>
     private BatchStoreSnapshot BuildSnapshot() => new()
     {
-        Version = _storeVersion,
+        Version = BatchStoreSnapshot.CurrentVersion,
         NextIndex = _nextIndex,
         NextBatchId = _nextBatchId,
         Batches = _batches.Select(b => new PersistedBatch

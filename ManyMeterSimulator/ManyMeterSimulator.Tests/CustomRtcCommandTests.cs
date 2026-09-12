@@ -22,7 +22,7 @@ namespace ManyMeterSimulator.Tests;
 public class CustomRtcCommandTests
 {
     [Fact]
-    public void ParsedGetRtc_ReadsTheBrain_AndProducesEndpoint13Response()
+    public void LegacyGetRtc_RejectsTheReservedNodeRangeWithoutTruncation()
     {
         var registry = new MeterRegistry();
         registry.ImportSnapshot(new BatchStoreSnapshot
@@ -42,30 +42,14 @@ public class CustomRtcCommandTests
             // Literal HES legacy packet: length, fragments, frame, from/to node, command, selector, data.
             byte[] request = Convert.FromHexString("160101CDAB2A00002A00003001000000000000000000");
             var decoded = ingress.Decode(new MeterRef(42, NicType.MqttWirepas), request);
-            Assert.True(decoded.IsComplete, decoded.Detail);
-            var templates = new TemplateRegistry(Options.Create(new TemplateOptions { Folder = Path.Combine(AppContext.BaseDirectory, "Templates") }),
-                new TestEnvironment(), NullLogger<TemplateRegistry>.Instance);
-            var sessions = new MeterSessionManager(registry, templates, Options.Create(new BrainOptions()), Options.Create(new TcpOptions()), NullLogger<MeterSessionManager>.Instance);
-            var processor = new CustomRtcCommand(sessions);
-            byte[] framed = processor.Execute(decoded.Inbound!.Value, CancellationToken.None);
-            var publish = WirepasCustomPushEnvelope.Create("test-gw", "sink7", "42", 13, framed);
-            Assert.Equal("gw-event/received_data/test-gw/sink7/42/13/13", publish.Topic);
-            using var stream = new MemoryStream(publish.Payload);
-            var packet = Serializer.Deserialize<GenericMessage>(stream).wirepas.packet_received_event;
-            Assert.Equal(13u, packet.source_endpoint);
-            Assert.Equal(13u, packet.destination_endpoint);
-            Assert.Equal((uint)framed.Length, packet.payload_size);
-            Assert.Equal(0xABCD, BinaryPrimitives.ReadUInt16LittleEndian(packet.payload.AsSpan(3)));
-            uint epoch = BinaryPrimitives.ReadUInt32LittleEndian(packet.payload.AsSpan(28));
-            Assert.InRange(DateTimeOffset.FromUnixTimeSeconds(epoch), DateTimeOffset.UtcNow.AddSeconds(-5), DateTimeOffset.UtcNow.AddSeconds(5));
-            registry.TryStop(1);
-            Assert.Throws<InvalidOperationException>(() => processor.Execute(decoded.Inbound.Value, CancellationToken.None));
+            Assert.Equal(CustomPullIngressStatus.Unsupported, decoded.Status);
+            Assert.Contains("does not fit", decoded.Detail);
         }
         finally { Directory.Delete(folder, true); }
     }
 
     [Fact]
-    public void ExactEqaGetRtc_UsesSelectedMagicAndPreservesFrame()
+    public void EqaGetRtc_UsesReservedNodeId_PreservesSerialAndFrame()
     {
         var registry = new MeterRegistry();
         registry.ImportSnapshot(new BatchStoreSnapshot
@@ -85,6 +69,9 @@ public class CustomRtcCommandTests
             var ingress = new CustomPullIngress(registry, new CustomPullProtocolResolver(model, Options.Create(new CustomPullOptions { ResponseMagicNumbers = new() { [93] = 1050946 } })));
             // Literal HES legacy packet: length, fragments, frame, from/to node, command, selector, data.
             byte[] request = Convert.FromHexString("1C01012715000055340300553403003001000000000000000000B294");
+            BinaryPrimitives.WriteUInt32LittleEndian(request.AsSpan(7), 1000210005);
+            BinaryPrimitives.WriteUInt32LittleEndian(request.AsSpan(11), 1000210005);
+            ManyMeterSimulator.Networking.Mqtt.Codecs.Rf2Framing.Crc(request[..^2]).CopyTo(request, request.Length - 2);
             var decoded = ingress.Decode(new MeterRef(210005, NicType.MqttWirepas), request);
             Assert.True(decoded.IsComplete, decoded.Detail);
             var templates = new TemplateRegistry(Options.Create(new TemplateOptions { Folder = Path.Combine(AppContext.BaseDirectory, "Templates") }),
@@ -92,8 +79,8 @@ public class CustomRtcCommandTests
             var sessions = new MeterSessionManager(registry, templates, Options.Create(new BrainOptions()), Options.Create(new TcpOptions()), NullLogger<MeterSessionManager>.Instance);
             var processor = new CustomRtcCommand(sessions);
             byte[] framed = processor.Execute(decoded.Inbound!.Value, CancellationToken.None);
-            var publish = WirepasCustomPushEnvelope.Create("test-gw", "sink7", "210005", 13, framed);
-            Assert.Equal("gw-event/received_data/test-gw/sink7/210005/13/13", publish.Topic);
+            var publish = WirepasCustomPushEnvelope.Create("test-gw", "sink7", decoded.Inbound.Value.Meter.NodeId, 13, framed);
+            Assert.Equal("gw-event/received_data/test-gw/sink7/1000210005/13/13", publish.Topic);
             using var stream = new MemoryStream(publish.Payload);
             var packet = Serializer.Deserialize<GenericMessage>(stream).wirepas.packet_received_event;
             Assert.Equal(13u, packet.source_endpoint);
@@ -101,6 +88,7 @@ public class CustomRtcCommandTests
             Assert.Equal((uint)framed.Length, packet.payload_size);
             Assert.Equal(5415u, BinaryPrimitives.ReadUInt32LittleEndian(packet.payload.AsSpan(8)));
             Assert.Equal(1050946u, BinaryPrimitives.ReadUInt32LittleEndian(packet.payload));
+            Assert.Equal(210005u, BinaryPrimitives.ReadUInt32LittleEndian(packet.payload.AsSpan(16)));
             uint epoch = BinaryPrimitives.ReadUInt32LittleEndian(packet.payload.AsSpan(29));
             Assert.InRange(DateTimeOffset.FromUnixTimeSeconds(epoch), DateTimeOffset.UtcNow.AddSeconds(-5), DateTimeOffset.UtcNow.AddSeconds(5));
             registry.TryStop(1);
@@ -152,6 +140,11 @@ public class CustomRtcCommandTests
     {
         CustomPullInbound inbound = Request(modern);
         var wallTime = new DateTime(2026, 9, 10, 17, 23, 45, DateTimeKind.Utc);
+        if (!modern)
+        {
+            Assert.Throws<NotSupportedException>(() => CustomRtcCommand.Encode(inbound, new GXDateTime(wallTime)));
+            return;
+        }
         byte[] packet = CustomRtcCommand.Encode(inbound, new GXDateTime(wallTime));
         // Independent offsets from MQTTSendCustomCommandClient.ParseProfileData/GetRTC.
         int header = modern ? 12 : 10;
@@ -180,7 +173,7 @@ public class CustomRtcCommandTests
     {
         var meter = new MeterRef(42, NicType.MqttWirepas);
         uint frameId = modern ? 0xFEDC1234 : 0xABCDu;
-        var request = new CustomPullRequest(1, 1, frameId, 42, 42, 48, CustomPullWireSelector.GetWithoutData, 0, 0, 0);
+        var request = new CustomPullRequest(1, 1, frameId, 1000000042, 1000000042, 48, CustomPullWireSelector.GetWithoutData, 0, 0, 0);
         Assert.True(CustomPullCommandDecoder.TryDecode(meter, request, out var intent, out _));
         return new CustomPullInbound(meter, new MeterBatch { Id = 1, Name = "rtc", TemplateName = "meter.xml", StartIndex = 42, Count = 1 },
             new CustomPullProtocolProfile(41, modern ? CustomPullWireProfile.NewHeader : CustomPullWireProfile.Legacy, modern ? 123u : null), request, intent);
