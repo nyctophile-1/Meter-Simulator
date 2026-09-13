@@ -25,14 +25,12 @@ public interface IBatchStore
 public sealed record BatchStoreSnapshot
 {
     /// <summary>
-    /// Schema version of the persisted document. A file written before the network registry existed
-    /// has no such property and therefore deserializes to 0, which is the signal
-    /// <see cref="MeterRegistry.MigrateLegacyBindings"/> uses to bind pre-registry MQTT batches to
-    /// the seeded default broker exactly once (network_registry.md §3.2).
+    /// Version 2 introduces MAYA's reserved node range. JsonBatchStore resets older fleets once;
+    /// importing a pre-revamp batch export is rejected instead of silently changing its identities.
     /// </summary>
-    public const int CurrentVersion = 1;
+    public const int CurrentVersion = 2;
 
-    /// <summary>0 means "written before the network registry"; see <see cref="CurrentVersion"/>.</summary>
+    /// <summary>Missing versions deserialize as 0 so the on-disk migration can identify old fleets.</summary>
     public int Version { get; init; }
 
     public long NextIndex { get; init; } = 1;

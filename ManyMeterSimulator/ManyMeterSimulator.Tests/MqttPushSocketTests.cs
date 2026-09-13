@@ -2,12 +2,44 @@ using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using ManyMeterSimulator.Networking.Mqtt;
+using ManyMeterSimulator.Networking.Nic;
+using ManyMeterSimulator.Networking.Registry;
+using ManyMeterSimulator.Provisioning;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace ManyMeterSimulator.Tests;
 
 /// <summary>Real MQTTnet clients against a loopback-only MQTT fixture; no configured broker is used.</summary>
 public class MqttPushSocketTests
 {
+    [Theory]
+    [InlineData(NicType.Tcp4G, 4)]
+    [InlineData(NicType.Mqtt4G, 3)]
+    [InlineData(NicType.Mqtt4GImg, 3)]
+    [InlineData(NicType.MqttWirepas, 2)]
+    [InlineData(NicType.MqttKmesh, 1)]
+    public async Task RoutingPublishesForEveryNicWithoutAListenerWithEmptyPayloadAndNoRetain(NicType nic, int transportType)
+    {
+        await using var broker = new LoopbackBroker();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var network = new NetworkRegistry();
+        network.AddBroker(new BrokerEndpoint { Key = "routing", Host = "127.0.0.1", Port = broker.Port }, false);
+        var registry = new MeterRegistry();
+        var batch = registry.AddBatch("routing", "test.xml", 1, nic, null, "routing");
+        registry.TryStart(batch.Id);
+        using var service = new MqttRoutingService(registry, network,
+            new MqttRoutingPublisher(Options.Create(new NicsOptions())), NullLogger<MqttRoutingService>.Instance);
+        await service.PublishRoutingAsync(timeout.Token);
+        while (broker.Received.IsEmpty) await Task.Delay(5, timeout.Token);
+        var packet = Assert.Single(broker.Received);
+        Assert.Equal("FakeRouting/1000000001/" + transportType, packet.Topic);
+        Assert.Equal(0, packet.PayloadLength);
+        Assert.Equal(0, packet.Qos);
+        Assert.False(packet.Retain);
+        Assert.Equal(0, broker.Subscriptions);
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(1)]
@@ -61,7 +93,7 @@ public class MqttPushSocketTests
         public int Connections;
         public int Subscriptions;
         public bool Reject { get; init; }
-        public ConcurrentQueue<(int Connection, string Topic, int Qos, byte FirstByte)> Received { get; } = new();
+        public ConcurrentQueue<(int Connection, string Topic, int Qos, byte FirstByte, int PayloadLength, bool Retain)> Received { get; } = new();
         public int Port => ((IPEndPoint)_listener.LocalEndpoint).Port;
 
         public LoopbackBroker()
@@ -123,7 +155,8 @@ public class MqttPushSocketTests
                                 int properties = ReadVariableInteger(body, ref offset);
                                 offset += properties;
                             }
-                            Received.Enqueue((connection, topic, qos, body[offset]));
+                            Received.Enqueue((connection, topic, qos, offset < body.Length ? body[offset] : (byte)0,
+                                body.Length - offset, (fixedHeader & 1) != 0));
                             if (qos > 0)
                             {
                                 byte ack = qos == 1 ? (byte)0x40 : (byte)0x50;

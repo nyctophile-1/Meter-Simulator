@@ -1,0 +1,151 @@
+@using ManyMeterSimulator.Networking.Registry
+@inject NetworkRegistry Network
+@inject DatabaseConnectionProber Prober
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<div class="d-flex align-center justify-space-between flex-wrap mt-6 mb-2" style="gap:8px;">
+    <MudText Typo="Typo.h6">Databases (@Network.Databases.Count)</MudText>
+    @if (IsAdmin)
+    {
+        <MudButton StartIcon="@Icons.Material.Filled.Add" OnClick="Add" Variant="Variant.Outlined">Add database</MudButton>
+    }
+</div>
+<MudTable T="DatabaseConnection" Items="@Network.Databases" Dense="true" Hover="true" Elevation="0">
+    <HeaderContent>
+        <MudTh>Name</MudTh><MudTh>Provider</MudTh><MudTh>Connection test</MudTh><MudTh></MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Name">@context.Key</MudTd>
+        <MudTd DataLabel="Provider">@ProviderName(context.Provider)</MudTd>
+        <MudTd DataLabel="Connection test">@(_results.GetValueOrDefault(context.Key, "Not tested"))</MudTd>
+        <MudTd>
+            @if (CanOperate)
+            {
+                <MudTooltip Text="Test connection">
+                    <MudIconButton Icon="@Icons.Material.Filled.NetworkCheck" aria-label="Test connection"
+                                   Disabled="@_testing.Contains(context.Key)" OnClick="() => Test(context)" />
+                </MudTooltip>
+            }
+            @if (IsAdmin)
+            {
+                <MudTooltip Text="Edit database">
+                    <MudIconButton Icon="@Icons.Material.Filled.Edit" aria-label="Edit database" OnClick="() => Edit(context)" />
+                </MudTooltip>
+                <MudTooltip Text="Delete database">
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" aria-label="Delete database" OnClick="() => Delete(context)" />
+                </MudTooltip>
+            }
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent><MudText Typo="Typo.body2">No database connections</MudText></NoRecordsContent>
+</MudTable>
+
+<MudDialog @bind-Visible="_open" Options="_dialogOptions">
+    <TitleContent><MudText Typo="Typo.h6">@(_editing ? "Edit database" : "Add database")</MudText></TitleContent>
+    <DialogContent>
+        <MudTextField T="string" @bind-Value="_key" Label="Name" Disabled="@_editing" Variant="Variant.Outlined" Class="mb-3" />
+        <MudSelect T="DatabaseProvider" @bind-Value="_provider" Label="Provider" Variant="Variant.Outlined" Class="mb-3">
+            <MudSelectItem Value="@DatabaseProvider.SqlServer">SQL Server</MudSelectItem>
+            <MudSelectItem Value="@DatabaseProvider.PostgreSql">PostgreSQL</MudSelectItem>
+        </MudSelect>
+        <MudTextField T="string" @bind-Value="_connectionString" Label="Connection string" InputType="InputType.Password"
+                      Variant="Variant.Outlined" HelperText="@(_editing ? "Leave blank to keep the saved connection string" : null)" />
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Class="mt-3">@_error</MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => _open = false" Disabled="@_saving">Cancel</MudButton>
+        <MudButton OnClick="() => Save(false)" Disabled="@_saving">Save</MudButton>
+        <MudButton OnClick="() => Save(true)" Disabled="@_saving" Variant="Variant.Filled" Color="Color.Primary">
+            @(_saving ? "Testing..." : "Test and save")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [Parameter] public bool IsAdmin { get; set; }
+    [Parameter] public bool CanOperate { get; set; }
+    private readonly DialogOptions _dialogOptions = new() { MaxWidth = MaxWidth.Small, FullWidth = true };
+    private readonly Dictionary<string, string> _results = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _testing = new(StringComparer.OrdinalIgnoreCase);
+    private bool _open, _editing, _saving;
+    private string _key = "", _connectionString = "";
+    private string? _error;
+    private DatabaseProvider _provider;
+
+    private static string ProviderName(DatabaseProvider provider) => provider == DatabaseProvider.SqlServer ? "SQL Server" : "PostgreSQL";
+
+    private void Add()
+    {
+        if (!IsAdmin) return;
+        _editing = false;
+        _key = _connectionString = "";
+        _provider = DatabaseProvider.SqlServer;
+        _error = null;
+        _open = true;
+    }
+
+    private void Edit(DatabaseConnection database)
+    {
+        if (!IsAdmin) return;
+        _editing = true;
+        _key = database.Key;
+        _provider = database.Provider;
+        _connectionString = "";
+        _error = null;
+        _open = true;
+    }
+
+    private async Task Save(bool test)
+    {
+        if (!IsAdmin) return;
+        _saving = true;
+        _error = null;
+        try
+        {
+            var existing = Network.Databases.FirstOrDefault(db => string.Equals(db.Key, _key, StringComparison.OrdinalIgnoreCase));
+            if (_editing && _connectionString.Length == 0 && existing?.Provider != _provider)
+                throw new ArgumentException("Enter a new connection string when changing provider.");
+            var database = new DatabaseConnection
+            {
+                Key = _key.Trim(), Provider = _provider,
+                ConnectionString = _connectionString.Length > 0 ? _connectionString : existing?.ConnectionString ?? "",
+            };
+            database.Validate();
+            if (test && !await Prober.TestAsync(database))
+            {
+                _error = "Connection failed. Check the server, database, credentials, TLS settings and network access.";
+                return;
+            }
+            Network.SaveDatabase(database, _editing);
+            _results[database.Key] = test ? "Connected" : "Not tested";
+            _connectionString = "";
+            _open = false;
+            Snackbar.Add("Database connection saved.", Severity.Success);
+        }
+        catch (ArgumentException ex) { _error = ex.Message; }
+        catch (Exception) { _error = "Could not save the database connection."; }
+        finally { _saving = false; }
+    }
+
+    private async Task Test(DatabaseConnection database)
+    {
+        if (!CanOperate || !_testing.Add(database.Key)) return;
+        _results[database.Key] = "Testing...";
+        try { _results[database.Key] = await Prober.TestAsync(database) ? "Connected" : "Connection failed"; }
+        catch (Exception) { _results[database.Key] = "Connection failed"; }
+        finally { _testing.Remove(database.Key); }
+    }
+
+    private async Task Delete(DatabaseConnection database)
+    {
+        if (!IsAdmin) return;
+        if (await DialogService.ShowMessageBoxAsync("Delete database connection?", database.Key,
+                yesText: "Delete", cancelText: "Cancel") != true) return;
+        Network.DeleteDatabase(database.Key);
+        _results.Remove(database.Key);
+    }
+}

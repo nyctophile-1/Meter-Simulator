@@ -31,7 +31,7 @@
 <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
     TCP address prefix: <code>@AddressPrefix</code> &middot; max supported meters:
     <code>@MeterRegistry.MaxIndex.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</code>
-    &middot; every meter has a node id whatever its NIC; only 4G TCP meters also get an IP
+    &middot; first node id: <code>1000000001</code>
 </MudText>
 @if (IsAdmin)
 {
@@ -54,7 +54,7 @@
                               Variant="Variant.Outlined" Margin="Margin.Dense" />
             </MudItem>
             <MudItem xs="12" sm="6">
-                <MudNumericField T="int" @bind-Value="MeterCount" Immediate="true" Min="1"
+                <MudNumericField T="int" @bind-Value="MeterCount" Immediate="true" Min="1" Max="@((int)Math.Max(1, MeterRegistry.RemainingCapacity))"
                                  Label="Number of meters (N)"
                                  Variant="Variant.Outlined" Margin="Margin.Dense" />
             </MudItem>
@@ -129,16 +129,13 @@
             </MudAlert>
         }
 
-        @if (MeterCount > 0)
+        @if (MeterCount > 0 && MeterCount <= MeterRegistry.RemainingCapacity)
         {
             BatchPreview preview = MeterRegistry.PreviewNextBatch(AddressPrefix, MeterCount);
             <MudAlert Severity="Severity.Info" Dense="true" Variant="Variant.Outlined" Class="mt-3">
                 Will reserve node ids <code>@preview.FirstNodeId</code> &ndash; <code>@preview.LastNodeId</code>
                 &middot; meter numbers <code>@preview.FirstSerial</code> &ndash; <code>@preview.LastSerial</code>
-                @if (SelectedNic == NicType.Tcp4G)
-                {
-                    <text>&middot; IPs <code>@preview.FirstAddress</code> &ndash; <code>@preview.LastAddress</code></text>
-                }
+                &middot; IPs <code>@preview.FirstAddress</code> &ndash; <code>@preview.LastAddress</code>
                 (@MeterCount.ToString("N0", System.Globalization.CultureInfo.InvariantCulture) meter(s))
             </MudAlert>
         }
@@ -152,7 +149,7 @@
         <MudButton OnClick="@(() => _addBatchOpen = false)">Cancel</MudButton>
         <MudButton Variant="Variant.Filled" Color="Color.Primary"
                    StartIcon="@Icons.Material.Filled.Add" OnClick="AddBatchFromDialog"
-                   Disabled="@(MeterCount <= 0 || string.IsNullOrWhiteSpace(BatchName) || string.IsNullOrWhiteSpace(SelectedTemplate))">
+                   Disabled="@(MeterCount <= 0 || MeterCount > MeterRegistry.RemainingCapacity || string.IsNullOrWhiteSpace(BatchName) || string.IsNullOrWhiteSpace(SelectedTemplate))">
             Add Batch
         </MudButton>
     </DialogActions>
@@ -318,7 +315,7 @@ else
                             <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Success"
                                        OnClick="() => Start(batch.Id)" Disabled="@(batch.Status == BatchStatus.Running || batch.Status == BatchStatus.Starting)">Start</MudButton>
                             <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Warning" Class="ml-1"
-                                       OnClick="() => Stop(batch.Id)" Disabled="@(batch.Status == BatchStatus.Stopped || batch.Status == BatchStatus.Starting)">Stop</MudButton>
+                                       OnClick="() => Stop(batch.Id)" Disabled="@(batch.Status == BatchStatus.Stopped)">Stop</MudButton>
                             @if (IsAdmin)
                             {
                                 <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Error" Class="ml-1"
@@ -355,16 +352,10 @@ else
                                     </div>
                                     <div class="batch-detail-field">
                                         <span class="batch-detail-label">IP range</span>
-                                        @if (batch.NicType == NicType.Tcp4G)
-                                        {
+                                        @{
                                             (IPAddress firstAddr, IPAddress lastAddr) = MeterRegistry.GetAddressRange(batch, AddressPrefix);
-                                            <code>@firstAddr &ndash; @lastAddr</code>
                                         }
-                                        else
-                                        {
-                                            @* Only 4G TCP meters get an IP; the rest are reached by node id. *@
-                                            <span class="mud-text-secondary">&mdash; not applicable on @NicLabel(batch.NicType)</span>
-                                        }
+                                        <code>@firstAddr &ndash; @lastAddr</code>
                                     </div>
                                     @* The binding NAME is on the row above now, so this shows the part
                                        the row cannot: where that endpoint actually points. *@
@@ -719,13 +710,13 @@ else
 
 
 
-    private void Start(int batchId)
+    private async Task Start(int batchId)
     {
         if (CanOperate)
         {
-            MeterRegistry.TryMarkStarting(batchId);
-            StateHasChanged();
-            _ = Task.Run(() => Sessions.StartBatchAsync(batchId));
+            try { await Sessions.StartBatchAsync(batchId); }
+            catch (OperationCanceledException) { }
+            catch (Exception ex) { Snackbar.Add($"Batch failed to load: {ex.Message}", Severity.Error); }
         }
     }
 
@@ -784,7 +775,7 @@ else
 
         bool? confirmed = await DialogService.ShowMessageBoxAsync(
             "Reset all batches?",
-            "This permanently deletes ALL batches and restarts meter numbering from 1 (MY000000001). " +
+            "This permanently deletes ALL batches and restarts at MY00000001 / node id 1000000001. " +
             "Live meter sessions are cleared too. This cannot be undone.",
             yesText: "Reset everything", cancelText: "Cancel");
 

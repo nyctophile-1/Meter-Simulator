@@ -35,6 +35,8 @@ public sealed record NetworkRegistrySnapshot
     /// <summary>Current format: unified HES environments (version ≥ 2).</summary>
     public List<HesEnvironment> Environments { get; init; } = new();
 
+    public List<DatabaseConnection> Databases { get; init; } = new();
+
     /// <summary>Legacy brokers (version 1). Read on load for migration only; never written.</summary>
     public List<BrokerEndpoint> Brokers { get; init; } = new();
 

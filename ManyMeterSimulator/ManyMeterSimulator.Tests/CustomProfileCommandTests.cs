@@ -34,7 +34,7 @@ public class CustomProfileCommandTests
         var options = new CustomPullOptions { MeterCategories = new() { [93] = "1P" }, EventsWithPowerProfile = [1,2,3,4,5,6,7,8,9,10,11,12,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,66,67,68,69,70,81,82,201,202,203,204,205,206,207,208,209,210,211,212,213,214,215,216,887,888,889,890,891,892] };
         var meter = new MeterRef(42, NicType.MqttWirepas);
         var batch = Assert.Single(registry.Batches);
-        var request = new CustomPullRequest(1, 1, 5415, 42, 42, command,
+        var request = new CustomPullRequest(1, 1, 5415, 1000000042, 1000000042, command,
             command == 3 ? CustomPullWireSelector.GetWithoutData : CustomPullWireSelector.GetWithEntryRange, command == 3 ? (byte)0 : (byte)8, 1, 1);
         Assert.True(CustomPullCommandDecoder.TryDecode(meter, request, out var intent, out var error), error);
         var inbound = new CustomPullInbound(meter, batch!, new(93, CustomPullWireProfile.NewHeader, 1050946), request, intent);
@@ -47,8 +47,9 @@ public class CustomProfileCommandTests
         Assert.True(packet.Length > 23);
         int expectedDataBytes = command switch { 3 or 50 => 70, 4 => 18, 5 => 20, 6 => 85, 41 or 42 or 45 or 83 => 23, _ => 6 };
         Assert.Equal(23 + expectedDataBytes, packet.Length);
-        var publish = WirepasCustomPushEnvelope.Create("direct_4g", "direct_4g", "42", 13, packet);
-        Assert.Equal("gw-event/received_data/direct_4g/direct_4g/42/13/13", publish.Topic);
+        Assert.Equal(42u, BinaryPrimitives.ReadUInt32LittleEndian(packet.AsSpan(16)));
+        var publish = WirepasCustomPushEnvelope.Create("direct_4g", "direct_4g", meter.NodeId, 13, packet);
+        Assert.Equal("gw-event/received_data/direct_4g/direct_4g/1000000042/13/13", publish.Topic);
     }
 
     [Fact]

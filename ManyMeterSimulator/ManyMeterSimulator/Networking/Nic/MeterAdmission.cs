@@ -63,7 +63,7 @@ public sealed class MeterAdmission
             return new AdmissionResult(AdmissionOutcome.WrongNic, batch);
         }
 
-        if (batch.Status is BatchStatus.NotStarted or BatchStatus.Stopped)
+        if (batch.Status != BatchStatus.Running)
         {
             _metrics.RecordRejectedBatchNotRunning(meter.Nic);
             return new AdmissionResult(AdmissionOutcome.BatchNotRunning, batch);

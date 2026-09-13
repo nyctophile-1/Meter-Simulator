@@ -93,7 +93,11 @@ public sealed class JsonNetworkRegistryStore : INetworkRegistryStore
                 broker.Password = _protector.Unprotect(broker.Password);
             }
 
-            return snapshot;
+            return snapshot with
+            {
+                Databases = snapshot.Databases.Select(db => db with
+                    { ConnectionString = _protector.Unprotect(db.ConnectionString) }).ToList(),
+            };
         }
     }
 
@@ -105,6 +109,8 @@ public sealed class JsonNetworkRegistryStore : INetworkRegistryStore
             {
                 Environments = snapshot.Environments.Select(EncryptedEnv).ToList(),
                 Brokers = snapshot.Brokers.Select(Encrypted).ToList(),
+                Databases = snapshot.Databases.Select(db => db with
+                    { ConnectionString = _protector.Protect(db.ConnectionString) }).ToList(),
             };
 
             string json = JsonSerializer.Serialize(onDisk, SerializerOptions);

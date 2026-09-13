@@ -69,14 +69,26 @@ public sealed class ConfigBundleService
         Serialize(BatchesKind, from, _batches.Snapshot());
 
     /// <summary>Parses and validates a batches file without applying it — for the confirm dialog.</summary>
-    public int PreviewBatches(string json) => Parse<BatchStoreSnapshot>(json, BatchesKind).Batches.Count;
+    public int PreviewBatches(string json)
+    {
+        var snapshot = Parse<BatchStoreSnapshot>(json, BatchesKind);
+        ValidateIdentityVersion(snapshot);
+        return snapshot.Batches.Count;
+    }
 
     public int ImportBatches(string json)
     {
         BatchStoreSnapshot snapshot = Parse<BatchStoreSnapshot>(json, BatchesKind);
+        ValidateIdentityVersion(snapshot);
         ValidateUniqueBatchNames(snapshot);
         _batches.ImportSnapshot(snapshot);
         return snapshot.Batches.Count;
+    }
+
+    private static void ValidateIdentityVersion(BatchStoreSnapshot snapshot)
+    {
+        if (snapshot.Version != BatchStoreSnapshot.CurrentVersion)
+            throw new ArgumentException("This batch file uses a different node-id scheme. Provision new batches with the current MAYA version.");
     }
 
     // ── Network ────────────────────────────────────────────────────────────────────────────────
@@ -84,14 +96,14 @@ public sealed class ConfigBundleService
     public string ExportNetwork(string? from = null) =>
         Serialize(NetworkKind, from, _network.Snapshot());
 
-    public (int Brokers, int PushTargets) PreviewNetwork(string json)
+    public (int Environments, int Databases) PreviewNetwork(string json)
     {
         NetworkRegistrySnapshot s = Parse<NetworkRegistrySnapshot>(json, NetworkKind);
         int envs = s.Environments.Count > 0 ? s.Environments.Count : s.Brokers.Count + s.PushTargets.Count;
-        return (envs, 0);
+        return (envs, s.Databases.Count);
     }
 
-    public (int Brokers, int PushTargets) ImportNetwork(string json)
+    public (int Environments, int Databases) ImportNetwork(string json)
     {
         NetworkRegistrySnapshot snapshot = Parse<NetworkRegistrySnapshot>(json, NetworkKind);
         ValidateUniqueEndpointKeys(snapshot);
@@ -99,7 +111,7 @@ public sealed class ConfigBundleService
         int envs = snapshot.Environments.Count > 0
             ? snapshot.Environments.Count
             : snapshot.Brokers.Count + snapshot.PushTargets.Count;
-        return (envs, 0);
+        return (envs, snapshot.Databases.Count);
     }
 
     // ── BadComm (field-impairment knobs: the bad-comm config plus the network delay) ─────────────

@@ -217,6 +217,8 @@ else
     </DialogActions>
 </MudDialog>
 
+<DatabaseConnectionsSection IsAdmin="@IsAdmin" CanOperate="@CanOperate" />
+
 @code {
     [CascadingParameter]
     private Task<AuthenticationState>? AuthStateTask { get; set; }

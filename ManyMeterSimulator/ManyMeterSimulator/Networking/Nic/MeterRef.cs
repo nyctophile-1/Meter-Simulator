@@ -9,7 +9,7 @@ namespace ManyMeterSimulator.Networking.Nic;
 /// the brain funnel all take this instead of an <see cref="IPAddress"/>.
 ///
 /// The meter INDEX is the canonical identity: the brain builds a meter from it, and the serial,
-/// node id and (for TCP) the IPv6 address are all deterministic functions of it. Each NIC derives
+/// reserved node id and IPv6 address are all deterministic functions of it. Each NIC derives
 /// its own transport address from the same number, which is what makes "one brain, many NICs" work
 /// without the brain ever learning what a topic or a socket is.
 ///
@@ -21,9 +21,9 @@ namespace ManyMeterSimulator.Networking.Nic;
 public readonly record struct MeterRef(long Index, NicType Nic)
 {
     /// <summary>The HES-facing node id — universal, present on every NIC including TCP.</summary>
-    public string NodeId => MeterIdentity.NodeId(Index);
+    public string NodeId => MeterNodeIds.Format(Index);
 
-    /// <summary>The meter serial ("MY" + 9 digits), the identity carried inside the DLMS payload.</summary>
+    /// <summary>The meter serial ("MY" + 8 digits), the identity carried inside the DLMS payload.</summary>
     public string Serial => MeterIdentity.Serial(Index);
 
     /// <summary>
@@ -39,7 +39,7 @@ public readonly record struct MeterRef(long Index, NicType Nic)
     /// </summary>
     public static bool TryFromNodeId(string? nodeId, NicType nic, out MeterRef meter)
     {
-        if (long.TryParse(nodeId, out long index) && index > 0)
+        if (MeterNodeIds.TryGetIndex(nodeId, out long index))
         {
             meter = new MeterRef(index, nic);
             return true;

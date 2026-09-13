@@ -54,7 +54,17 @@ public sealed class JsonBatchStore : IBatchStore
 
             try
             {
-                return JsonSerializer.Deserialize<BatchStoreSnapshot>(json, SerializerOptions) ?? new BatchStoreSnapshot();
+                var snapshot = JsonSerializer.Deserialize<BatchStoreSnapshot>(json, SerializerOptions) ?? new BatchStoreSnapshot();
+                if (snapshot.Version > BatchStoreSnapshot.CurrentVersion)
+                    throw new InvalidOperationException("The batch store was written by a newer MAYA version.");
+                if (snapshot.Version < BatchStoreSnapshot.CurrentVersion)
+                {
+                    // Authorized identity revamp: retire the old fleet exactly once, before any sessions start.
+                    _logger?.LogWarning("Resetting {Count} legacy batches for the new MAYA node-id range", snapshot.Batches.Count);
+                    snapshot = new BatchStoreSnapshot { Version = BatchStoreSnapshot.CurrentVersion };
+                    Save(snapshot);
+                }
+                return snapshot;
             }
             catch (JsonException ex)
             {
