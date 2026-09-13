@@ -11,6 +11,7 @@ using ManyMeterSimulator.Networking.Nic;
 using ManyMeterSimulator.Networking.Push;
 using ManyMeterSimulator.Networking.Registry;
 using ManyMeterSimulator.Networking.SmartNic;
+using ManyMeterSimulator.ProfileSimulation;
 using ManyMeterSimulator.Provisioning;
 using ManyMeterSimulator.Settings;
 using ManyMeterSimulator.Testing;
@@ -77,6 +78,7 @@ builder.Services.Configure<CustomPullOptions>(builder.Configuration.GetSection(C
 builder.Services.Configure<PersistenceOptions>(builder.Configuration.GetSection(PersistenceOptions.SectionName));
 builder.Services.Configure<NetworkDelayOptions>(builder.Configuration.GetSection(NetworkDelayOptions.SectionName));
 builder.Services.Configure<NetworkHealthOptions>(builder.Configuration.GetSection(NetworkHealthOptions.SectionName));
+builder.Services.Configure<ProfileSimulationOptions>(builder.Configuration.GetSection(ProfileSimulationOptions.SectionName));
 
 // The meter IP prefix is a per-deployment infrastructure value — it must match the IPv6 /64 routed
 // to THIS host. Validate it early so a misconfigured/typo'd/missing prefix fails fast with a clear
@@ -159,7 +161,9 @@ builder.Services.AddSingleton<ConfigBundleService>();
 // Depends on both MeterRegistry and BadCommSettings, so it is registered after the batch store.
 builder.Services.AddSingleton<FleetCompositionCache>();
 builder.Services.AddSingleton<TemplateRegistry>();
+builder.Services.AddSingleton<ProfileSimulationStateStore>();
 builder.Services.AddSingleton<MeterSessionManager>();
+builder.Services.AddSingleton<ProfileSimulationService>();
 builder.Services.AddSingleton<TcpPushSender>();
 builder.Services.AddSingleton<PushCoordinator>();
 builder.Services.AddSingleton<PushScheduleService>();
@@ -184,6 +188,10 @@ builder.Services.AddHostedService<BatchRecoveryService>();
 builder.Services.AddHostedService<TcpNicListenerService>();
 // NIC-agnostic housekeeping (idle reaping + metrics summary) — serves every NIC, not just TCP.
 builder.Services.AddHostedService<SessionMaintenanceService>();
+builder.Services.AddHostedService<ProfileSimulationHostedService>();
+// Runs regardless of ProfileSimulationOptions.Enabled — stale state left by a toggled-off feature
+// or a since-replaced build must still be reclaimed (see ProfileStateRetentionService).
+builder.Services.AddHostedService<ProfileStateRetentionService>();
 // Capture dashboard telemetry continuously, not only while the Dashboard component is open.
 builder.Services.AddHostedService(sp => sp.GetRequiredService<DashboardActivityHistory>());
 

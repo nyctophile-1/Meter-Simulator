@@ -21,7 +21,7 @@ namespace MeterSimulator.DLMS
         // ════════════════════════════════════════════════════════════════════════
         // PUBLIC ENTRY POINT
         // ════════════════════════════════════════════════════════════════════════
-        public void Load(GXDLMSObjectCollection target)
+        public void Load(GXDLMSObjectCollection target, bool shiftProfileTimestamps = true)
         {
             // Step 1 ── Raw load from XML
             // Gurux reconstructs every object but may create multiple instances of
@@ -55,7 +55,10 @@ namespace MeterSimulator.DLMS
             // by one delta so the NEWEST row lands exactly on now (UTC) and all older
             // rows keep their original spacing.  Runs after FixProfileBufferTypes so
             // the cells are already GXDateTime, before hand-off ("before loading").
-            ShiftBufferTimestamps(objects);
+            if (shiftProfileTimestamps)
+            {
+                ShiftBufferTimestamps(objects);
+            }
 
             // Step 3.6 ── Make profile selective access work
             // Gurux's server can only apply selective access (Read last / date range / entry range)

@@ -28,7 +28,18 @@ namespace MeterSimulator.DLMS
     public class DLMSServerSession : GXDLMSSecureServer
     {
         private readonly DLMSMeter _meter;
+
+        /// <summary>
+        /// This meter's own value store. Exposed so batch-level profile simulation
+        /// (<c>BatchProfileSimulationState</c>) can push a newly generated capture's register/data
+        /// values into every materialized meter of a batch — reads are answered from here (see
+        /// <see cref="PreRead"/>), not from the shared object graph, so a capture generated once for
+        /// the whole batch still needs this per-meter update for live pulls to see it.
+        /// </summary>
+        public DLMSMeter Meter => _meter;
+
         private readonly string _templatePath;
+        private readonly bool _shiftProfileTimestamps;
         //private readonly GXNet _network;
         private readonly GXDLMSObjectCollection _objects = new();
 
@@ -70,7 +81,13 @@ namespace MeterSimulator.DLMS
         // from the host's default source address.
         private readonly IPAddress? _sourceAddress;
 
-        public DLMSServerSession(DLMSMeter meter, string templatePath, PushConfig? pushConfig = null, IPAddress? sourceAddress = null, bool initializeValues = true)
+        public DLMSServerSession(
+            DLMSMeter meter,
+            string templatePath,
+            PushConfig? pushConfig = null,
+            IPAddress? sourceAddress = null,
+            bool initializeValues = true,
+            bool shiftProfileTimestamps = true)
         : base(
             true,
             InterfaceType.WRAPPER)
@@ -87,6 +104,7 @@ namespace MeterSimulator.DLMS
             Settings.UseLogicalNameReferencing = true;
             _meter = meter;
             _templatePath = templatePath;
+            _shiftProfileTimestamps = shiftProfileTimestamps;
             _pushConfig = pushConfig;
             _sourceAddress = sourceAddress;
 
@@ -107,7 +125,7 @@ namespace MeterSimulator.DLMS
             // meter built from it references the same objects (see TemplateModelCache for why this
             // is safe). _objectsFromFile therefore holds borrowed, READ-ONLY objects — never write
             // to them; per-meter divergence belongs in _meter.
-            _objectsFromFile = TemplateModelCache.Shared.Get(templatePath);
+            _objectsFromFile = TemplateModelCache.Shared.Get(templatePath, shiftProfileTimestamps);
 
             // Seed this meter's own value store from the template's defaults. Reads are answered
             // from here (see PreRead), so the shared objects are never consulted for a value and
@@ -197,7 +215,11 @@ namespace MeterSimulator.DLMS
         /// <summary>A separate association over this meter's state, without reseeding its values.</summary>
         public DLMSServerSession CreateReadAssociation()
         {
-            var association = new DLMSServerSession(_meter, _templatePath, initializeValues: false);
+            var association = new DLMSServerSession(
+                _meter,
+                _templatePath,
+                initializeValues: false,
+                shiftProfileTimestamps: _shiftProfileTimestamps);
             association.Initialize(true);
             return association;
         }
@@ -281,6 +303,15 @@ namespace MeterSimulator.DLMS
         /// own channel OBIS, because that LN is also the "SelfLN" element the HES uses to dispatch to
         /// the matching parser (see BuildPushPayloads' Item[1] in each flat structure). Null (the
         /// default) sends every non-empty PushSetup the template configures.
+        ///
+        /// <para>
+        /// If the template has no PushSetup at this LN but it's one of the well-known dispatch codes
+        /// (see <see cref="BuildEphemeralPushSetup"/>) and the corresponding profile/values exist,
+        /// this builds the push directly from that pull data instead of requiring a template author
+        /// to declare a PushSetup object — the meter can push anything it can already answer on
+        /// pull. A template-declared PushSetup always takes priority when present, since it may
+        /// carry a deliberately customized field list.
+        /// </para>
         /// </param>
         /// <returns>One byte[] per PushSetup — each a complete DLMS wrapper DataNotification frame.</returns>
         public IReadOnlyList<byte[]> BuildPushPayloads(bool useCiphering, string? pushSetupLogicalName = null)
@@ -289,6 +320,12 @@ namespace MeterSimulator.DLMS
                 .Where(p => p.PushObjectList.Count > 0)
                 .Where(p => pushSetupLogicalName == null || p.LogicalName == pushSetupLogicalName)
                 .ToList();
+
+            if (pushObjects.Count == 0 && pushSetupLogicalName != null
+                && BuildEphemeralPushSetup(pushSetupLogicalName) is GXDLMSPushSetup ephemeral)
+            {
+                pushObjects.Add(ephemeral);
+            }
 
             if (pushObjects.Count == 0)
             {
@@ -299,12 +336,6 @@ namespace MeterSimulator.DLMS
                 return Array.Empty<byte[]>();
             }
 
-            // Each PushSetup's list is a purely flat structure now (Device ID, SelfLN, then scalar
-            // fields matching the HES's SerialNumber-ordered schema) — no nested profile buffer to
-            // encode. A push that represents a load profile's row (e.g. Block Load) still needs its
-            // per-row values pulled from that profile's latest buffer entry first.
-            SyncBlockLoadPushValues();
-
             var payloads = new List<byte[]>(pushObjects.Count);
             foreach (var push in pushObjects)
             {
@@ -314,6 +345,13 @@ namespace MeterSimulator.DLMS
                 byte[][] frames;
                 lock (PushEncodeLock)
                 {
+                    // A push that represents a profile's row (Block Load, Daily, Billing, Events —
+                    // any GXDLMSProfileGeneric) needs its per-row values pulled from that profile's
+                    // latest buffer entry first. Scoped to THIS push and synced immediately before
+                    // encoding: with several profile-backed pushes in the same template, syncing
+                    // globally up front would let each one's synthetic RTC OBIS clobber the last
+                    // before it's actually encoded.
+                    SyncProfileBackedPushValues(push);
                     SyncPushValues(push);
                     ConfigureNotifyCiphering(useCiphering);
                     frames = Notify.GeneratePushSetupMessages(DateTime.UtcNow, push);
@@ -332,6 +370,78 @@ namespace MeterSimulator.DLMS
         /// <summary>Available push setups without encoding or advancing invocation counters.</summary>
         public IReadOnlyList<string> GetPushSetupLogicalNames() => _objects.OfType<GXDLMSPushSetup>()
             .Where(p => p.PushObjectList.Count > 0).Select(p => p.LogicalName).Distinct().ToArray();
+
+        /// <summary>
+        /// Serializes the complete current object model to a working XML path. The caller owns
+        /// atomic replacement and validation, because persistence policy belongs to the host.
+        /// Batch-level profile simulation calls this via one representative meter's session — every
+        /// meter in the batch shares the same object graph and identical values, so any one of them
+        /// produces a correct, complete snapshot.
+        /// </summary>
+        public void SaveWorkingModel(string destinationPath)
+        {
+            if (string.IsNullOrWhiteSpace(destinationPath))
+            {
+                throw new ArgumentException("A working XML destination is required.", nameof(destinationPath));
+            }
+
+            if (_shiftProfileTimestamps)
+            {
+                throw new InvalidOperationException(
+                    "Only an isolated profile-simulation working model may be saved. " +
+                    "The shared template model is read-only.");
+            }
+
+            // A profile row is persisted directly on the working object graph. Register and Data
+            // values, however, are deliberately held in this meter's own value store while the
+            // server is running. Copy them onto this *isolated* graph before serialization so a
+            // restart seeds the same current values that a pull would have returned.
+            SyncWorkingModelValuesForPersistence();
+
+            _objectsFromFile.Save(destinationPath, new GXXmlWriterSettings
+            {
+                Values = true,
+                IgnoreDefaultValues = false,
+                // false converts UTC captures through the host timezone; true keeps meter time.
+                UseMeterTime = true,
+            });
+
+            // Gurux's meter-time writer appends Z to a value that already carries +00:00, yielding
+            // +00:00Z. Its own XML reader expands the Z into another +00:00 and cannot reload it.
+            // Normalize the redundant UTC suffix while the XML is still a private temp snapshot.
+            string xml = File.ReadAllText(destinationPath);
+            File.WriteAllText(destinationPath, xml.Replace("+00:00Z", "Z", StringComparison.Ordinal));
+        }
+
+        private void SyncWorkingModelValuesForPersistence()
+        {
+            foreach (GXDLMSObject obj in _objectsFromFile)
+            {
+                switch (obj)
+                {
+                    case GXDLMSRegister register:
+                    {
+                        object? value = _meter.GetValue(register.LogicalName);
+                        if (value is not null)
+                        {
+                            register.Value = value;
+                        }
+
+                        break;
+                    }
+                    case GXDLMSData data:
+                    {
+                        object? value = _meter.GetValue(data.LogicalName);
+                        if (value is not null)
+                        {
+                            data.Value = value;
+                        }
+
+                        break;
+                    }
+                }
+            }
+        }
 
         private static byte[] Concat(byte[][] frames)
         {
@@ -371,7 +481,7 @@ namespace MeterSimulator.DLMS
                         if (dv != null) data.Value = dv;
                         break;
                     case GXDLMSClock clk:
-                        // A per-meter override (e.g. SyncBlockLoadPushValues, which needs this
+                        // A per-meter override (e.g. SyncProfileBackedPushValues, which needs this
                         // push's timestamp to be the buffered row's own captured time, not "now")
                         // wins when set; otherwise a Clock in a push list means "the time of this
                         // push", so it defaults to now.
@@ -383,47 +493,80 @@ namespace MeterSimulator.DLMS
         }
 
         /// <summary>
-        /// OBIS of the Block Load (Load Survey) profile this push reads from — the same object the
-        /// pull path already serves in full from its Buffer.
+        /// OBIS of a Clock dedicated to a profile-backed push's own RTC slot. Deliberately NOT the
+        /// shared Clock ("0.0.1.0.0.255") that a non-profile push (e.g. Instant) uses to mean "now"
+        /// — this one must carry the captured row's own time instead, rounded to the source
+        /// profile's own capture period, not whatever moment the operator happened to click "Send
+        /// Push". Shared by every profile-backed push in turn — safe because each is synced and
+        /// encoded immediately, one at a time (see the loop in <see cref="BuildPushPayloads"/>).
         /// </summary>
-        private const string BlockLoadProfileLN = "1.0.99.1.0.255";
+        private const string ProfileBackedPushRtcLN = "0.0.1.0.1.255";
 
         /// <summary>
-        /// OBIS of a Clock dedicated to the Block Load push's own RTC slot. Deliberately NOT the
-        /// shared Clock ("0.0.1.0.0.255") that every other push (e.g. Instant) uses to mean "now" —
-        /// this one must carry the captured row's own time instead, rounded to the nearest
-        /// 30-minute block (the meter's capture period), not whatever moment the operator happened
-        /// to click "Send Push".
-        /// </summary>
-        private const string BlockLoadRtcLN = "0.0.1.0.1.255";
-
-        /// <summary>
-        /// Copies the LATEST row of the Block Load profile's buffer onto this meter's per-attribute
-        /// value store — the same store <see cref="SyncPushValues"/> already reads from — so the
-        /// flat Block Load PushSetup carries real data without any special-casing in the encode path
-        /// itself. A no-op (leaves the store untouched) if the template has no Block Load profile or
-        /// its buffer is empty; harmless to call for every push regardless of which PushSetup is
-        /// actually being sent.
+        /// Copies the LATEST row of whichever profile buffer feeds this PushSetup onto this meter's
+        /// per-attribute value store — the same store <see cref="SyncPushValues"/> already reads
+        /// from — so a flat PushSetup (Block Load, Daily, Billing, Events, or any future profile
+        /// type) carries real data without any special-casing in the encode path itself.
+        ///
+        /// <para>
+        /// Gated on whether this push's own <c>PushObjectList</c> contains a Clock entry at
+        /// <see cref="ProfileBackedPushRtcLN"/> specifically — a deliberate template-authoring
+        /// convention, not an inferred heuristic: a non-profile push (Instant, Alert) uses the
+        /// ordinary "now" clock ("0.0.1.0.0.255") instead. This gate matters because register OBIS
+        /// overlap ALONE is not a safe signal — common registers like AverageVoltage can legitimately
+        /// appear in more than one profile's <c>CaptureObjects</c> (and even in a non-profile push's
+        /// flat live-value list), so checking object overlap before this gate previously misfired:
+        /// it treated Instant's push as profile-backed because it happened to share a register with
+        /// some unrelated profile, corrupting its live value and crashing the encoder.
+        /// </para>
+        ///
+        /// <para>
+        /// Once gated in, the source profile is found by object overlap: a register/data OBIS
+        /// referenced by both a <see cref="GXDLMSProfileGeneric"/>'s <c>CaptureObjects</c> and this
+        /// push's own <c>PushObjectList</c> is the same shared object instance (Gurux's loader
+        /// dedupes by OBIS). Picks the profile with the MOST overlapping objects, not just the first
+        /// match, in case more than one profile-backed push shares a template — the push's list was
+        /// authored to mirror ONE profile's entire column set, so the true source profile shares far
+        /// more objects with it than any other profile could by coincidence.
+        /// </para>
         ///
         /// <para>
         /// "Latest" means the row with the MAXIMUM timestamp, found explicitly — NOT
-        /// <c>Buffer[^1]</c> (the last array slot). A live push confirmed this template's Block Load
-        /// buffer is chronologically sorted for indices 0..N-2 but carries one stray, over-a-month-old
-        /// row at the very end (a data artifact, not something this code should have to assume away).
-        /// Trusting array position silently pushed that stale row's timestamp on every send.
+        /// <c>Buffer[^1]</c> (the last array slot). A live push confirmed a Block Load buffer can be
+        /// chronologically sorted for indices 0..N-2 but carry one stray, over-a-month-old row at the
+        /// very end (a data artifact, not something this code should have to assume away). Trusting
+        /// array position silently pushed that stale row's timestamp on every send.
         /// <see cref="MeterObjectLoader.ShiftBufferTimestamps"/> already computes "latest" the same
-        /// way, via Max() — this now matches it instead of a second, weaker assumption.
+        /// way, via Max() — this matches it instead of a second, weaker assumption.
         /// </para>
         /// </summary>
-        private void SyncBlockLoadPushValues()
+        private void SyncProfileBackedPushValues(GXDLMSPushSetup push)
         {
-            if (_objectsFromFile.FindByLN(ObjectType.ProfileGeneric, BlockLoadProfileLN) is not GXDLMSProfileGeneric profile
-                || profile.Buffer.Count == 0)
+            bool isProfileBacked = push.PushObjectList
+                .Any(kv => kv.Key is GXDLMSClock && kv.Key.LogicalName == ProfileBackedPushRtcLN);
+            if (!isProfileBacked)
             {
                 return;
             }
 
-            EnsureBufferFreshness(profile);
+            var pushObjects = new HashSet<GXDLMSObject>(push.PushObjectList.Select(kv => kv.Key));
+            GXDLMSProfileGeneric? profile = _objectsFromFile.OfType<GXDLMSProfileGeneric>()
+                .Where(p => p.Buffer.Count > 0)
+                .Select(p => (Profile: p, Overlap: p.CaptureObjects.Count(co => pushObjects.Contains(co.Key))))
+                .Where(candidate => candidate.Overlap > 0)
+                .OrderByDescending(candidate => candidate.Overlap)
+                .Select(candidate => candidate.Profile)
+                .FirstOrDefault();
+
+            if (profile is null)
+            {
+                return;
+            }
+
+            if (_shiftProfileTimestamps)
+            {
+                EnsureBufferFreshness(profile);
+            }
 
             object[]? latestRow = null;
             DateTimeOffset latestTime = DateTimeOffset.MinValue;
@@ -438,7 +581,7 @@ namespace MeterSimulator.DLMS
 
             if (latestRow is null || latestRow[0] is not GXDateTime rowTime)
             {
-                CoreLog.Debug($"[Push] {_meter.MeterNo}: Block Load buffer has no row with a usable timestamp, skipping sync");
+                CoreLog.Debug($"[Push] {_meter.MeterNo}: {profile.LogicalName} buffer has no row with a usable timestamp, skipping sync");
                 return;
             }
 
@@ -447,8 +590,16 @@ namespace MeterSimulator.DLMS
             // from TimeZoneInfo.Local (the HOST machine's zone) instead of encoding it as the UTC
             // value it actually is. Force Kind=Utc so the digits transmit with offset 0 regardless
             // of what timezone the process happens to run in.
-            DateTime rounded = DateTime.SpecifyKind(RoundToNearestHalfHour(rowTime.Value.DateTime), DateTimeKind.Utc);
-            _meter.SetValue(BlockLoadRtcLN, new GXDateTime(rounded));
+            //
+            // Always rounds to the nearest half hour, unconditionally — NOT derived from the
+            // profile's own CapturePeriod (Block Load's is 900s/15min in at least one real template,
+            // not 30min as its own capture cadence would suggest; the half-hour grid is an RTC wire
+            // convention independent of it). This is a pure carry-over of the original Block-Load-only
+            // behavior, generalized to whichever profile is found rather than changed: a calendar
+            // boundary (Daily's midnight, Billing's month-start) is already exactly on a half-hour
+            // grid, so rounding it is a no-op — nothing here needed to change for those to work.
+            DateTime rounded = DateTime.SpecifyKind(RoundToNearestPeriod(rowTime.Value.DateTime, TimeSpan.FromMinutes(30)), DateTimeKind.Utc);
+            _meter.SetValue(ProfileBackedPushRtcLN, new GXDateTime(rounded));
 
             // Column 0 is the row's own timestamp (already consumed above) — everything after it
             // lines up 1:1, in order, with CaptureObjects[1..].
@@ -458,7 +609,116 @@ namespace MeterSimulator.DLMS
                 _meter.SetValue(captureObjects[i].Key.LogicalName, latestRow[i]);
             }
 
-            CoreLog.Debug($"[Push] {_meter.MeterNo}: Block Load synced from row {rowTime.Value:O} -> rounded {rounded:O}");
+            CoreLog.Debug($"[Push] {_meter.MeterNo}: {profile.LogicalName} synced from row {rowTime.Value:O} -> {rounded:O}");
+        }
+
+        /// <summary>
+        /// The well-known profile OBIS behind each fixed, buffer-backed dispatch code a real HES
+        /// recognizes (confirmed against vayu-common's own push dispatch table — see
+        /// docs/profile-simulation/plan.md §3a) — the SAME identity <c>MeterDataSnapshotReader</c>
+        /// already uses elsewhere in this codebase to name these profiles, kept here as an explicit,
+        /// reviewed table rather than inferred, because guessing this mapping wrong would silently
+        /// mislabel one profile's data as another's. Public so the UI (which needs to know whether a
+        /// profile CAN be pushed even without a declared PushSetup) shares this exact table instead
+        /// of duplicating it.
+        /// </summary>
+        public static readonly IReadOnlyDictionary<string, string> KnownProfileBackedDispatchLNs = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["0.5.25.9.0.255"] = "1.0.99.1.0.255", // Load Survey / Block Load
+            ["0.6.25.9.0.255"] = "1.0.99.2.0.255", // Daily
+            ["0.7.25.9.0.255"] = "1.0.98.1.0.255", // Billing
+        };
+
+        /// <summary>OBIS of the Instantaneous push dispatch channel — no profile buffer backs it.</summary>
+        public const string InstantDispatchLN = "0.0.25.9.0.255";
+
+        /// <summary>
+        /// Builds a push directly from this meter's own pull data when the template has no
+        /// PushSetup object for the requested dispatch LN — the meter should be able to push
+        /// anything it can already answer on pull, without requiring a template author to
+        /// separately hand-author a PushSetup for every profile. Returns null for a dispatch LN this
+        /// isn't confident about (an unrecognized OBIS, or Events — its dispatch is a set of several
+        /// category codes with no single owning profile, so there is no safe default here) or when
+        /// the underlying data isn't actually present in this template.
+        /// </summary>
+        private GXDLMSPushSetup? BuildEphemeralPushSetup(string dispatchLogicalName)
+        {
+            if (dispatchLogicalName == InstantDispatchLN)
+            {
+                return BuildEphemeralInstantPushSetup();
+            }
+
+            if (KnownProfileBackedDispatchLNs.TryGetValue(dispatchLogicalName, out string? sourceProfileLn))
+            {
+                return BuildEphemeralProfileBackedPushSetup(dispatchLogicalName, sourceProfileLn);
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Device ID, SelfLN, the dedicated profile-backed RTC clock, then the source profile's own
+        /// CaptureObjects (skipping its own clock column) — the exact same shape a hand-authored
+        /// PushSetup uses (see SA1231166HP_values.xml's Block Load Push Setup), just assembled at
+        /// send time instead of declared in the template. Never registered in any collection —
+        /// GeneratePushSetupMessages only ever reads the object references it's handed directly.
+        /// </summary>
+        private GXDLMSPushSetup? BuildEphemeralProfileBackedPushSetup(string dispatchLogicalName, string sourceProfileLn)
+        {
+            if (_objectsFromFile.FindByLN(ObjectType.ProfileGeneric, sourceProfileLn) is not GXDLMSProfileGeneric profile
+                || profile.Buffer.Count == 0 || profile.CaptureObjects.Count == 0)
+            {
+                return null;
+            }
+
+            var push = new GXDLMSPushSetup(dispatchLogicalName);
+            AddDeviceIdAndSelfLN(push);
+            push.PushObjectList.Add(new GXKeyValuePair<GXDLMSObject, GXDLMSCaptureObject>(
+                new GXDLMSClock(ProfileBackedPushRtcLN), new GXDLMSCaptureObject(2, 0)));
+
+            // Column 0 of every row is the profile's own clock column, already covered above by the
+            // dedicated RTC slot — everything after it is the actual captured data.
+            for (int i = 1; i < profile.CaptureObjects.Count; i++)
+            {
+                var (obj, capture) = (profile.CaptureObjects[i].Key, profile.CaptureObjects[i].Value);
+                push.PushObjectList.Add(new GXKeyValuePair<GXDLMSObject, GXDLMSCaptureObject>(obj, capture));
+            }
+
+            CoreLog.Debug($"[Push] {_meter.MeterNo}: built ephemeral push for {dispatchLogicalName} from {sourceProfileLn} (no PushSetup declared in this template)");
+            return push;
+        }
+
+        /// <summary>
+        /// Device ID, SelfLN, the ordinary "now" clock, then every scalar Register/Data this meter
+        /// exposes — mirrors the same fallback <c>MeterDataSnapshotReader</c> already uses to show an
+        /// Instantaneous view when a template has no dedicated Instant PushSetup either.
+        /// </summary>
+        private GXDLMSPushSetup BuildEphemeralInstantPushSetup()
+        {
+            var push = new GXDLMSPushSetup(InstantDispatchLN);
+            AddDeviceIdAndSelfLN(push);
+            push.PushObjectList.Add(new GXKeyValuePair<GXDLMSObject, GXDLMSCaptureObject>(
+                new GXDLMSClock("0.0.1.0.0.255"), new GXDLMSCaptureObject(2, 0)));
+
+            foreach (GXDLMSObject obj in _objectsFromFile
+                .Where(o => o is GXDLMSRegister or GXDLMSData)
+                .OrderBy(o => o.LogicalName, StringComparer.Ordinal))
+            {
+                push.PushObjectList.Add(new GXKeyValuePair<GXDLMSObject, GXDLMSCaptureObject>(obj, new GXDLMSCaptureObject(2, 0)));
+            }
+
+            CoreLog.Debug($"[Push] {_meter.MeterNo}: built ephemeral Instantaneous push (no PushSetup declared in this template)");
+            return push;
+        }
+
+        private void AddDeviceIdAndSelfLN(GXDLMSPushSetup push)
+        {
+            if (_objectsFromFile.FindByLN(ObjectType.Data, DeviceIdLN) is GXDLMSData deviceId)
+            {
+                push.PushObjectList.Add(new GXKeyValuePair<GXDLMSObject, GXDLMSCaptureObject>(deviceId, new GXDLMSCaptureObject(2, 0)));
+            }
+
+            push.PushObjectList.Add(new GXKeyValuePair<GXDLMSObject, GXDLMSCaptureObject>(push, new GXDLMSCaptureObject(1, 0)));
         }
 
         /// <summary>
@@ -512,10 +772,10 @@ namespace MeterSimulator.DLMS
             }
         }
 
-        /// <summary>Rounds to the nearest 30-minute mark (:00 or :30), half-up on an exact tie.</summary>
-        private static DateTime RoundToNearestHalfHour(DateTime value)
+        /// <summary>Rounds to the nearest multiple of <paramref name="period"/>, half-up on an exact tie.</summary>
+        private static DateTime RoundToNearestPeriod(DateTime value, TimeSpan period)
         {
-            long blockTicks = TimeSpan.FromMinutes(30).Ticks;
+            long blockTicks = period.Ticks;
             long remainder = value.Ticks % blockTicks;
             long rounded = remainder < blockTicks / 2 ? value.Ticks - remainder : value.Ticks + (blockTicks - remainder);
             return new DateTime(rounded, value.Kind);
