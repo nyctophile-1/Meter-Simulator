@@ -10,6 +10,12 @@ Start and bind the desired MQTT batches on Setup/Network, then open **Testing â†
 Select batches, profile, QoS, publishers per broker/transport, concurrent meters and an optional
 per-batch meter limit. Use the same workload settings when comparing runs.
 
+Publisher pools support 1â€“256 connections per broker/transport. The stress dropdown includes
+128 and 256; saved MQTT Stress Loop tasks accept any count in that range. Increasing publishers
+raises the form's concurrent-meter value when needed. Defaults remain 8 publishers and 64
+concurrent meters; the concurrency ceiling remains 1024. These connections only publish and
+do not add pull subscriptions.
+
 **Continuous MQTT stress loop** is available in the Run mode dropdown. Set duration to `0`
 to run until Stop, or set a minute duration (up to seven days). Each cycle generates fresh
 payloads for the selected fleet and reuses the same publisher pools. Set wave size and pause

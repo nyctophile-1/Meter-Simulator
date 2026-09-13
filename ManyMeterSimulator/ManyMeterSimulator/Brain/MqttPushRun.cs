@@ -22,7 +22,8 @@ public sealed record MqttPushRequest
     {
         if (BatchIds.Count == 0 || BatchIds.Distinct().Count() != BatchIds.Count)
             throw new ArgumentException("Select at least one batch, without duplicates.");
-        if (PublisherCount is < 1 or > 64) throw new ArgumentException("Publishers must be between 1 and 64 per broker/transport.");
+        if (PublisherCount is < 1 or > MqttPushPool.MaximumPublisherCount)
+            throw new ArgumentException($"Publishers must be between 1 and {MqttPushPool.MaximumPublisherCount} per broker/transport.");
         if (Qos is < 0 or > 2) throw new ArgumentException("QoS must be 0, 1 or 2.");
         if (MaxConcurrency < PublisherCount || MaxConcurrency > 1024)
             throw new ArgumentException("Concurrent meters must be at least the publisher count and at most 1024.");

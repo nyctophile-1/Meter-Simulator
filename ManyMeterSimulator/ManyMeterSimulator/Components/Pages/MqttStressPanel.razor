@@ -42,8 +42,8 @@
             <MqttProfileSelect BatchIds="_batchIds" @bind-Value="_profile" Disabled="@Locked" />
         </MudItem>
         <MudItem xs="12" sm="6" md="4">
-            <MudSelect T="int" Label="Publishers per broker / transport" @bind-Value="_publishers" Disabled="@Locked" Variant="Variant.Outlined">
-                @foreach (int count in new[] { 1, 4, 8, 16, 32, 64 })
+            <MudSelect T="int" Label="Publishers per broker / transport" @bind-Value="_publishers" @bind-Value:after="() => _concurrency = Math.Max(_concurrency, _publishers)" Disabled="@Locked" Variant="Variant.Outlined">
+                @foreach (int count in new[] { 1, 4, 8, 16, 32, 64, 128, 256 })
                 { <MudSelectItem T="int" Value="@count">@count</MudSelectItem> }
             </MudSelect>
         </MudItem>
@@ -60,7 +60,7 @@
         </MudItem>
         <MudItem xs="12" sm="6" md="4">
             <MudNumericField T="int" Label="Concurrent meters" @bind-Value="_concurrency"
-                             Min="1" Max="1024" Disabled="@Locked" Variant="Variant.Outlined" />
+                             Min="@_publishers" Max="1024" Disabled="@Locked" Variant="Variant.Outlined" />
         </MudItem>
         <MudItem xs="12" sm="6" md="4">
             <MudNumericField T="int" Label="Prepared memory (MiB)" @bind-Value="_memoryMiB"

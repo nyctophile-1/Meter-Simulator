@@ -17,6 +17,21 @@ namespace ManyMeterSimulator.Tests;
 
 public partial class MqttPushRunTests
 {
+    [Theory]
+    [InlineData(128)]
+    [InlineData(256)]
+    public void RequestAcceptsIncreasedPublisherCount(int publishers)
+    {
+        new MqttPushRequest { BatchIds = [1], PublisherCount = publishers, MaxConcurrency = publishers }.Validate();
+    }
+
+    [Fact]
+    public void RequestRejectsPublishersAboveLimit()
+    {
+        Assert.Throws<ArgumentException>(() =>
+            new MqttPushRequest { BatchIds = [1], PublisherCount = 257, MaxConcurrency = 257 }.Validate());
+    }
+
     [Fact]
     public async Task StressServiceArmsWithoutPublishing_ThenFiresAndReleasesThePool()
     {
