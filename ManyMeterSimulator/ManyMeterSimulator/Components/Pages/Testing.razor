@@ -1271,17 +1271,27 @@
     // Billing, Events, ...) shows up here with no code change. Reads the shared, process-wide
     // cached template object graph (TemplateModelCache) directly, keyed by Description for a
     // friendly label — never materializes a meter session just to list options.
+    //
+    // Also offers a profile that has NO declared PushSetup but CAN still be pushed, via
+    // DLMSServerSession's ephemeral-push fallback (built from the profile's own pull data) —
+    // labelled distinctly so an operator can tell "template declares this" from "built from pull
+    // data". A template's own declared PushSetup always wins the label if both exist somewhere
+    // across the listed batches.
     private IReadOnlyList<(string? Obis, string Label)> PushProfileOptions
     {
         get
         {
-            var byObis = new Dictionary<string, string>(StringComparer.Ordinal);
+            var declared = new Dictionary<string, string>(StringComparer.Ordinal);
+            var fallbackEligible = new Dictionary<string, string>(StringComparer.Ordinal);
+
             foreach (string templateName in _batches.Select(b => b.TemplateName).Distinct(StringComparer.OrdinalIgnoreCase))
             {
                 try
                 {
                     string path = Templates.ResolveOrThrow(templateName);
-                    foreach (GXDLMSPushSetup push in TemplateModelCache.Shared.Get(path).OfType<GXDLMSPushSetup>())
+                    GXDLMSObjectCollection objects = TemplateModelCache.Shared.Get(path);
+
+                    foreach (GXDLMSPushSetup push in objects.OfType<GXDLMSPushSetup>())
                     {
                         if (push.PushObjectList.Count == 0)
                         {
@@ -1289,7 +1299,21 @@
                         }
 
                         string label = string.IsNullOrWhiteSpace(push.Description) ? push.LogicalName : push.Description;
-                        byObis[push.LogicalName] = label;
+                        declared[push.LogicalName] = label;
+                    }
+
+                    if (objects.OfType<GXDLMSRegister>().Any() || objects.OfType<GXDLMSData>().Any())
+                    {
+                        fallbackEligible.TryAdd(DLMSServerSession.InstantDispatchLN, "Instantaneous Profile (from pull data)");
+                    }
+
+                    foreach ((string dispatchLn, string profileLn) in DLMSServerSession.KnownProfileBackedDispatchLNs)
+                    {
+                        if (objects.FindByLN(Gurux.DLMS.Enums.ObjectType.ProfileGeneric, profileLn) is GXDLMSProfileGeneric profile && profile.Buffer.Count > 0)
+                        {
+                            string label = string.IsNullOrWhiteSpace(profile.Description) ? profileLn : profile.Description;
+                            fallbackEligible.TryAdd(dispatchLn, $"{label} (from pull data)");
+                        }
                     }
                 }
                 catch (Exception)
@@ -1297,6 +1321,12 @@
                     // A batch whose template can't be resolved/parsed just contributes no options —
                     // the page must still render.
                 }
+            }
+
+            var byObis = new Dictionary<string, string>(fallbackEligible, StringComparer.Ordinal);
+            foreach ((string obis, string label) in declared)
+            {
+                byObis[obis] = label;
             }
 
             var options = byObis

@@ -303,6 +303,15 @@ namespace MeterSimulator.DLMS
         /// own channel OBIS, because that LN is also the "SelfLN" element the HES uses to dispatch to
         /// the matching parser (see BuildPushPayloads' Item[1] in each flat structure). Null (the
         /// default) sends every non-empty PushSetup the template configures.
+        ///
+        /// <para>
+        /// If the template has no PushSetup at this LN but it's one of the well-known dispatch codes
+        /// (see <see cref="BuildEphemeralPushSetup"/>) and the corresponding profile/values exist,
+        /// this builds the push directly from that pull data instead of requiring a template author
+        /// to declare a PushSetup object — the meter can push anything it can already answer on
+        /// pull. A template-declared PushSetup always takes priority when present, since it may
+        /// carry a deliberately customized field list.
+        /// </para>
         /// </param>
         /// <returns>One byte[] per PushSetup — each a complete DLMS wrapper DataNotification frame.</returns>
         public IReadOnlyList<byte[]> BuildPushPayloads(bool useCiphering, string? pushSetupLogicalName = null)
@@ -311,6 +320,12 @@ namespace MeterSimulator.DLMS
                 .Where(p => p.PushObjectList.Count > 0)
                 .Where(p => pushSetupLogicalName == null || p.LogicalName == pushSetupLogicalName)
                 .ToList();
+
+            if (pushObjects.Count == 0 && pushSetupLogicalName != null
+                && BuildEphemeralPushSetup(pushSetupLogicalName) is GXDLMSPushSetup ephemeral)
+            {
+                pushObjects.Add(ephemeral);
+            }
 
             if (pushObjects.Count == 0)
             {
@@ -595,6 +610,115 @@ namespace MeterSimulator.DLMS
             }
 
             CoreLog.Debug($"[Push] {_meter.MeterNo}: {profile.LogicalName} synced from row {rowTime.Value:O} -> {rounded:O}");
+        }
+
+        /// <summary>
+        /// The well-known profile OBIS behind each fixed, buffer-backed dispatch code a real HES
+        /// recognizes (confirmed against vayu-common's own push dispatch table — see
+        /// docs/profile-simulation/plan.md §3a) — the SAME identity <c>MeterDataSnapshotReader</c>
+        /// already uses elsewhere in this codebase to name these profiles, kept here as an explicit,
+        /// reviewed table rather than inferred, because guessing this mapping wrong would silently
+        /// mislabel one profile's data as another's. Public so the UI (which needs to know whether a
+        /// profile CAN be pushed even without a declared PushSetup) shares this exact table instead
+        /// of duplicating it.
+        /// </summary>
+        public static readonly IReadOnlyDictionary<string, string> KnownProfileBackedDispatchLNs = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["0.5.25.9.0.255"] = "1.0.99.1.0.255", // Load Survey / Block Load
+            ["0.6.25.9.0.255"] = "1.0.99.2.0.255", // Daily
+            ["0.7.25.9.0.255"] = "1.0.98.1.0.255", // Billing
+        };
+
+        /// <summary>OBIS of the Instantaneous push dispatch channel — no profile buffer backs it.</summary>
+        public const string InstantDispatchLN = "0.0.25.9.0.255";
+
+        /// <summary>
+        /// Builds a push directly from this meter's own pull data when the template has no
+        /// PushSetup object for the requested dispatch LN — the meter should be able to push
+        /// anything it can already answer on pull, without requiring a template author to
+        /// separately hand-author a PushSetup for every profile. Returns null for a dispatch LN this
+        /// isn't confident about (an unrecognized OBIS, or Events — its dispatch is a set of several
+        /// category codes with no single owning profile, so there is no safe default here) or when
+        /// the underlying data isn't actually present in this template.
+        /// </summary>
+        private GXDLMSPushSetup? BuildEphemeralPushSetup(string dispatchLogicalName)
+        {
+            if (dispatchLogicalName == InstantDispatchLN)
+            {
+                return BuildEphemeralInstantPushSetup();
+            }
+
+            if (KnownProfileBackedDispatchLNs.TryGetValue(dispatchLogicalName, out string? sourceProfileLn))
+            {
+                return BuildEphemeralProfileBackedPushSetup(dispatchLogicalName, sourceProfileLn);
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Device ID, SelfLN, the dedicated profile-backed RTC clock, then the source profile's own
+        /// CaptureObjects (skipping its own clock column) — the exact same shape a hand-authored
+        /// PushSetup uses (see SA1231166HP_values.xml's Block Load Push Setup), just assembled at
+        /// send time instead of declared in the template. Never registered in any collection —
+        /// GeneratePushSetupMessages only ever reads the object references it's handed directly.
+        /// </summary>
+        private GXDLMSPushSetup? BuildEphemeralProfileBackedPushSetup(string dispatchLogicalName, string sourceProfileLn)
+        {
+            if (_objectsFromFile.FindByLN(ObjectType.ProfileGeneric, sourceProfileLn) is not GXDLMSProfileGeneric profile
+                || profile.Buffer.Count == 0 || profile.CaptureObjects.Count == 0)
+            {
+                return null;
+            }
+
+            var push = new GXDLMSPushSetup(dispatchLogicalName);
+            AddDeviceIdAndSelfLN(push);
+            push.PushObjectList.Add(new GXKeyValuePair<GXDLMSObject, GXDLMSCaptureObject>(
+                new GXDLMSClock(ProfileBackedPushRtcLN), new GXDLMSCaptureObject(2, 0)));
+
+            // Column 0 of every row is the profile's own clock column, already covered above by the
+            // dedicated RTC slot — everything after it is the actual captured data.
+            for (int i = 1; i < profile.CaptureObjects.Count; i++)
+            {
+                var (obj, capture) = (profile.CaptureObjects[i].Key, profile.CaptureObjects[i].Value);
+                push.PushObjectList.Add(new GXKeyValuePair<GXDLMSObject, GXDLMSCaptureObject>(obj, capture));
+            }
+
+            CoreLog.Debug($"[Push] {_meter.MeterNo}: built ephemeral push for {dispatchLogicalName} from {sourceProfileLn} (no PushSetup declared in this template)");
+            return push;
+        }
+
+        /// <summary>
+        /// Device ID, SelfLN, the ordinary "now" clock, then every scalar Register/Data this meter
+        /// exposes — mirrors the same fallback <c>MeterDataSnapshotReader</c> already uses to show an
+        /// Instantaneous view when a template has no dedicated Instant PushSetup either.
+        /// </summary>
+        private GXDLMSPushSetup BuildEphemeralInstantPushSetup()
+        {
+            var push = new GXDLMSPushSetup(InstantDispatchLN);
+            AddDeviceIdAndSelfLN(push);
+            push.PushObjectList.Add(new GXKeyValuePair<GXDLMSObject, GXDLMSCaptureObject>(
+                new GXDLMSClock("0.0.1.0.0.255"), new GXDLMSCaptureObject(2, 0)));
+
+            foreach (GXDLMSObject obj in _objectsFromFile
+                .Where(o => o is GXDLMSRegister or GXDLMSData)
+                .OrderBy(o => o.LogicalName, StringComparer.Ordinal))
+            {
+                push.PushObjectList.Add(new GXKeyValuePair<GXDLMSObject, GXDLMSCaptureObject>(obj, new GXDLMSCaptureObject(2, 0)));
+            }
+
+            CoreLog.Debug($"[Push] {_meter.MeterNo}: built ephemeral Instantaneous push (no PushSetup declared in this template)");
+            return push;
+        }
+
+        private void AddDeviceIdAndSelfLN(GXDLMSPushSetup push)
+        {
+            if (_objectsFromFile.FindByLN(ObjectType.Data, DeviceIdLN) is GXDLMSData deviceId)
+            {
+                push.PushObjectList.Add(new GXKeyValuePair<GXDLMSObject, GXDLMSCaptureObject>(deviceId, new GXDLMSCaptureObject(2, 0)));
+            }
+
+            push.PushObjectList.Add(new GXKeyValuePair<GXDLMSObject, GXDLMSCaptureObject>(push, new GXDLMSCaptureObject(1, 0)));
         }
 
         /// <summary>

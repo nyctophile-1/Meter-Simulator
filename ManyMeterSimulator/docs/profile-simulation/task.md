@@ -37,11 +37,16 @@
   profile-backed just because it happens to share a common register. The Testing page's "Send Push"
   dropdown is now computed from whatever PushSetups the batch's template actually defines (via
   `Description`), not a hardcoded list — Daily/Billing/Events show up automatically once a template
-  defines their PushSetup. **What's left is a data/config task, not a code blocker**: someone needs
-  to supply a real HES-used template XML with correctly authored Daily/Billing/Events
-  `GXDLMSPushSetup` blocks (dispatch OBIS + exact field order, mirroring how Block Load's own
-  PushSetup already does it in `SA1231166HP_values.xml`) — once that template exists, this mechanism
-  needs no further code changes.
+  defines their PushSetup.
+- [x] Superseded the "needs a declared PushSetup" requirement for IP/LS/Daily/Billing entirely (see
+  plan.md §3b): a template no longer needs a `GXDLMSPushSetup` object for these — the meter pushes
+  directly from its own pull data (profile buffer / live scalars) via
+  `DLMSServerSession.BuildEphemeralPushSetup`, using the confirmed dispatch codes as the identifying
+  data instead of a template-declared object. A declared PushSetup still takes priority when one
+  exists. Proven against `HP_Template_111.xml` (real Load Survey profile, no Block Load PushSetup) —
+  see `PushEphemeralFallbackTests.cs`. Events stays excluded: no safe default profile↔dispatch
+  mapping exists for it (8 category codes, no established correspondence to a template's event
+  profiles), so this remains a genuine data/config task for whoever owns that mapping.
 - [x] Fixed a latent bug this surfaced: `ProfileSimulationService`'s `AutoPush` was passing a
   profile's own LogicalName as the PushSetup filter — a different OBIS from the actual push dispatch
   channel for every profile type, including the already-shipped Block Load case. Added a required,

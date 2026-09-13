@@ -117,9 +117,33 @@ define (via `DLMSServerSession.GetPushSetupLogicalNames()` and each PushSetup's 
 Once a template with a Daily/Billing/Events PushSetup exists, it appears in the dropdown
 automatically — no further code change needed per profile type.
 
-Events remains separately blocked regardless of PushSetup availability: event *generation* itself is
-out of scope for this work (see Decisions above), so there is nothing to push yet even once a
-template defines an Events PushSetup.
+### 3b. Superseded: pushing WITHOUT a declared PushSetup at all (implemented 2026-09-13)
+
+The "user supplies an XML with the PushSetup already defined" resolution above still applies to
+Events (no safe default mapping — see below) and to any profile where a template author wants a
+genuinely custom field list. But for IP, LS, Daily, and Billing specifically, a template no longer
+needs a declared `GXDLMSPushSetup` at all: the meter can push anything it can already answer on
+pull, using the confirmed dispatch codes as the identifying data.
+
+`DLMSServerSession.BuildPushPayloads` now falls back to `BuildEphemeralPushSetup` when the requested
+dispatch LN has no declared PushSetup: it builds one in memory (Device ID, SelfLN at the confirmed
+dispatch code, RTC, then the profile's own `CaptureObjects` — the exact shape a hand-authored
+PushSetup uses) directly from the profile the pull path already serves, via the same explicit,
+reviewed `KnownProfileBackedDispatchLNs` table (`0.5→`Load Survey, `0.6→`Daily, `0.7→`Billing) plus
+an Instantaneous fallback over every scalar Register/Data. A template-declared PushSetup always
+takes priority when one exists, since it may carry a deliberately customized field list; the
+fallback only fires when nothing is declared. Proven against `HP_Template_111.xml`, which has a real
+populated Load Survey profile but no Block Load PushSetup — its ephemeral push carries byte-for-byte
+the same latest-row values the pull path returns (`PushEphemeralFallbackTests.cs`).
+
+The Testing page's dropdown offers these fallback-eligible profiles too, labelled "(from pull data)"
+to distinguish them from a template's own declared PushSetup.
+
+Events remains excluded from this fallback and separately blocked regardless of PushSetup
+availability: it has no single profile↔dispatch mapping (8 different category codes, and templates
+can define several separate event-log profiles with no established correspondence between them), so
+a default here risks silently mislabeling event data — and event *generation* itself is still out of
+scope for this work (see Decisions above), so there is nothing to push yet regardless.
 
 ## 4. One coherent value model
 
