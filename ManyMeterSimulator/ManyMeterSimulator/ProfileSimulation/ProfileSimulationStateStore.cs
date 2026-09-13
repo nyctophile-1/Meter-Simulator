@@ -8,9 +8,12 @@ using Microsoft.Extensions.Options;
 namespace ManyMeterSimulator.ProfileSimulation;
 
 /// <summary>
-/// Manages one durable, mutable XML model per simulated meter. The immutable uploaded template is
-/// never modified. A working model is validated before it becomes current and the previous valid
-/// XML is retained beside it for recovery.
+/// Manages one durable, mutable XML model per simulated BATCH — not per meter. Generation is
+/// deterministic and configured identically for every meter in a batch, so every meter produces
+/// byte-identical simulated data; persisting one file per meter was pure duplication (it grew to
+/// ~20,000 near-identical files in production — see ProfileStateRetentionService). The immutable
+/// uploaded template is never modified. A working model is validated before it becomes current and
+/// the previous valid XML is retained beside it for recovery.
 /// </summary>
 public sealed class ProfileSimulationStateStore
 {
@@ -44,12 +47,13 @@ public sealed class ProfileSimulationStateStore
     public bool Enabled => _options.Enabled;
 
     /// <summary>
-    /// Resolves (and, on first use, creates) the meter's working XML. Existing state is never
-    /// silently replaced when the source template changed; a migration needs an explicit decision.
+    /// Resolves (and, on first use, creates) the batch's shared working XML. Existing state is
+    /// never silently replaced when the source template changed; a migration needs an explicit
+    /// decision. Idempotent and safe to call once per meter as each is materialized — every call
+    /// for the same batch resolves to the same file.
     /// </summary>
     public bool TryGetOrCreate(
         MeterBatch batch,
-        long meterIndex,
         string sourceTemplatePath,
         out ProfileWorkingModel workingModel)
     {
@@ -64,17 +68,16 @@ public sealed class ProfileSimulationStateStore
             throw new FileNotFoundException("The source template required for profile simulation was not found.", sourceTemplatePath);
         }
 
-        string meterFolder = Path.Combine(_root, $"batch-{batch.Id:D6}", $"meter-{meterIndex:D10}");
-        string modelPath = Path.Combine(meterFolder, "model.xml");
-        string previousPath = Path.Combine(meterFolder, "model.previous.xml");
-        string metadataPath = Path.Combine(meterFolder, "metadata.json");
+        string batchFolder = Path.Combine(_root, $"batch-{batch.Id:D6}");
+        string modelPath = Path.Combine(batchFolder, "model.xml");
+        string previousPath = Path.Combine(batchFolder, "model.previous.xml");
+        string metadataPath = Path.Combine(batchFolder, "metadata.json");
         string sourceHash = HashFile(sourceTemplatePath);
         var identity = new WorkingModelIdentity(
             batch.Id,
             batch.CreatedAtUtc,
             batch.StartIndex,
             batch.Count,
-            meterIndex,
             Path.GetFileName(sourceTemplatePath),
             sourceHash);
 
@@ -86,15 +89,15 @@ public sealed class ProfileSimulationStateStore
             if (hasModel != hasMetadata)
             {
                 throw new InvalidOperationException(
-                    $"Working profile state for meter {meterIndex} is incomplete at '{meterFolder}'. Refusing to overwrite it.");
+                    $"Working profile state for batch {batch.Id} is incomplete at '{batchFolder}'. Refusing to overwrite it.");
             }
 
             if (!hasModel)
             {
-                Directory.CreateDirectory(meterFolder);
+                Directory.CreateDirectory(batchFolder);
                 CopyValidatedAtomic(sourceTemplatePath, modelPath);
                 WriteJsonAtomic(metadataPath, identity);
-                _logger?.LogInformation("Created working profile XML for meter {Meter} at {Path}", meterIndex, modelPath);
+                _logger?.LogInformation("Created working profile XML for batch {Batch} at {Path}", batch.Id, modelPath);
             }
             else
             {
@@ -102,7 +105,7 @@ public sealed class ProfileSimulationStateStore
                 if (persisted is null || !persisted.Matches(identity))
                 {
                     throw new InvalidOperationException(
-                        $"Working profile state for meter {meterIndex} was created from a different batch or source template. " +
+                        $"Working profile state for batch {batch.Id} was created from a different batch definition or source template. " +
                         "Create an explicit migration or choose a new state folder; it will not be overwritten automatically.");
                 }
 
@@ -150,6 +153,69 @@ public sealed class ProfileSimulationStateStore
                 TryDelete(previousTempPath);
             }
         }
+    }
+
+    /// <summary>
+    /// Deletes any batch's working-state folder that nothing has written to in over
+    /// <see cref="ProfileSimulationOptions.StateRetentionDays"/> days. This runs independently of
+    /// <see cref="Enabled"/> — a folder left over from when the feature was on (or from a build that
+    /// no longer references it) must still be reclaimed after the feature is toggled off or
+    /// replaced, which is exactly the gap that let an earlier, per-meter build's state folder grow
+    /// to ~20,000 files with nothing ever cleaning it up.
+    /// </summary>
+    /// <returns>The number of batch folders removed.</returns>
+    public int PruneStale(DateTimeOffset utcNow)
+    {
+        if (!Directory.Exists(_root))
+        {
+            return 0;
+        }
+
+        DateTimeOffset cutoff = utcNow.ToUniversalTime().AddDays(-Math.Clamp(_options.StateRetentionDays, 1, 365));
+        int removed = 0;
+
+        foreach (string batchFolder in Directory.EnumerateDirectories(_root, "batch-*"))
+        {
+            string modelPath = Path.Combine(batchFolder, "model.xml");
+            object fileLock = FileLocks.GetOrAdd(modelPath, _ => new object());
+            lock (fileLock)
+            {
+                try
+                {
+                    if (LastActivityUtc(batchFolder) is DateTimeOffset lastActivity && lastActivity < cutoff)
+                    {
+                        Directory.Delete(batchFolder, recursive: true);
+                        FileLocks.TryRemove(modelPath, out _);
+                        removed++;
+                        _logger?.LogInformation(
+                            "Removed stale profile simulation state at {Path} (last written {LastActivity:u}, retention {RetentionDays}d)",
+                            batchFolder, lastActivity, _options.StateRetentionDays);
+                    }
+                }
+                catch (IOException exception)
+                {
+                    _logger?.LogWarning(exception, "Could not prune profile simulation state at {Path}", batchFolder);
+                }
+            }
+        }
+
+        return removed;
+    }
+
+    /// <summary>The most recent write across a batch's model, previous snapshot and metadata files.</summary>
+    private static DateTimeOffset? LastActivityUtc(string batchFolder)
+    {
+        DateTimeOffset? latest = null;
+        foreach (string file in Directory.EnumerateFiles(batchFolder))
+        {
+            DateTimeOffset writtenAt = File.GetLastWriteTimeUtc(file);
+            if (latest is null || writtenAt > latest)
+            {
+                latest = writtenAt;
+            }
+        }
+
+        return latest;
     }
 
     private static string ResolveRoot(ProfileSimulationOptions options, IHostEnvironment environment) =>
@@ -249,20 +315,19 @@ public sealed class ProfileSimulationStateStore
     }
 }
 
-/// <summary>Paths and immutable identity for one meter's current working model.</summary>
+/// <summary>Paths and immutable identity for one batch's current shared working model.</summary>
 public sealed record ProfileWorkingModel(
     string ModelPath,
     string PreviousModelPath,
     string MetadataPath,
     WorkingModelIdentity Identity);
 
-/// <summary>Detects accidental reuse of a working model after batch/template changes.</summary>
+/// <summary>Detects accidental reuse of a working model after the batch definition/template changes.</summary>
 public sealed record WorkingModelIdentity(
     int BatchId,
     DateTimeOffset BatchCreatedAtUtc,
     long BatchStartIndex,
     long BatchCount,
-    long MeterIndex,
     string SourceTemplateFileName,
     string SourceTemplateSha256)
 {
@@ -271,7 +336,6 @@ public sealed record WorkingModelIdentity(
         && BatchCreatedAtUtc == other.BatchCreatedAtUtc
         && BatchStartIndex == other.BatchStartIndex
         && BatchCount == other.BatchCount
-        && MeterIndex == other.MeterIndex
         && string.Equals(SourceTemplateFileName, other.SourceTemplateFileName, StringComparison.OrdinalIgnoreCase)
         && string.Equals(SourceTemplateSha256, other.SourceTemplateSha256, StringComparison.Ordinal);
 }

@@ -24,9 +24,11 @@ namespace ManyMeterSimulator.Tests;
 /// CumulativeEnergyKwhImport, CumulativeEnergyKvahImport, CumulativeEnergyKwhExport,
 /// CumulativeEnergyKvahExport, AverageCurrent, NeutralCurrent) — but unlike Instant, whose values
 /// live directly on their own Registers, Block Load's values come from the LATEST row of the
-/// Block Load profile's buffer (DLMSServerSession.SyncBlockLoadPushValues), because a push
-/// represents one captured block, not a live instantaneous reading. The row's own timestamp is
-/// rounded to the nearest 30-minute block rather than sent verbatim.
+/// Block Load profile's buffer (DLMSServerSession.SyncProfileBackedPushValues — generalized to
+/// find whichever profile's CaptureObjects overlap a PushSetup's own object list, not hardcoded
+/// to Block Load specifically), because a push represents one captured block, not a live
+/// instantaneous reading. The row's own timestamp is rounded to the nearest 30-minute block
+/// (Block Load's own CapturePeriod) rather than sent verbatim.
 /// </para>
 /// </summary>
 public class PushBlockLoadProfileTests
@@ -110,8 +112,8 @@ public class PushBlockLoadProfileTests
         DLMSServerSession session = BuildSession();
 
         // Independently find the true latest row directly from the (shared, already-loaded)
-        // template — same technique ShiftBufferTimestamps and SyncBlockLoadPushValues use — so the
-        // expected values are never hardcoded and can't silently drift out of sync with the data.
+        // template — same technique ShiftBufferTimestamps and SyncProfileBackedPushValues use — so
+        // the expected values are never hardcoded and can't silently drift out of sync with the data.
         var profile = TemplateModelCache.Shared
             .Get(Path.Combine(AppContext.BaseDirectory, "Templates", "SA1231166HP_values.xml"))
             .FindByLN(ObjectType.ProfileGeneric, "1.0.99.1.0.255") as GXDLMSProfileGeneric;
@@ -180,6 +182,22 @@ public class PushBlockLoadProfileTests
         Assert.Single(payloads);
         var parsed = DecodePush(payloads[0]);
         Assert.Equal(new byte[] { 0, 0, 25, 9, 0, 255 }, (byte[])parsed[1]); // Instant's own LN, not Block Load's
+    }
+
+    /// <summary>
+    /// Regression guard for a real bug this session's push generalization surfaced: the profile's
+    /// own identity LN ("1.0.99.1.0.255") is NOT the same as its PushSetup's dispatch LN
+    /// ("0.5.25.9.0.255") — passing the former where the latter is required must find nothing to
+    /// send, not silently substitute the right one. (See ProfileSimulationOptions.AutoPushSetupLogicalName.)
+    /// </summary>
+    [Fact]
+    public void BuildPushPayloads_FilteredToTheProfilesOwnLN_FindsNothing()
+    {
+        DLMSServerSession session = BuildSession();
+
+        IReadOnlyList<byte[]> payloads = session.BuildPushPayloads(useCiphering: true, pushSetupLogicalName: "1.0.99.1.0.255");
+
+        Assert.Empty(payloads);
     }
 
     [Fact]

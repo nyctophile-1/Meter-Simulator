@@ -187,6 +187,9 @@ builder.Services.AddHostedService<TcpNicListenerService>();
 // NIC-agnostic housekeeping (idle reaping + metrics summary) — serves every NIC, not just TCP.
 builder.Services.AddHostedService<SessionMaintenanceService>();
 builder.Services.AddHostedService<ProfileSimulationHostedService>();
+// Runs regardless of ProfileSimulationOptions.Enabled — stale state left by a toggled-off feature
+// or a since-replaced build must still be reclaimed (see ProfileStateRetentionService).
+builder.Services.AddHostedService<ProfileStateRetentionService>();
 // Capture dashboard telemetry continuously, not only while the Dashboard component is open.
 builder.Services.AddHostedService(sp => sp.GetRequiredService<DashboardActivityHistory>());
 

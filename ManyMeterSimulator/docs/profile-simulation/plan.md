@@ -60,6 +60,67 @@ For 15-minute blocks, captures are 00:15, 00:30, 00:45, 01:00, etc., assuming en
 
 At midnight/month rollover, advance energy through the boundary, finish the final block, take daily and billing snapshots, then reset only the applicable period accumulators. Preserve lifetime cumulative energy. Define DST, clock-change, and mid-run capture-period-change behavior before enabling those scenarios.
 
+### 3a. Manual "push any chosen profile" (investigated 2026-09-13, resolved: template-supplied)
+
+Today only three PushSetup channels are configured anywhere in this repo's templates: Instant
+(`0.0.25.9.0.255`), Alert (`0.4.25.9.0.255`), and Block Load/Load Survey (`0.5.25.9.0.255`, only in
+`SA1231166HP_values.xml`). Daily and Billing have none, so the Testing page's "Send Push" profile
+dropdown can't offer them today — selecting a profile with no matching PushSetup just finds nothing
+to send.
+
+The dispatch OBIS codes the receiving HES uses to route a push to the right parser are now
+CONFIRMED — sourced directly from the HES-side dispatch table, `Functions.PushType` in
+`C:\repos\vayu-common\CrystalHES.Common\Helpers\Functions.cs:235-259`, consumed by the dispatch
+switch in `DLMSGenericParser.cs:93-118` (`ParseAndSavePushDataToDb`), and cross-checked against an
+identical copy in the sibling `vayu-core` repo:
+
+| Profile | Confirmed SelfLN OBIS | Dispatches to |
+|---|---|---|
+| IP (Instantaneous) | `0.0.25.9.0.255` | `ParseAndSaveInstantProfile` — matches the simulator's existing value |
+| LS (Load Survey / Block Load) | `0.5.25.9.0.255` | `ParseAndSaveBlockloadProfile` — matches the simulator's existing value |
+| DP (Daily) | `0.6.25.9.0.255` | `ParseAndSaveDailyProfile` |
+| Billing | `0.7.25.9.0.255` | `ParseAndSaveBillingProfile` |
+| Events | no single code — a set: `0.10/0.11/0.13/0.14/0.128.25.9.0.255` (event categories) plus `0.8/0.9/0.12.25.9.0.255` ("Tempers") | `ParseAndSaveEventProfile` |
+
+Knowing the dispatch code isn't the whole story — each HES parser also expects a specific field
+order in the payload (Block Load's is fully spelled out next to its template PushSetup: "RtcDateTime,
+AverageVoltage, CumulativeEnergyKwhImport, ..."). Rather than reverse-engineering that from
+`vayu-common`'s parser internals, **the resolved approach is simpler: the user supplies the actual
+XML for a real HES-used template id that already has the Daily/Billing `GXDLMSPushSetup` correctly
+defined** (dispatch OBIS + field order both baked into its `PushObjectList`, exactly like Block
+Load's PushSetup already is in `SA1231166HP_values.xml`). Since `BuildPushPayloads(pushSetupLogicalName)`
+already reads whatever PushSetup a template defines — with zero assumptions about which profile
+it's for — no *encoding* code path is needed.
+
+**What DID need a code change (implemented 2026-09-13)**: the step that fills a profile-backed
+push's fields with real data (formerly `SyncBlockLoadPushValues`) was hardcoded to one profile LN
+(`"1.0.99.1.0.255"`). Generalized to `SyncProfileBackedPushValues(push)`:
+
+- Finds the source profile by object overlap between the push's `PushObjectList` and each
+  candidate profile's `CaptureObjects` (same shared object instances — Gurux's loader dedupes by
+  OBIS), picking the profile with the MOST overlapping objects when more than one profile shares a
+  register (a real case: `SA1231166HP_values.xml` has `AverageVoltage` in more than one profile).
+- Gated on the push containing a Clock entry at the dedicated `0.0.1.0.1.255` OBIS specifically —
+  a deliberate template convention, not an inferred heuristic. This gate is load-bearing: register
+  overlap alone isn't safe, since a non-profile push (Instant) can coincidentally share a register
+  with an unrelated profile, and an earlier version of this fix synced garbage onto Instant's own
+  live values and crashed the encoder before the gate was added.
+- Rounds to the nearest half hour unconditionally, same as the original Block-Load-only code —
+  deliberately NOT derived from the profile's own `CapturePeriod` (a real template has Block Load's
+  `CapturePeriod` set to 900s/15min, not 1800s/30min, so doing that changed Block Load's own output).
+  Daily/Billing timestamps are simulator-generated exact boundary instants already on the half-hour
+  grid, so this rounding is a no-op for them — nothing needed to change here for those to work.
+
+The Testing page's "Send Push" profile dropdown (`PushProfileOptions`) is also no longer a hardcoded
+list — it's computed from whatever PushSetups the currently-listed batches' templates actually
+define (via `DLMSServerSession.GetPushSetupLogicalNames()` and each PushSetup's own `Description`).
+Once a template with a Daily/Billing/Events PushSetup exists, it appears in the dropdown
+automatically — no further code change needed per profile type.
+
+Events remains separately blocked regardless of PushSetup availability: event *generation* itself is
+out of scope for this work (see Decisions above), so there is nothing to push yet even once a
+template defines an Events PushSetup.
+
 ## 4. One coherent value model
 
 ### Confirmed control semantics (2026-09-12)

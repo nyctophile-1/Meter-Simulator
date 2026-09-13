@@ -25,25 +25,19 @@ namespace MeterSimulator.DLMS
         public bool AllSent => Failed == 0 && Sent > 0;
     }
 
-    /// <summary>Read-only current metadata for one profile buffer.</summary>
-    public readonly record struct ProfileBufferState(
-        string LogicalName,
-        string? Description,
-        uint CapturePeriodSeconds,
-        uint Capacity,
-        uint EntriesInUse,
-        DateTimeOffset? LatestCaptureAtUtc);
-
-    /// <summary>Result of appending one generated profile record.</summary>
-    public readonly record struct ProfileCaptureResult(
-        string LogicalName,
-        DateTimeOffset CapturedAtUtc,
-        int RetainedCount,
-        int EvictedCount);
-
     public class DLMSServerSession : GXDLMSSecureServer
     {
         private readonly DLMSMeter _meter;
+
+        /// <summary>
+        /// This meter's own value store. Exposed so batch-level profile simulation
+        /// (<c>BatchProfileSimulationState</c>) can push a newly generated capture's register/data
+        /// values into every materialized meter of a batch — reads are answered from here (see
+        /// <see cref="PreRead"/>), not from the shared object graph, so a capture generated once for
+        /// the whole batch still needs this per-meter update for live pulls to see it.
+        /// </summary>
+        public DLMSMeter Meter => _meter;
+
         private readonly string _templatePath;
         private readonly bool _shiftProfileTimestamps;
         //private readonly GXNet _network;
@@ -327,12 +321,6 @@ namespace MeterSimulator.DLMS
                 return Array.Empty<byte[]>();
             }
 
-            // Each PushSetup's list is a purely flat structure now (Device ID, SelfLN, then scalar
-            // fields matching the HES's SerialNumber-ordered schema) — no nested profile buffer to
-            // encode. A push that represents a load profile's row (e.g. Block Load) still needs its
-            // per-row values pulled from that profile's latest buffer entry first.
-            SyncBlockLoadPushValues();
-
             var payloads = new List<byte[]>(pushObjects.Count);
             foreach (var push in pushObjects)
             {
@@ -342,6 +330,13 @@ namespace MeterSimulator.DLMS
                 byte[][] frames;
                 lock (PushEncodeLock)
                 {
+                    // A push that represents a profile's row (Block Load, Daily, Billing, Events —
+                    // any GXDLMSProfileGeneric) needs its per-row values pulled from that profile's
+                    // latest buffer entry first. Scoped to THIS push and synced immediately before
+                    // encoding: with several profile-backed pushes in the same template, syncing
+                    // globally up front would let each one's synthetic RTC OBIS clobber the last
+                    // before it's actually encoded.
+                    SyncProfileBackedPushValues(push);
                     SyncPushValues(push);
                     ConfigureNotifyCiphering(useCiphering);
                     frames = Notify.GeneratePushSetupMessages(DateTime.UtcNow, push);
@@ -362,125 +357,11 @@ namespace MeterSimulator.DLMS
             .Where(p => p.PushObjectList.Count > 0).Select(p => p.LogicalName).Distinct().ToArray();
 
         /// <summary>
-        /// Returns the current profile-buffer metadata. The profile objects are normally shared
-        /// template schema, but a simulation working XML is loaded on its own path and is therefore
-        /// safe to mutate under the owning session lock.
-        /// </summary>
-        public IReadOnlyList<ProfileBufferState> GetProfileBufferStates() => _objectsFromFile
-            .OfType<GXDLMSProfileGeneric>()
-            .Select(profile => new ProfileBufferState(
-                profile.LogicalName,
-                profile.Description,
-                profile.CapturePeriod,
-                profile.ProfileEntries,
-                profile.EntriesInUse,
-                LatestProfileTimestamp(profile)))
-            .OrderBy(profile => profile.LogicalName, StringComparer.Ordinal)
-            .ToArray();
-
-        /// <summary>
-        /// Appends one simulated capture to a profile buffer and evicts the oldest timestamped
-        /// record when the profile has reached its configured capacity. Values are copied from the
-        /// latest source row unless a caller has explicitly supplied an increment for that capture
-        /// object's logical name. This deliberately does not infer electrical meaning from column
-        /// position or an OBIS name.
-        ///
-        /// Callers must hold this session's lock. The profile must come from a per-meter working
-        /// XML; mutating a shared template model would leak a record into other meters.
-        /// </summary>
-        public ProfileCaptureResult AppendProfileCapture(
-            string profileLogicalName,
-            DateTimeOffset capturedAtUtc,
-            IReadOnlyDictionary<string, decimal>? incrementsByCaptureObject = null)
-        {
-            if (_shiftProfileTimestamps)
-            {
-                throw new InvalidOperationException(
-                    "Cannot append simulated records to a shared/rebased template. Load a per-meter working XML with timestamp shifting disabled.");
-            }
-
-            if (_objectsFromFile.FindByLN(ObjectType.ProfileGeneric, profileLogicalName) is not GXDLMSProfileGeneric profile)
-            {
-                throw new InvalidOperationException($"Profile '{profileLogicalName}' is not present in this meter model.");
-            }
-
-            if (profile.ProfileEntries == 0)
-            {
-                throw new InvalidOperationException($"Profile '{profileLogicalName}' has no configured record capacity.");
-            }
-
-            object[]? sourceRow = LatestProfileRow(profile);
-            if (sourceRow is null)
-            {
-                throw new InvalidOperationException($"Profile '{profileLogicalName}' has no seed row from which to generate a capture.");
-            }
-
-            object[] row = new object[sourceRow.Length];
-            for (int index = 0; index < sourceRow.Length; index++)
-            {
-                object? value = CloneProfileCell(sourceRow[index]);
-                if (index < profile.CaptureObjects.Count)
-                {
-                    GXDLMSObject captureObject = profile.CaptureObjects[index].Key;
-                    if (captureObject is GXDLMSClock)
-                    {
-                        value = new GXDateTime(capturedAtUtc.UtcDateTime);
-                    }
-                    else if (incrementsByCaptureObject is not null
-                        && incrementsByCaptureObject.TryGetValue(captureObject.LogicalName, out decimal increment))
-                    {
-                        value = AddIncrement(value, increment, profileLogicalName, captureObject.LogicalName);
-                    }
-                }
-
-                row[index] = value!;
-            }
-
-            if (ProfileRowTimestamp(profile, row) != capturedAtUtc)
-            {
-                throw new InvalidOperationException(
-                    $"Profile '{profileLogicalName}' has no clock capture column, so its generated record cannot be timestamped safely.");
-            }
-
-            profile.Buffer.Add(row);
-            int evicted = 0;
-            while (profile.Buffer.Count > profile.ProfileEntries)
-            {
-                int oldest = FindOldestProfileRow(profile);
-                if (oldest < 0)
-                {
-                    profile.Buffer.RemoveAt(profile.Buffer.Count - 1);
-                    throw new InvalidOperationException(
-                        $"Profile '{profileLogicalName}' exceeded capacity but has a record with no usable capture timestamp. No record was retained.");
-                }
-
-                profile.Buffer.RemoveAt(oldest);
-                evicted++;
-            }
-
-            profile.EntriesInUse = (uint)profile.Buffer.Count;
-            foreach (var item in profile.CaptureObjects.Select((item, index) => (Capture: item, Index: index)))
-            {
-                // DLMSMeter stores the value returned for an object's normal value attribute
-                // (attribute 2). Some profile columns instead capture attributes such as an
-                // extended register's CaptureTime. Storing those by logical name would overwrite
-                // the register value with a timestamp and corrupt the model when it is saved.
-                if (item.Index >= row.Length
-                    || item.Capture.Value.AttributeIndex != 2
-                    || item.Capture.Key is not (GXDLMSRegister or GXDLMSData))
-                {
-                    continue;
-                }
-
-                _meter.SetValue(item.Capture.Key.LogicalName, row[item.Index]);
-            }
-
-            return new ProfileCaptureResult(profileLogicalName, capturedAtUtc, profile.Buffer.Count, evicted);
-        }
-
-        /// <summary>
         /// Serializes the complete current object model to a working XML path. The caller owns
         /// atomic replacement and validation, because persistence policy belongs to the host.
+        /// Batch-level profile simulation calls this via one representative meter's session — every
+        /// meter in the batch shares the same object graph and identical values, so any one of them
+        /// produces a correct, complete snapshot.
         /// </summary>
         public void SaveWorkingModel(string destinationPath)
         {
@@ -547,104 +428,6 @@ namespace MeterSimulator.DLMS
             }
         }
 
-        private static DateTimeOffset? LatestProfileTimestamp(GXDLMSProfileGeneric profile)
-        {
-            DateTimeOffset? latest = null;
-            foreach (object[] row in profile.Buffer)
-            {
-                DateTimeOffset? timestamp = ProfileRowTimestamp(profile, row);
-                if (timestamp is not null && (latest is null || timestamp > latest))
-                {
-                    latest = timestamp;
-                }
-            }
-
-            return latest;
-        }
-
-        private static object[]? LatestProfileRow(GXDLMSProfileGeneric profile)
-        {
-            object[]? latestRow = null;
-            DateTimeOffset latest = DateTimeOffset.MinValue;
-            foreach (object[] row in profile.Buffer)
-            {
-                DateTimeOffset? timestamp = ProfileRowTimestamp(profile, row);
-                if (timestamp is not null && timestamp > latest)
-                {
-                    latest = timestamp.Value;
-                    latestRow = row;
-                }
-            }
-
-            return latestRow;
-        }
-
-        private static int FindOldestProfileRow(GXDLMSProfileGeneric profile)
-        {
-            int oldestIndex = -1;
-            DateTimeOffset oldest = DateTimeOffset.MaxValue;
-            for (int index = 0; index < profile.Buffer.Count; index++)
-            {
-                DateTimeOffset? timestamp = ProfileRowTimestamp(profile, profile.Buffer[index]);
-                if (timestamp is not null && timestamp < oldest)
-                {
-                    oldest = timestamp.Value;
-                    oldestIndex = index;
-                }
-            }
-
-            return oldestIndex;
-        }
-
-        private static DateTimeOffset? ProfileRowTimestamp(GXDLMSProfileGeneric profile, object[] row)
-        {
-            for (int index = 0; index < profile.CaptureObjects.Count && index < row.Length; index++)
-            {
-                if (profile.CaptureObjects[index].Key is GXDLMSClock && row[index] is GXDateTime timestamp)
-                {
-                    return timestamp.Value;
-                }
-            }
-
-            return null;
-        }
-
-        private static object? CloneProfileCell(object? value) => value switch
-        {
-            GXDateTime timestamp => new GXDateTime(timestamp.Value.UtcDateTime),
-            byte[] bytes => bytes.ToArray(),
-            _ => value,
-        };
-
-        private static object AddIncrement(object? value, decimal increment, string profileLogicalName, string captureLogicalName)
-        {
-            try
-            {
-                return value switch
-                {
-                    byte number => checked((byte)(number + increment)),
-                    sbyte number => checked((sbyte)(number + increment)),
-                    short number => checked((short)(number + increment)),
-                    ushort number => checked((ushort)(number + increment)),
-                    int number => checked((int)(number + increment)),
-                    uint number => checked((uint)(number + increment)),
-                    long number => checked((long)(number + increment)),
-                    ulong number => checked((ulong)(number + increment)),
-                    float number => checked(number + (float)increment),
-                    double number => checked(number + (double)increment),
-                    decimal number => number + increment,
-                    null => throw new InvalidOperationException("The seed value is null."),
-                    _ => throw new InvalidOperationException($"The seed value type '{value.GetType().Name}' is not numeric."),
-                };
-            }
-            catch (Exception exception) when (exception is OverflowException or InvalidOperationException)
-            {
-                throw new InvalidOperationException(
-                    $"Cannot apply increment {increment} to '{captureLogicalName}' in profile '{profileLogicalName}'. {exception.Message}",
-                    exception);
-            }
-        }
-
         private static byte[] Concat(byte[][] frames)
         {
             if (frames.Length == 1)
@@ -683,7 +466,7 @@ namespace MeterSimulator.DLMS
                         if (dv != null) data.Value = dv;
                         break;
                     case GXDLMSClock clk:
-                        // A per-meter override (e.g. SyncBlockLoadPushValues, which needs this
+                        // A per-meter override (e.g. SyncProfileBackedPushValues, which needs this
                         // push's timestamp to be the buffered row's own captured time, not "now")
                         // wins when set; otherwise a Clock in a push list means "the time of this
                         // push", so it defaults to now.
@@ -695,42 +478,72 @@ namespace MeterSimulator.DLMS
         }
 
         /// <summary>
-        /// OBIS of the Block Load (Load Survey) profile this push reads from — the same object the
-        /// pull path already serves in full from its Buffer.
+        /// OBIS of a Clock dedicated to a profile-backed push's own RTC slot. Deliberately NOT the
+        /// shared Clock ("0.0.1.0.0.255") that a non-profile push (e.g. Instant) uses to mean "now"
+        /// — this one must carry the captured row's own time instead, rounded to the source
+        /// profile's own capture period, not whatever moment the operator happened to click "Send
+        /// Push". Shared by every profile-backed push in turn — safe because each is synced and
+        /// encoded immediately, one at a time (see the loop in <see cref="BuildPushPayloads"/>).
         /// </summary>
-        private const string BlockLoadProfileLN = "1.0.99.1.0.255";
+        private const string ProfileBackedPushRtcLN = "0.0.1.0.1.255";
 
         /// <summary>
-        /// OBIS of a Clock dedicated to the Block Load push's own RTC slot. Deliberately NOT the
-        /// shared Clock ("0.0.1.0.0.255") that every other push (e.g. Instant) uses to mean "now" —
-        /// this one must carry the captured row's own time instead, rounded to the nearest
-        /// 30-minute block (the meter's capture period), not whatever moment the operator happened
-        /// to click "Send Push".
-        /// </summary>
-        private const string BlockLoadRtcLN = "0.0.1.0.1.255";
-
-        /// <summary>
-        /// Copies the LATEST row of the Block Load profile's buffer onto this meter's per-attribute
-        /// value store — the same store <see cref="SyncPushValues"/> already reads from — so the
-        /// flat Block Load PushSetup carries real data without any special-casing in the encode path
-        /// itself. A no-op (leaves the store untouched) if the template has no Block Load profile or
-        /// its buffer is empty; harmless to call for every push regardless of which PushSetup is
-        /// actually being sent.
+        /// Copies the LATEST row of whichever profile buffer feeds this PushSetup onto this meter's
+        /// per-attribute value store — the same store <see cref="SyncPushValues"/> already reads
+        /// from — so a flat PushSetup (Block Load, Daily, Billing, Events, or any future profile
+        /// type) carries real data without any special-casing in the encode path itself.
+        ///
+        /// <para>
+        /// Gated on whether this push's own <c>PushObjectList</c> contains a Clock entry at
+        /// <see cref="ProfileBackedPushRtcLN"/> specifically — a deliberate template-authoring
+        /// convention, not an inferred heuristic: a non-profile push (Instant, Alert) uses the
+        /// ordinary "now" clock ("0.0.1.0.0.255") instead. This gate matters because register OBIS
+        /// overlap ALONE is not a safe signal — common registers like AverageVoltage can legitimately
+        /// appear in more than one profile's <c>CaptureObjects</c> (and even in a non-profile push's
+        /// flat live-value list), so checking object overlap before this gate previously misfired:
+        /// it treated Instant's push as profile-backed because it happened to share a register with
+        /// some unrelated profile, corrupting its live value and crashing the encoder.
+        /// </para>
+        ///
+        /// <para>
+        /// Once gated in, the source profile is found by object overlap: a register/data OBIS
+        /// referenced by both a <see cref="GXDLMSProfileGeneric"/>'s <c>CaptureObjects</c> and this
+        /// push's own <c>PushObjectList</c> is the same shared object instance (Gurux's loader
+        /// dedupes by OBIS). Picks the profile with the MOST overlapping objects, not just the first
+        /// match, in case more than one profile-backed push shares a template — the push's list was
+        /// authored to mirror ONE profile's entire column set, so the true source profile shares far
+        /// more objects with it than any other profile could by coincidence.
+        /// </para>
         ///
         /// <para>
         /// "Latest" means the row with the MAXIMUM timestamp, found explicitly — NOT
-        /// <c>Buffer[^1]</c> (the last array slot). A live push confirmed this template's Block Load
-        /// buffer is chronologically sorted for indices 0..N-2 but carries one stray, over-a-month-old
-        /// row at the very end (a data artifact, not something this code should have to assume away).
-        /// Trusting array position silently pushed that stale row's timestamp on every send.
+        /// <c>Buffer[^1]</c> (the last array slot). A live push confirmed a Block Load buffer can be
+        /// chronologically sorted for indices 0..N-2 but carry one stray, over-a-month-old row at the
+        /// very end (a data artifact, not something this code should have to assume away). Trusting
+        /// array position silently pushed that stale row's timestamp on every send.
         /// <see cref="MeterObjectLoader.ShiftBufferTimestamps"/> already computes "latest" the same
-        /// way, via Max() — this now matches it instead of a second, weaker assumption.
+        /// way, via Max() — this matches it instead of a second, weaker assumption.
         /// </para>
         /// </summary>
-        private void SyncBlockLoadPushValues()
+        private void SyncProfileBackedPushValues(GXDLMSPushSetup push)
         {
-            if (_objectsFromFile.FindByLN(ObjectType.ProfileGeneric, BlockLoadProfileLN) is not GXDLMSProfileGeneric profile
-                || profile.Buffer.Count == 0)
+            bool isProfileBacked = push.PushObjectList
+                .Any(kv => kv.Key is GXDLMSClock && kv.Key.LogicalName == ProfileBackedPushRtcLN);
+            if (!isProfileBacked)
+            {
+                return;
+            }
+
+            var pushObjects = new HashSet<GXDLMSObject>(push.PushObjectList.Select(kv => kv.Key));
+            GXDLMSProfileGeneric? profile = _objectsFromFile.OfType<GXDLMSProfileGeneric>()
+                .Where(p => p.Buffer.Count > 0)
+                .Select(p => (Profile: p, Overlap: p.CaptureObjects.Count(co => pushObjects.Contains(co.Key))))
+                .Where(candidate => candidate.Overlap > 0)
+                .OrderByDescending(candidate => candidate.Overlap)
+                .Select(candidate => candidate.Profile)
+                .FirstOrDefault();
+
+            if (profile is null)
             {
                 return;
             }
@@ -753,7 +566,7 @@ namespace MeterSimulator.DLMS
 
             if (latestRow is null || latestRow[0] is not GXDateTime rowTime)
             {
-                CoreLog.Debug($"[Push] {_meter.MeterNo}: Block Load buffer has no row with a usable timestamp, skipping sync");
+                CoreLog.Debug($"[Push] {_meter.MeterNo}: {profile.LogicalName} buffer has no row with a usable timestamp, skipping sync");
                 return;
             }
 
@@ -762,8 +575,16 @@ namespace MeterSimulator.DLMS
             // from TimeZoneInfo.Local (the HOST machine's zone) instead of encoding it as the UTC
             // value it actually is. Force Kind=Utc so the digits transmit with offset 0 regardless
             // of what timezone the process happens to run in.
-            DateTime rounded = DateTime.SpecifyKind(RoundToNearestHalfHour(rowTime.Value.DateTime), DateTimeKind.Utc);
-            _meter.SetValue(BlockLoadRtcLN, new GXDateTime(rounded));
+            //
+            // Always rounds to the nearest half hour, unconditionally — NOT derived from the
+            // profile's own CapturePeriod (Block Load's is 900s/15min in at least one real template,
+            // not 30min as its own capture cadence would suggest; the half-hour grid is an RTC wire
+            // convention independent of it). This is a pure carry-over of the original Block-Load-only
+            // behavior, generalized to whichever profile is found rather than changed: a calendar
+            // boundary (Daily's midnight, Billing's month-start) is already exactly on a half-hour
+            // grid, so rounding it is a no-op — nothing here needed to change for those to work.
+            DateTime rounded = DateTime.SpecifyKind(RoundToNearestPeriod(rowTime.Value.DateTime, TimeSpan.FromMinutes(30)), DateTimeKind.Utc);
+            _meter.SetValue(ProfileBackedPushRtcLN, new GXDateTime(rounded));
 
             // Column 0 is the row's own timestamp (already consumed above) — everything after it
             // lines up 1:1, in order, with CaptureObjects[1..].
@@ -773,7 +594,7 @@ namespace MeterSimulator.DLMS
                 _meter.SetValue(captureObjects[i].Key.LogicalName, latestRow[i]);
             }
 
-            CoreLog.Debug($"[Push] {_meter.MeterNo}: Block Load synced from row {rowTime.Value:O} -> rounded {rounded:O}");
+            CoreLog.Debug($"[Push] {_meter.MeterNo}: {profile.LogicalName} synced from row {rowTime.Value:O} -> {rounded:O}");
         }
 
         /// <summary>
@@ -827,10 +648,10 @@ namespace MeterSimulator.DLMS
             }
         }
 
-        /// <summary>Rounds to the nearest 30-minute mark (:00 or :30), half-up on an exact tie.</summary>
-        private static DateTime RoundToNearestHalfHour(DateTime value)
+        /// <summary>Rounds to the nearest multiple of <paramref name="period"/>, half-up on an exact tie.</summary>
+        private static DateTime RoundToNearestPeriod(DateTime value, TimeSpan period)
         {
-            long blockTicks = TimeSpan.FromMinutes(30).Ticks;
+            long blockTicks = period.Ticks;
             long remainder = value.Ticks % blockTicks;
             long rounded = remainder < blockTicks / 2 ? value.Ticks - remainder : value.Ticks + (blockTicks - remainder);
             return new DateTime(rounded, value.Kind);

@@ -28,15 +28,15 @@ public sealed class ProfileSimulationHostedService : BackgroundService
         }
 
         _logger.LogInformation(
-            "Profile simulation started: timezone {TimeZone}, every {IntervalSeconds}s, at most {MetersPerBatch} meter(s) per batch/cycle.",
-            _options.TimeZoneId, _options.SchedulerIntervalSeconds, _options.MaxMetersPerBatchPerCycle);
+            "Profile simulation started: timezone {TimeZone}, every {IntervalSeconds}s, at most {MaxCapturesPerCycle} catch-up capture(s) per batch/profile/cycle.",
+            _options.TimeZoneId, _options.SchedulerIntervalSeconds, _options.MaxCapturesPerCycle);
 
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(_options.SchedulerIntervalSeconds));
         do
         {
             try
             {
-                await Task.Run(() => _simulation.AdvanceRunningBatches(DateTimeOffset.UtcNow), stoppingToken);
+                await _simulation.AdvanceRunningBatches(DateTimeOffset.UtcNow, stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {

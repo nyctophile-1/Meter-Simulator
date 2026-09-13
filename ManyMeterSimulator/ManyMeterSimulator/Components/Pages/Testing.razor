@@ -8,7 +8,10 @@
 @using ManyMeterSimulator.Networking.Registry
 @using ManyMeterSimulator.Provisioning
 @using ManyMeterSimulator.Testing
+@using MeterSimulator.DLMS
+@using Gurux.DLMS.Objects
 @inject MeterRegistry MeterRegistry
+@inject TemplateRegistry Templates
 @inject NetworkRegistry Network
 @inject PushCoordinator Push
 @inject PushScheduleService Schedule
@@ -1257,17 +1260,53 @@
 
     // Push
     // Value is the PushSetup's OWN LN that BuildPushPayloads filters on — each profile type is its
-    // own PushSetup at its own channel OBIS (0.0... Instant, 0.5... Block Load, ...), because that
-    // LN is also what the HES uses to dispatch to the matching parser. Null ("All") sends every
-    // non-empty PushSetup the template configures, each as its own separate payload/frame — NOT
-    // combined into one structure (an earlier iteration did that and it was both too large to parse
-    // and dispatched to the wrong HES parser regardless of content).
-    private static readonly (string? Obis, string Label)[] PushProfileOptions =
+    // own PushSetup at its own channel OBIS (0.0... Instant, 0.5... Block Load, 0.6... Daily, ...),
+    // because that LN is also what the HES uses to dispatch to the matching parser. Null ("All")
+    // sends every non-empty PushSetup the template configures, each as its own separate
+    // payload/frame — NOT combined into one structure (an earlier iteration did that and it was
+    // both too large to parse and dispatched to the wrong HES parser regardless of content).
+    //
+    // Computed from whatever PushSetups the currently listed batches' templates actually define,
+    // rather than a fixed list — a template dropped in with a new profile's PushSetup (Daily,
+    // Billing, Events, ...) shows up here with no code change. Reads the shared, process-wide
+    // cached template object graph (TemplateModelCache) directly, keyed by Description for a
+    // friendly label — never materializes a meter session just to list options.
+    private IReadOnlyList<(string? Obis, string Label)> PushProfileOptions
     {
-        ("0.0.25.9.0.255", "Instantaneous Profile"),
-        ("0.5.25.9.0.255", "Load Survey (Block Load)"),
-        (null, "All"),
-    };
+        get
+        {
+            var byObis = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (string templateName in _batches.Select(b => b.TemplateName).Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    string path = Templates.ResolveOrThrow(templateName);
+                    foreach (GXDLMSPushSetup push in TemplateModelCache.Shared.Get(path).OfType<GXDLMSPushSetup>())
+                    {
+                        if (push.PushObjectList.Count == 0)
+                        {
+                            continue;
+                        }
+
+                        string label = string.IsNullOrWhiteSpace(push.Description) ? push.LogicalName : push.Description;
+                        byObis[push.LogicalName] = label;
+                    }
+                }
+                catch (Exception)
+                {
+                    // A batch whose template can't be resolved/parsed just contributes no options —
+                    // the page must still render.
+                }
+            }
+
+            var options = byObis
+                .OrderBy(kv => kv.Value, StringComparer.OrdinalIgnoreCase)
+                .Select(kv => ((string?)kv.Key, kv.Value))
+                .ToList();
+            options.Add((null, "All"));
+            return options;
+        }
+    }
 
     private string? _pushProfileFilter = "0.0.25.9.0.255";
 
