@@ -67,6 +67,7 @@ public sealed class TaskRunReport
 {
     // Constant-size loop result; EMQX is the source for incoming broker rate.
     public Brain.MqttLoopSummary? MqttLoop { get; init; }
+    public Brain.TcpLoopSummary? TcpLoop { get; init; }
     public string? Error { get; init; }
     public string TaskId { get; init; } = "";
     public TestTaskType TaskType { get; init; }
