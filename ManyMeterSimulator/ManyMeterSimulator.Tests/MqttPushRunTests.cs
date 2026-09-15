@@ -260,10 +260,12 @@ public partial class MqttPushRunTests
 
     private sealed class RecordingPool(RecordingPublisher owner) : IMqttPushPool
     {
+        public MqttPublishRateLimiter? RateLimiter { get; private set; }
         public bool Disposed { get; private set; }
         public bool IsConnected => !Disposed;
-        public async Task<MqttPushDelivery> PublishMeterAsync(IReadOnlyList<NicPublish> messages, CancellationToken cancellationToken)
+        public async Task<MqttPushDelivery> PublishMeterAsync(IReadOnlyList<NicPublish> messages, CancellationToken cancellationToken, ManyMeterSimulator.Networking.Mqtt.MqttPublishRateLimiter? rateLimiter = null)
         {
+            RateLimiter = rateLimiter;
             cancellationToken.ThrowIfCancellationRequested();
             if (owner.BeforePublish is { } before) await before(cancellationToken);
             foreach (var message in messages) owner.Messages.Enqueue(message);

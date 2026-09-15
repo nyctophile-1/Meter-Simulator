@@ -9,7 +9,8 @@ public readonly record struct MqttPushDelivery(int Sent, int Failed, string? Err
 public interface IMqttPushPool : IAsyncDisposable
 {
     bool IsConnected { get; }
-    Task<MqttPushDelivery> PublishMeterAsync(IReadOnlyList<NicPublish> messages, CancellationToken cancellationToken);
+    Task<MqttPushDelivery> PublishMeterAsync(IReadOnlyList<NicPublish> messages, CancellationToken cancellationToken,
+        MqttPublishRateLimiter? rateLimiter = null);
 }
 
 /// <summary>A publish-only connection. Pool leases keep one meter's fragments on one connection.</summary>
@@ -77,7 +78,8 @@ public sealed class MqttPushPool : IMqttPushPool
     private static int ValidateCount(int count) => count is >= 1 and <= MaximumPublisherCount
         ? count : throw new ArgumentOutOfRangeException(nameof(count), $"Use 1 to {MaximumPublisherCount} publishing connections per broker binding.");
 
-    public async Task<MqttPushDelivery> PublishMeterAsync(IReadOnlyList<NicPublish> messages, CancellationToken cancellationToken)
+    public async Task<MqttPushDelivery> PublishMeterAsync(IReadOnlyList<NicPublish> messages, CancellationToken cancellationToken,
+        MqttPublishRateLimiter? rateLimiter = null)
     {
         ObjectDisposedException.ThrowIf(_disposed != 0, this);
         var connection = await _available.Reader.ReadAsync(cancellationToken);
@@ -88,6 +90,7 @@ public sealed class MqttPushPool : IMqttPushPool
             foreach (NicPublish message in messages)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                if (rateLimiter is not null) await rateLimiter.WaitAsync(cancellationToken);
                 using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 timeout.CancelAfter(_publishTimeout);
                 try

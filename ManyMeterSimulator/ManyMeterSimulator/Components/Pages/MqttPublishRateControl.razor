@@ -1,0 +1,14 @@
+<MudText Typo="Typo.subtitle2">Target publishes per second: @Value.ToString("N0")</MudText>
+<MudSlider T="int" Value="Value" ValueChanged="ValueChanged" Min="100" Max="300000" Step="100"
+           Immediate="true" Disabled="Disabled" Color="Color.Primary" aria-label="Target MQTT publishes per second" />
+<MudNumericField T="int" Value="Value" ValueChanged="ValueChanged" Min="100" Max="300000"
+                 Label="Exact publishes per second" Disabled="Disabled" Variant="Variant.Outlined" Margin="Margin.Dense" />
+<MudText Typo="Typo.caption">100–300,000 messages/sec (3 lakh). Drag to adjust during sending; no restart needed.
+    Shared across this run's batches, brokers and profiles. Actual throughput may be lower; check EMQX.
+    Already in-flight messages may finish after a reduction.</MudText>
+
+@code {
+    [Parameter] public int Value { get; set; } = 100;
+    [Parameter] public EventCallback<int> ValueChanged { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+}

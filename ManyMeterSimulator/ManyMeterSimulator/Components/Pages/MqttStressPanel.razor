@@ -19,6 +19,9 @@
     }
     <MudGrid>
         <MudItem xs="12">
+            <MqttPublishRateControl Value="_publishRate" ValueChanged="SetPublishRate" Disabled="@(Disabled || _state.Phase == "Stopping")" />
+        </MudItem>
+        <MudItem xs="12">
             <MudSelect T="bool" Label="Run mode" @bind-Value="_continuous" Disabled="@Locked" Variant="Variant.Outlined">
                 <MudSelectItem T="bool" Value="false">Single pass / prepared burst</MudSelectItem>
                 <MudSelectItem T="bool" Value="true">Continuous MQTT stress loop</MudSelectItem>
@@ -119,6 +122,7 @@
     private int? _meterLimit;
     private bool _continuous;
     private int _duration, _cyclePause;
+    private int _publishRate = 100;
     private MqttStressState _state = new();
     private bool _disposed;
     private bool Locked => Disabled || _state.IsActive;
@@ -136,6 +140,7 @@
         _publishers = request.PublisherCount;
         _qos = request.Qos;
         _concurrency = request.MaxConcurrency;
+        _publishRate = request.PublishesPerSecond ?? 100;
         _memoryMiB = request.PreparedMemoryMiB;
         _meterLimit = request.MaximumMetersPerBatch;
         _waveSize = request.ChunkSize;
@@ -157,9 +162,20 @@
                 BatchIds = ids, PublisherCount = _publishers, Qos = _qos, MaxConcurrency = _concurrency,
                 MaximumMetersPerBatch = _meterLimit, PushSetupLogicalName = _profile == "all" ? null : _profile,
                 PreparedMemoryMiB = _memoryMiB, ChunkSize = _waveSize, ChunkIntervalSeconds = _wavePause,
+                PublishesPerSecond = _publishRate,
             }, prepare, _continuous ? new MqttLoopOptions { DurationMinutes = _duration, CyclePauseSeconds = _cyclePause } : null);
         }
         catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+    private void SetPublishRate(int rate)
+    {
+        try
+        {
+            ManyMeterSimulator.Networking.Mqtt.MqttPublishRateLimiter.Validate(rate);
+            if (_state.IsActive) Stress.SetPublishRate(rate);
+            _publishRate = rate;
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); ReadState(); }
     }
     private void Fire() { try { if (!Disabled) Stress.Fire(); } catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); } }
     public void Dispose() { _disposed = true; Stress.Changed -= OnChanged; }

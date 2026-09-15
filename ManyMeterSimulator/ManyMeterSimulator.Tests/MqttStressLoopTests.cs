@@ -132,7 +132,7 @@ public partial class MqttPushRunTests
         {
             Label = "All profiles", DurationMinutes = 0, CyclePauseSeconds = 0,
             EnvironmentKey = fixture.Batch.EnvironmentKey,
-            Request = fixture.Request with { PublisherCount = 1, Qos = 1, MaxConcurrency = 1, PushSetupLogicalName = MqttPushProfiles.CustomDaily },
+            Request = fixture.Request with { PublisherCount = 1, Qos = 1, MaxConcurrency = 1, PushSetupLogicalName = MqttPushProfiles.CustomDaily, PublishesPerSecond = 1200 },
         }] };
         registry.AddPlan(plan);
         var reloaded = new TestPlanRegistry(planStore).Plan(plan.Id)!;
@@ -140,12 +140,25 @@ public partial class MqttPushRunTests
         Assert.True(reloaded.RunsUntilStopped);
         Assert.Equal(MqttPushProfiles.CustomDaily, task.Request.PushSetupLogicalName);
         Assert.Equal(1, task.Request.Qos);
+        Assert.Equal(1200, task.Request.PublishesPerSecond);
         var reportStore = new TestRunStore(persistence, env, NullLogger<TestRunStore>.Instance);
         var runtimeStore = new LoopRuntimeStore();
         await using var engine = new TestRunEngine(fixture.Batches, fixture.Network, fixture.Push, fixture.Sessions,
             new SessionRegistry(), new SimulatorMetrics(), reportStore, new BadCommSettings(runtimeStore),
             new NetworkDelaySettings(Options.Create(new NetworkDelayOptions()), runtimeStore), NullLogger<TestRunEngine>.Instance);
-        fixture.Publisher.AfterPublish = () => { if (fixture.Publisher.Messages.Count == 7) engine.StopNow(); };
+        bool rateChanged = false;
+        fixture.Publisher.AfterPublish = () =>
+        {
+            if (fixture.Publisher.Messages.Count == 3)
+            {
+                Assert.Equal(1200, Assert.Single(engine.ActiveMqttRates).Rate);
+                engine.SetMqttPublishRate(task.TaskId, 300_000);
+                Assert.Equal(300_000, fixture.Publisher.Pools[0].RateLimiter!.Rate);
+                Assert.Equal(300_000, Assert.Single(engine.ActiveMqttRates).Rate);
+                rateChanged = true;
+            }
+            if (fixture.Publisher.Messages.Count == 7) engine.StopNow();
+        };
         engine.ScheduleRun(reloaded, "stop test", DateTimeOffset.UtcNow);
         await WaitUntil(() => !engine.IsActive);
         var report = reportStore.Load(engine.ActiveRun!.RunId)!;
@@ -154,6 +167,9 @@ public partial class MqttPushRunTests
         Assert.Equal(2, result.CompletedCycles);
         Assert.Equal(7, result.Totals.MessagesSent);
         Assert.All(fixture.Publisher.Pools, p => Assert.True(p.Disposed));
+        Assert.True(rateChanged);
+        Assert.Empty(engine.ActiveMqttRates);
+        Assert.Equal(1200, task.Request.PublishesPerSecond);
     }
 
     [Fact]

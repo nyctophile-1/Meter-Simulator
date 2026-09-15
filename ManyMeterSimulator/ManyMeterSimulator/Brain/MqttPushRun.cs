@@ -17,9 +17,11 @@ public sealed record MqttPushRequest
     public int ChunkSize { get; init; }
     public int ChunkIntervalSeconds { get; init; }
     public int PreparedMemoryMiB { get; init; } = 256;
+    public int? PublishesPerSecond { get; init; }
 
     public void Validate()
     {
+        if (PublishesPerSecond is { } rate) MqttPublishRateLimiter.Validate(rate);
         if (BatchIds.Count == 0 || BatchIds.Distinct().Count() != BatchIds.Count)
             throw new ArgumentException("Select at least one batch, without duplicates.");
         if (PublisherCount is < 1 or > MqttPushPool.MaximumPublisherCount)
@@ -66,6 +68,7 @@ public sealed class MqttPushRun : IAsyncDisposable
     private readonly MqttPushSource[] _sources;
     private readonly IReadOnlyDictionary<BrokerBinding, IMqttPushPool> _pools;
     private readonly MqttPushRequest _request;
+    private readonly MqttPublishRateLimiter? _rateLimiter;
     private readonly CancellationTokenSource _stop;
     private readonly Action<Action> _unsubscribe;
     private readonly bool _ciphering;
@@ -88,6 +91,7 @@ public sealed class MqttPushRun : IAsyncDisposable
         _sources = sources;
         _pools = pools;
         _request = request;
+        _rateLimiter = request.PublishesPerSecond is { } rate ? new(rate) : null;
         _ciphering = ciphering;
         _stop = stop;
         _unsubscribe = unsubscribe;
@@ -96,6 +100,9 @@ public sealed class MqttPushRun : IAsyncDisposable
     }
 
     public long TotalMeters => _sources.Sum(s => s.Count);
+    public int? PublishesPerSecond => _rateLimiter?.Rate;
+    public void SetPublishRate(int rate) => (_rateLimiter
+        ?? throw new InvalidOperationException("This run was opened without a publish rate limit.")).SetRate(rate);
     public long PreparedBytes => Interlocked.Read(ref _preparedBytes);
     public long PreparedMessages => Interlocked.Read(ref _preparedMessages);
     public long PreparedMeters => Interlocked.Read(ref _preparedMeters);
@@ -274,7 +281,7 @@ public sealed class MqttPushRun : IAsyncDisposable
                             MeterCompleted?.Invoke(null, TimeSpan.Zero);
                             return;
                         }
-                        var delivery = await _pools[item.Binding].PublishMeterAsync(item.Messages, ct);
+                        var delivery = await _pools[item.Binding].PublishMeterAsync(item.Messages, ct, _rateLimiter);
                         Interlocked.Add(ref messagesSent, delivery.Sent);
                         Interlocked.Add(ref messagesFailed, delivery.Failed);
                         if (delivery.Failed == 0) Interlocked.Increment(ref metersSent);

@@ -31,6 +31,23 @@ public sealed class TestRunEngine : IAsyncDisposable
     private Task? _runTask;
     private TestRunState? _active;
     private readonly object _lock = new();
+    private readonly Dictionary<string, (string Label, MqttPushRun Run)> _mqttRuns = new();
+
+    public IReadOnlyList<(string TaskId, string Label, int Rate)> ActiveMqttRates
+    {
+        get { lock (_lock) return _mqttRuns.Select(p => (p.Key, p.Value.Label, p.Value.Run.PublishesPerSecond!.Value)).ToArray(); }
+    }
+
+    public void SetMqttPublishRate(string taskId, int rate)
+    {
+        lock (_lock)
+        {
+            if (!_mqttRuns.TryGetValue(taskId, out var active))
+                throw new InvalidOperationException("This MQTT stress task has finished.");
+            active.Run.SetPublishRate(rate);
+        }
+        Changed?.Invoke();
+    }
 
     public TestRunEngine(
         MeterRegistry meters,
@@ -243,8 +260,12 @@ public sealed class TestRunEngine : IAsyncDisposable
             if (task.Request.BatchIds.Any(id => !_meters.Batches.Any(b => b.Id == id && b.Status == BatchStatus.Running
                 && string.Equals(b.EnvironmentKey, task.EnvironmentKey, StringComparison.OrdinalIgnoreCase))))
                 throw new InvalidOperationException("Every selected MQTT batch must be running and belong to the task environment.");
-            run = await _push.OpenMqttRunAsync(task.Request, ct);
-            lock (_lock) state.LastSummary = $"[{task.DisplayLabel}] repeating fresh payloads {task.DurationLabel}; watch incoming rate in EMQX";
+            run = await _push.OpenMqttRunAsync(task.Request with { PublishesPerSecond = task.Request.PublishesPerSecond ?? 100 }, ct);
+            lock (_lock)
+            {
+                _mqttRuns.Add(task.TaskId, (task.DisplayLabel, run));
+                state.LastSummary = $"[{task.DisplayLabel}] repeating fresh payloads {task.DurationLabel}; watch incoming rate in EMQX";
+            }
             Changed?.Invoke();
             await run.SendLoopAsync(task.LoopOptions);
         }
@@ -259,7 +280,12 @@ public sealed class TestRunEngine : IAsyncDisposable
                 _cts?.Cancel(); // Do not leave sibling infinite tasks running after a failed test.
             }
         }
-        finally { if (run is not null) await run.DisposeAsync(); }
+        finally
+        {
+            lock (_lock) _mqttRuns.Remove(task.TaskId);
+            Changed?.Invoke();
+            if (run is not null) await run.DisposeAsync();
+        }
         return new TaskRunResult(task, mqttLoop: run?.LoopResult, error: error);
     }
 

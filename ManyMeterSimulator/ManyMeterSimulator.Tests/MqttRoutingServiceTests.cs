@@ -129,7 +129,7 @@ public sealed class MqttRoutingServiceTests
     {
         public bool Disposed { get; private set; }
         public bool IsConnected => !Disposed;
-        public Task<MqttPushDelivery> PublishMeterAsync(IReadOnlyList<NicPublish> messages, CancellationToken cancellationToken)
+        public Task<MqttPushDelivery> PublishMeterAsync(IReadOnlyList<NicPublish> messages, CancellationToken cancellationToken, ManyMeterSimulator.Networking.Mqtt.MqttPublishRateLimiter? rateLimiter = null)
         {
             owner.Messages.Add((brokerKey, Assert.Single(messages)));
             owner.AfterPublish?.Invoke();

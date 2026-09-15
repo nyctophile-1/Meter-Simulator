@@ -600,6 +600,13 @@
 </div>
 </MudTabPanel>
 <MudTabPanel Text="MQTT stress">
+    @foreach (var active in RunEngine.ActiveMqttRates)
+    {
+        <MudPaper Outlined="true" Class="pa-5 mb-4" @key="active.TaskId">
+            <MudText Typo="Typo.h6">Live MQTT rate · @active.Label</MudText>
+            <MqttPublishRateControl Value="active.Rate" ValueChanged="@(rate => SetTaskMqttRate(active.TaskId, rate))" />
+        </MudPaper>
+    }
     <MqttStressPanel Disabled="@(_testRunActive || _scheduleState.IsRunning || _pushingBatchIds.Count > 0)" />
 </MudTabPanel>
 </MudTabs>
@@ -1056,6 +1063,7 @@
                 <MudItem xs="12"><MudSelect T="string" Value="@_taskEnvironment" ValueChanged="OnTaskEnvironmentChanged" Label="Environment" Variant="Variant.Outlined" Margin="Margin.Dense">@foreach (var env in Network.Environments) { <MudSelectItem T="string" Value="@env.Key">@env.DisplayName</MudSelectItem> }</MudSelect></MudItem>
                 <MudItem xs="12"><MudSelect T="int" @bind-SelectedValues="_taskBatches" Label="MQTT batches" MultiSelection="true" Variant="Variant.Outlined" Margin="Margin.Dense">@foreach (var batch in TaskEnvironmentBatches.Where(b => NicTypes.IsMqtt(b.NicType))) { <MudSelectItem T="int" Value="@batch.Id">@batch.Name (@batch.Count.ToString("N0") meters)</MudSelectItem> }</MudSelect></MudItem>
                 <MudItem xs="12"><MqttProfileSelect BatchIds="_taskBatches" @bind-Value="_taskMqttProfile" /></MudItem>
+                <MudItem xs="12"><MqttPublishRateControl @bind-Value="_taskMqttRate" /></MudItem>
                 <MudItem xs="6"><MudNumericField T="int" @bind-Value="_taskMqttPublishers" @bind-Value:after="() => _taskMqttConcurrency = Math.Max(_taskMqttConcurrency, _taskMqttPublishers)" Label="Publishers per broker / transport" Min="1" Max="@ManyMeterSimulator.Networking.Mqtt.MqttPushPool.MaximumPublisherCount" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
                 <MudItem xs="6"><MudSelect T="int" @bind-Value="_taskMqttQos" Label="Publish QoS" Variant="Variant.Outlined" Margin="Margin.Dense"><MudSelectItem T="int" Value="0">0</MudSelectItem><MudSelectItem T="int" Value="1">1</MudSelectItem><MudSelectItem T="int" Value="2">2</MudSelectItem></MudSelect></MudItem>
                 <MudItem xs="6"><MudNumericField T="int" @bind-Value="_taskMqttConcurrency" Label="Concurrent meters" Min="@_taskMqttPublishers" Max="1024" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
@@ -1202,6 +1210,13 @@
     private int _taskBursts = 3;
     private int? _taskMetersPerBatch;
     private int _taskMqttPublishers = 8, _taskMqttQos = 2, _taskMqttConcurrency = 64;
+    private int _taskMqttRate = 100;
+
+    private void SetTaskMqttRate(string taskId, int rate)
+    {
+        try { RunEngine.SetMqttPublishRate(taskId, rate); }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
     private int _taskMqttWaveSize, _taskMqttWavePause, _taskMqttCyclePause;
     private bool _taskMqttRandom;
     private string _taskMqttProfile = "all";
@@ -1442,6 +1457,7 @@
             TestTaskType.MqttStressLoop => new MqttStressLoopTask { Label = _taskLabel, OffsetMinutes = _taskOffset, DurationMinutes = _taskDuration,
                 EnvironmentKey = _taskEnvironment, CyclePauseSeconds = _taskMqttCyclePause,
                 Request = new MqttPushRequest { BatchIds = _taskBatches.ToArray(), PublisherCount = _taskMqttPublishers, Qos = _taskMqttQos,
+                    PublishesPerSecond = _taskMqttRate,
                     MaxConcurrency = _taskMqttConcurrency, MaximumMetersPerBatch = _taskMetersPerBatch, SelectRandomly = _taskMqttRandom,
                     PushSetupLogicalName = _taskMqttProfile == "all" ? null : _taskMqttProfile, ChunkSize = _taskMqttWaveSize, ChunkIntervalSeconds = _taskMqttWavePause } },
             TestTaskType.PushLoop => new PushLoopTask { Label = _taskLabel, OffsetMinutes = _taskOffset, DurationMinutes = _taskDuration, PushIntervalSec = _taskInterval, BatchIds = _taskBatches.ToList(), EnvironmentKey = _taskEnvironment },
@@ -1470,6 +1486,7 @@
     {
         var request = task?.Request ?? new MqttPushRequest();
         _taskMqttPublishers = request.PublisherCount;
+        _taskMqttRate = request.PublishesPerSecond ?? 100;
         _taskMqttQos = request.Qos;
         _taskMqttConcurrency = request.MaxConcurrency;
         _taskMqttProfile = request.PushSetupLogicalName ?? "all";
