@@ -34,6 +34,7 @@ namespace MeterSimulator.Models
         private static byte[] DemoKey16() => Encoding.ASCII.GetBytes("AAAAAAAAAAAAAAAA");
 
         private readonly Dictionary<string, object?> _values = new();
+        private readonly Dictionary<(string Obis, int AttributeIndex), object?> _attributeValues = new();
 
         public DLMSMeter(
             long index,
@@ -72,6 +73,22 @@ namespace MeterSimulator.Models
         public object? GetValue(string obis)
         {
             _values.TryGetValue(obis, out var value);
+            return value;
+        }
+
+        /// <summary>
+        /// Stores an attribute whose value cannot be represented by the conventional OBIS-only
+        /// value store. This is used for COSEM objects, such as Disconnect Control, that expose
+        /// several independently changing attributes under the same logical name.
+        /// </summary>
+        public void SetAttributeValue(string obis, int attributeIndex, object? value)
+        {
+            _attributeValues[(obis, attributeIndex)] = value;
+        }
+
+        public object? GetAttributeValue(string obis, int attributeIndex)
+        {
+            _attributeValues.TryGetValue((obis, attributeIndex), out var value);
             return value;
         }
 

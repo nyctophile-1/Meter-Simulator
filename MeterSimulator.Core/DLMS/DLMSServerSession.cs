@@ -140,6 +140,12 @@ namespace MeterSimulator.DLMS
                 {
                     _meter.SetValue(data.LogicalName, data.Value);
                 }
+                else if (obj is GXDLMSDisconnectControl disconnectControl)
+                {
+                    _meter.SetAttributeValue(disconnectControl.LogicalName, 2, disconnectControl.OutputState);
+                    _meter.SetAttributeValue(disconnectControl.LogicalName, 3, disconnectControl.ControlState);
+                    _meter.SetAttributeValue(disconnectControl.LogicalName, 4, disconnectControl.ControlMode);
+                }
             }
 
             // The template bakes in a single serial (e.g. "SA1231166") and is SHARED by every meter,
@@ -1101,6 +1107,17 @@ namespace MeterSimulator.DLMS
 
                     var obis = arg.Target.LogicalName;
 
+                    if (arg.Target is GXDLMSDisconnectControl && arg.Index is >= 2 and <= 4)
+                    {
+                        var value = _meter.GetAttributeValue(obis, arg.Index);
+                        if (value != null)
+                        {
+                            arg.Value = value;
+                            arg.Handled = true;
+                            continue;
+                        }
+                    }
+
                     if (arg.Target is GXDLMSRegister || arg.Target is GXDLMSData)
                     {
                         var value = _meter.GetValue(obis);
@@ -1318,9 +1335,31 @@ namespace MeterSimulator.DLMS
             _objects.Add(loadProfile);
         }
         #endregion
-        #region Unused
+        #region Server Hooks
         protected override void PreAction(ValueEventArgs[] args)
         {
+            foreach (var arg in args)
+            {
+                if (arg.Target is not GXDLMSDisconnectControl disconnectControl)
+                {
+                    continue;
+                }
+
+                if (arg.Index == 1)
+                {
+                    _meter.SetAttributeValue(disconnectControl.LogicalName, 2, false);
+                    _meter.SetAttributeValue(disconnectControl.LogicalName, 3, ControlState.Disconnected);
+                    arg.Handled = true;
+                    CoreLog.Debug($"[RCDC] {_meter.MeterNo}: disconnected {disconnectControl.LogicalName}");
+                }
+                else if (arg.Index == 2)
+                {
+                    _meter.SetAttributeValue(disconnectControl.LogicalName, 2, true);
+                    _meter.SetAttributeValue(disconnectControl.LogicalName, 3, ControlState.Connected);
+                    arg.Handled = true;
+                    CoreLog.Debug($"[RCDC] {_meter.MeterNo}: reconnected {disconnectControl.LogicalName}");
+                }
+            }
         }
 
         protected override void PostRead(ValueEventArgs[] args)
