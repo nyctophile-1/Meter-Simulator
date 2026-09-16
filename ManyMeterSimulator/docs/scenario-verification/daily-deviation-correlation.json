@@ -1,0 +1,15 @@
+{
+  "before_payload_sha256": "e0a8a71047657c9dda440213f206166a9b691b4af9614778d06519887a739aca",
+  "after_payload_sha256": "0bc99af196b4b530585d9229fe2d40e66f2c6e01310fe90c9f45248c4be39dfd",
+  "before_deviation": -32768,
+  "after_deviation": 0,
+  "after_rtc_hex": "07ea090dff100825ff000000",
+  "energy_values_preserved": true,
+  "energy_values": [
+    4684814.453125,
+    4883597.16796875,
+    0.0,
+    0.0
+  ],
+  "published": false
+}

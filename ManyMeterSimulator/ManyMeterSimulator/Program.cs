@@ -162,12 +162,14 @@ builder.Services.AddSingleton<TemplateRegistry>();
 builder.Services.AddSingleton<MeterSessionManager>();
 builder.Services.AddSingleton<TcpPushSender>();
 builder.Services.AddSingleton<PushCoordinator>();
+builder.Services.AddSingleton<ManyMeterSimulator.Networking.CustomPush.CustomPushEncoder>();
 builder.Services.AddSingleton<PushScheduleService>();
 builder.Services.AddSingleton<ITestPlanStore, JsonTestPlanStore>();
 builder.Services.AddSingleton<TestPlanRegistry>();
 builder.Services.AddSingleton<TestRunStore>();
 builder.Services.AddSingleton<TestRunEngine>();
 builder.Services.AddSingleton<MqttStressService>();
+builder.Services.AddSingleton<TcpStressService>();
 
 // Bridge selection: the real in-process brain (default) or the echo stand-in (framing only).
 string bridgeMode = builder.Configuration.GetValue("Brain:Mode", "Brain") ?? "Brain";
@@ -201,7 +203,11 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<MqttNicListenerSer
 // Same instance, seen as the narrow push-publish interface by PushCoordinator.
 builder.Services.AddSingleton<IMqttPushPublisher>(sp => sp.GetRequiredService<MqttNicListenerService>());
 builder.Services.AddSingleton<IMqttRoutingPublisher, MqttRoutingPublisher>();
-builder.Services.AddHostedService<MqttRoutingService>();
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.Configure<BatchTrafficOptions>(builder.Configuration.GetSection("BatchTraffic"));
+builder.Services.AddSingleton<IBatchTrafficSender, BatchTrafficSender>();
+builder.Services.AddSingleton<BatchTrafficService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<BatchTrafficService>());
 
 // Registered after the listener: for a broker that is IN USE the monitor reports that client's live
 // status rather than probing, since a probe can succeed while the real client is stuck in backoff.

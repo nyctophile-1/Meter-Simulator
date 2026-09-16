@@ -1,0 +1,66 @@
+{
+  "verified_utc": "2026-09-13T15:31:33.812251+00:00",
+  "goal_complete": false,
+  "nominal_scenarios": 86,
+  "source_branch": "Custom-Push-Implementation",
+  "source_tests": {
+    "passed": 569,
+    "failed": 0,
+    "skipped": 0,
+    "first_final_run": {
+      "passed": 568,
+      "failed": 1,
+      "reason": "BatchTrafficTests BlockLoad timing timeout"
+    },
+    "isolated_scheduling_recheck": {
+      "passed": 20,
+      "failed": 0
+    }
+  },
+  "hes": {
+    "host": "10.254.3.185",
+    "service": "vayu-core-push-rf-drop",
+    "pid": 129983,
+    "started": "2026-09-13T14:55:43Z",
+    "restarts": 0,
+    "application_sha256": "6c604a951dd75c067bec5a4bf61af6b8722aae04aa9ca405fd0b10b688a47145",
+    "common_sha256": "bcce384debce0f3f1cca458e81551e0aa28f023afafeb4f3d06d5012417c898f",
+    "updated_externally": true
+  },
+  "custom": {
+    "diagnostic_packets": 14,
+    "persisted_profiles_and_event_variants": 13,
+    "field_checks": 93,
+    "initial_event_id_1_not_allowed": true,
+    "configured_event_ids": [
+      7,
+      51,
+      101,
+      151,
+      201,
+      251,
+      301
+    ],
+    "normal_route_verified": false
+  },
+  "dlms": {
+    "diagnostic_packets": 4,
+    "persisted": 3,
+    "rtc_difference_minutes": -330,
+    "daily": "energy-validation-rejected",
+    "normal_route_verified": false
+  },
+  "database": "KimbalHES replica 10.254.3.137; read-only SQL transactions; writes only through normal HES ingestion",
+  "deployment_performed": false,
+  "configuration_changed": false,
+  "pending": [
+    "Normal-topic routing",
+    "DLMS RTC conversion",
+    "DLMS Daily template energy compatibility",
+    "HES pull lifecycle and ESW/ESWF contract",
+    "GRBlockLoad and fakerouting live variants",
+    "D2/D3 user XMLs and runtime mappings",
+    "Legacy custom headers",
+    "Metadata configuration and deployed MAYA verification"
+  ]
+}

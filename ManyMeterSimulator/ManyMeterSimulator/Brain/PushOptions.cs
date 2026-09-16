@@ -59,6 +59,9 @@ public sealed class PushOptions
 
     public int PublishTimeoutSeconds { get; set; } = 10;
 
+    public string KmeshGatewayId { get; set; } = "sim-gw";
+    public uint KmeshSinkId { get; set; } = 1;
+
     /// <summary>
     /// How long a TCP push waits for the connect before giving up on that meter. Bounded because a
     /// destination that is routed-but-dead otherwise holds the connection slot for the OS default

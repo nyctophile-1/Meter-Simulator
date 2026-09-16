@@ -14,11 +14,11 @@ using Microsoft.Extensions.Options;
 namespace ManyMeterSimulator.Networking.SmartNic;
 
 /// <summary>Reads the simulated meter and packs fields in HES's exported custom-pull order.</summary>
-public sealed class CustomProfileCommand(MeterSessionManager sessions, HesDataModel model, IOptions<CustomPullOptions> options)
+public sealed partial class CustomProfileCommand(MeterSessionManager sessions, HesDataModel model, IOptions<CustomPullOptions> options)
 {
     private readonly CustomPullOptions _options = options.Value;
 
-    public static bool Supports(CustomCommandType command) => (int)command is 3 or 4 or 5 or 6 or 21 or >= 41 and <= 47 or 50 or 83;
+    public static bool Supports(CustomCommandType command) => (int)command is 3 or 4 or 5 or 6 or 21 or >= 41 and <= 47 or 50 or 66 or 83;
 
     public IReadOnlyList<byte[]> Execute(CustomPullInbound inbound, CancellationToken cancellationToken)
     {
@@ -29,11 +29,11 @@ public sealed class CustomProfileCommand(MeterSessionManager sessions, HesDataMo
             throw new InvalidOperationException("HES template is unavailable.");
         if (!_options.MeterCategories.TryGetValue(template.Id, out var category) || category is not ("1P" or "3P" or "CT"))
             throw new InvalidOperationException($"Configure CustomPull:MeterCategories:{template.Id} as 1P, 3P or CT.");
-        bool modern = inbound.Protocol.WireProfile == CustomPullWireProfile.NewHeader;
-        if (template.MeterProfileHeaderTemplateId is null || (template.MeterProfileHeaderTemplateId == 3) != modern)
-            throw new NotSupportedException("Exported meter profile header does not match the custom framing.");
+        (inbound.Protocol with { MeterProfileHeaderTemplateId = template.MeterProfileHeaderTemplateId }).ValidateResponseHeader();
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(Math.Clamp(_options.ReadTimeoutSeconds, 1, 120)));
+        if (inbound.Intent.Command == CustomCommandType.GetESWF)
+            return ReadEventStatusWord(inbound, timeout.Token);
         if (_options.ProfileDataSource == "DataModel" || inbound.Intent.Command == CustomCommandType.GRBlockLoadProfile)
         {
             try { return GenerateAndEncode(inbound, template, category, timeout.Token); }
@@ -54,7 +54,15 @@ public sealed class CustomProfileCommand(MeterSessionManager sessions, HesDataMo
         var fields = Fields(templateId, kind, category);
         if (inbound.Intent.Command == CustomCommandType.GRBlockLoadProfile)
             return GenerateGapAndEncode(inbound, fields, token);
-        int eventId = CustomProfileDataGenerator.EventId(inbound.Intent.Command);
+        int eventId = 0;
+        if (kind == "EVENT" || fields.Any(f => f.ParameterName == "EventId"))
+        {
+            if (!_options.EventIds.TryGetValue(template.Id, out var configured) ||
+                !configured.TryGetValue((int)inbound.Intent.Command, out eventId))
+                throw new InvalidOperationException($"Configure a HES-supported CustomPull:EventIds:{template.Id}:{(int)inbound.Intent.Command}.");
+            if (eventId is <= 0 or > ushort.MaxValue)
+                throw new InvalidOperationException("Custom event ID must fit the protocol's positive UInt16 range.");
+        }
         if (kind == "EVENT")
         {
             if (_options.EventsWithPowerProfile is null) throw new InvalidOperationException("Configure EventsWithPowerProfile from HES.");

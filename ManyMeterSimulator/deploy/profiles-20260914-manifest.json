@@ -1,0 +1,76 @@
+{
+  "release": "profiles-818f418a",
+  "source_snapshot_sha256": "818f418a60f4c34dcb87a85da87b9023bf3f876b0ec68f331c3aaac5392b1a03",
+  "base_release": "ber-d2d245b5",
+  "base_d1_source_snapshot": "cd070fafe7f779cdff20b3f15c9006d8cc922fc47fde03bcb9caebca5c5bdd2d",
+  "runtime_source_changes": [
+    "Gurux/Gurux.DLMS.Net/Development/GXDLMSServer.cs",
+    "ManyMeterSimulator/ManyMeterSimulator/Networking/SmartNic/CommandIntent.cs",
+    "ManyMeterSimulator/ManyMeterSimulator/Networking/SmartNic/CustomProfileCommand.Esw.cs",
+    "ManyMeterSimulator/ManyMeterSimulator/Networking/SmartNic/CustomProfileCommand.cs",
+    "ManyMeterSimulator/ManyMeterSimulator/Networking/SmartNic/CustomPullCommandDecoder.cs",
+    "ManyMeterSimulator/ManyMeterSimulator/Templates/D1_Master.xml",
+    "MeterSimulator.Core/DLMS/MeterObjectLoader.cs"
+  ],
+  "component_files": {
+    "ManyMeterSimulator.dll": "facc39f3a77821954867427195d058e2c220a5617bc97d54e6aa8eff72415ddc",
+    "ManyMeterSimulator.pdb": "9f4dd96430942189cab85183d97b91866dc5b7d26ef2a5640d1209b6ef0dd738",
+    "MeterSimulator.Core.dll": "d58a1b0d3c7b25cd24fb2d66398878a513713351174adc58444355d224e6852f",
+    "MeterSimulator.Core.pdb": "e0f6abd8ee116e9d5f0ded900f747792ffe7bb17b4cb38c7c39702ad5ad71378",
+    "Templates/D1_Master.xml": "9328f37b2c6b0b9a2beceb22f1db326fbd19b3b07aea5b5ddf855cdb2b7fdb38"
+  },
+  "gurux_runtime_sha256": "d2d245b5cfb4e87c56c3b4d2af856ab35c25e153b47232e8756f0ac6e1825890",
+  "tests": "592 passed, 0 failed, 0 skipped; current Release test output",
+  "targets": {
+    "drishti": {
+      "host": "10.254.3.57",
+      "backup": "/opt/maya-sim/backups/20260913T193033Z-profiles-818f418a",
+      "installation": "application, core, Gurux and master hashes verified; saved logical state preserved; HTTP/listener/route verified",
+      "deployment_utc": "2026-09-13T19:30:37.462022+00:00",
+      "main_pid": 20000,
+      "restarts": 0
+    },
+    "eqa": {
+      "host": "15.252.116.146",
+      "backup": "/opt/maya-sim/backups/20260913T193105Z-profiles-818f418a",
+      "installation": "application, core, Gurux and master hashes verified; saved logical state preserved; HTTP/listener/route verified",
+      "deployment_utc": "2026-09-13T19:32:42.320171+00:00",
+      "complete_backup_local": "C:\\Users\\ayush\\Documents\\MAYA-release-receipts\\profiles-818f418a\\eqa-profiles-818f418a-complete-20260913T193105Z.tar.gz",
+      "complete_backup_sha256": "cd33dd7b8d3549523fa9cb1f750e5c83d43e1d80e57f725632ce89645e5b40b2",
+      "complete_backup_runtime_cache": "/dev/shm/eqa-profiles-818f418a-complete-20260913T193105Z.tar.gz",
+      "main_pid": 4210,
+      "restarts": 0
+    }
+  },
+  "live": {
+    "dlms_instant": {
+      "command_id": 98932983,
+      "frame_id": 10004,
+      "command_success": true,
+      "tries": 1,
+      "completed_utc": "2026-09-13T19:32:22.667849Z",
+      "observer_messages": 14,
+      "duplicate_responses": false,
+      "profile_persisted": false,
+      "reason": "HES energy validation rejected old active batch XML values: kWh4684834.96, kVAh4883629.882; D1 master is deployed but batch selection preserved"
+    },
+    "custom_esw": {
+      "command_id": 98932984,
+      "frame_id": 10002,
+      "command_success": true,
+      "tries": 1,
+      "completed_utc": "2026-09-13T19:32:45.125703Z",
+      "persisted_id": 3908521,
+      "rtc_utc": "2026-09-13T19:32:45Z",
+      "all_128_bits_match_deployed_esw1": true
+    }
+  },
+  "verification_limits": [
+    "D1 wave only; D2/D3 deferred",
+    "Push/routing HES services inactive at19:26UTC",
+    "Duplicate responders remain when both fleets recover; ownership preference pending",
+    "Existing batch template selections preserved",
+    "Billing physical capture class mismatch remains; original13rows preserved",
+    "No full matrix pass"
+  ]
+}

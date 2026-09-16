@@ -69,6 +69,8 @@ public sealed class MeterBatch
 
     public BatchStatus Status { get; set; } = BatchStatus.NotStarted;
 
+    public BatchTrafficSettings Traffic { get; internal set; } = new();
+
     // init (not get-only) so a rehydrated batch keeps its ORIGINAL creation time across a
     // restart rather than being stamped with "now" every time the store is reloaded.
     public DateTimeOffset CreatedAtUtc { get; init; } = DateTimeOffset.UtcNow;

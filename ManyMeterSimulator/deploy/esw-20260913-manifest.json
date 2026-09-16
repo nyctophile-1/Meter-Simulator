@@ -1,0 +1,109 @@
+{
+  "release": "esw-4570414b",
+  "source_snapshot_sha256": "4570414b9cefc7252128f62ab45433e443cb973b1690b80a5a8492c11c41ea73",
+  "base_commit": "f133aa1685f0b1b8a1483808499c4bedde321c51",
+  "previous_release": "tcp-loop-74df1473",
+  "provenance": "Verified deployed source snapshot plus isolated ESW changes; preserves deployed profile simulation and TCP/UI; excludes concurrent unfinished batch-traffic and daily work",
+  "archive_sha256": "b4c53b3dc675b518504626c1bdb04c83649ae62a0dc56eca282b824233f8c02c",
+  "application_sha256": "79763cdf764b44d9bd3660633c2d32fdbb8ac7f93408441fdca02e7591c53c4e",
+  "core_sha256": "cb18ca32f9543470effc20d710c077e5faade510e208b40cb39eb06965e1ae30",
+  "tests": "479 passed; 0 failed; 0 skipped; full Release suite",
+  "targets": {
+    "drishti": {
+      "host": "10.254.3.57",
+      "backup": "/opt/maya-sim/backups/20260913T114702Z-esw-4570414b",
+      "backup_format": "full data directory",
+      "installation": "verified",
+      "deployment_utc": "2026-09-13T11:47:08.434021+00:00",
+      "main_pid": 10362,
+      "restarts": 0,
+      "loaded_meters": 300001,
+      "key_path": "C:\\Users\\ayush\\Downloads\\observability 1.pem",
+      "template_changes": [
+        {
+          "file": "Templates/SA1231166HP_values.xml",
+          "before": "3893b17474b02f1eb0ae7a2f079265c75707553561aff0cc5a028aaf16ef536b",
+          "after": "8441a679f1d7ea404af8cdf7d19758127bb04ec188324c28c205d0242739b515",
+          "operations": [
+            "populate empty ESW capture list"
+          ]
+        },
+        {
+          "file": "Templates/SA1231166HP_values_bill.xml",
+          "before": "bb6939e690911f184489bd13b70430b2e0d220aac18faf271f1060396f089cc0",
+          "after": "26154cea79b448121cb9cfd74169922da08deee7023dd348652b92eab1e1f795",
+          "operations": [
+            "populate empty ESW capture list"
+          ]
+        },
+        {
+          "file": "Templates/Template-31-D2.xml",
+          "before": "69185366493ea39604c03ee73b5fb87c5fc5fdde5a4b0a4e4dcdb6660bd5a8b5",
+          "after": "66f113a58413c25fd87fa48941f34a6542588d88af295e546d8e6c4678621de2",
+          "operations": [
+            "populate empty ESW capture list"
+          ]
+        },
+        {
+          "file": "Templates/SZ0000014HP_Only_Push.xml",
+          "before": "de0c6d7fc1aa5e441679737ecaf54870a40f95f4d4f957d407c083d0a4fbaafe",
+          "after": "5c067238a7eff11fddfa30174deb79f253bd1958a76ad2d2cc7c82d72698d5a8",
+          "operations": [
+            "populate empty ESW capture list",
+            "initialize missing ESW as cleared 128-bit word"
+          ]
+        }
+      ],
+      "verification": "Exact app/core hashes and source marker; active process; stable zero restart count; workstation/local login HTTP 200; IPv6 4059 and local route; original running/stopped batch states and network bindings; unchanged config, keys, saved plans, reports and other persistent files; verified surgical ESW template changes",
+      "warnings": []
+    },
+    "eqa": {
+      "host": "15.252.116.146",
+      "backup": "/opt/maya-sim/backups/20260913T114927Z-esw-4570414b",
+      "backup_format": "full data tar.gz",
+      "installation": "verified",
+      "deployment_utc": "2026-09-13T11:50:32.863644+00:00",
+      "main_pid": 24785,
+      "restarts": 0,
+      "loaded_meters": 500000,
+      "key_path": "C:\\Users\\ayush\\OneDrive\\Documents\\Development\\Sinhal Repos\\all_creds\\maya-sim-ehes-eqa.pem",
+      "template_changes": [
+        {
+          "file": "Templates/SA1231166HP_values.xml",
+          "before": "da49a539959e650a454e4203b06372a3fbefa0bcc9ab33aa0d48d172ba9fa6c1",
+          "after": "2347ed5e666da590b1687f6bf8f32f5ea475ef2e0f94d95bda7cfdf244bd800b",
+          "operations": [
+            "populate empty ESW capture list"
+          ]
+        },
+        {
+          "file": "Templates/SA1231166HP_values_bill.xml",
+          "before": "bb6939e690911f184489bd13b70430b2e0d220aac18faf271f1060396f089cc0",
+          "after": "26154cea79b448121cb9cfd74169922da08deee7023dd348652b92eab1e1f795",
+          "operations": [
+            "populate empty ESW capture list"
+          ]
+        },
+        {
+          "file": "Templates/SZ0000014HP_Only_Push.xml",
+          "before": "de0c6d7fc1aa5e441679737ecaf54870a40f95f4d4f957d407c083d0a4fbaafe",
+          "after": "5c067238a7eff11fddfa30174deb79f253bd1958a76ad2d2cc7c82d72698d5a8",
+          "operations": [
+            "populate empty ESW capture list",
+            "initialize missing ESW as cleared 128-bit word"
+          ]
+        }
+      ],
+      "verification": "Exact app/core hashes and source marker; active process; stable zero restart count; workstation/local login HTTP 200; IPv6 4059 and local route; original running/stopped batch states and network bindings; unchanged config, keys, saved plans, reports and other persistent files; verified surgical ESW template changes",
+      "warnings": [
+        "Disk remains low, approximately 691 MiB free; previous temporary upload archives retained under Documents/MAYA-release-receipts/esw-20260913/eqa-retained-uploads"
+      ]
+    }
+  },
+  "verified_utc": "2026-09-13T11:52:52.141560+00:00",
+  "unexecuted_checks": [
+    "No live ESW push or HES ingestion test",
+    "Authenticated UI interaction not performed",
+    "No commit or push"
+  ]
+}

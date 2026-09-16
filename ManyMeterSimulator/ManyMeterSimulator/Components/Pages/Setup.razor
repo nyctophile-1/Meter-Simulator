@@ -18,6 +18,7 @@
 @inject NetworkHealthMonitor Health
 @inject TemplateRegistry TemplateRegistry
 @inject MeterSessionManager Sessions
+@inject BatchTrafficService Traffic
 @inject IOptions<TcpOptions> TcpOptionsAccessor
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
@@ -365,6 +366,31 @@ else
                                     </div>
                                 </div>
 
+                                <div class="my-3" style="white-space:normal">
+                                    <MudText Typo="Typo.subtitle2">Automatic routing and push</MudText>
+                                    <MudText Typo="Typo.caption">Routing, Instantaneous and Block Load: every 30 minutes. Daily: 00:00–00:30 (@Traffic.TimeZoneId). Meters are spread across each window. Settings are saved; the batch must be running.</MudText>
+                                    @foreach (var kind in Enum.GetValues<BatchTrafficKind>())
+                                    {
+                                        var trafficState = Traffic.State(batch, kind);
+                                        <div class="d-flex align-center flex-wrap gap-2 my-2">
+                                            <MudText Typo="Typo.body2" Style="min-width:120px">@(kind == BatchTrafficKind.BlockLoad ? "Block Load" : kind.ToString())</MudText>
+                                            @if (CanOperate)
+                                            {
+                                                <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                                                    Color="@(batch.Traffic.Enabled(kind) ? Color.Warning : Color.Success)"
+                                                    OnClick="() => MeterRegistry.SetTraffic(batch.Id, kind, !batch.Traffic.Enabled(kind))">
+                                                    @(batch.Traffic.Enabled(kind) ? "Stop" : "Start")
+                                                </MudButton>
+                                            }
+                                            <MudText Typo="Typo.caption">@trafficState.Status · @trafficState.Sent.ToString("N0") sent · @trafficState.Failed.ToString("N0") failures · @trafficState.Skipped.ToString("N0") elapsed slots skipped</MudText>
+                                            @if (trafficState.Error is { } trafficError)
+                                            {
+                                                <MudText Typo="Typo.caption" Color="Color.Error">@trafficError</MudText>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+
                                 <div class="batch-detail-actions">
                                     <MudButton Size="Size.Small" Variant="Variant.Outlined"
                                                StartIcon="@Icons.Material.Filled.Download"
@@ -624,6 +650,7 @@ else
     {
         Sessions.OnProgressChanged += OnProgressChanged;
         MeterRegistry.Changed += OnRegistryChanged;
+        Traffic.Changed += OnRegistryChanged;
 
         if (AuthStateTask is not null)
         {
@@ -639,6 +666,7 @@ else
     {
         Sessions.OnProgressChanged -= OnProgressChanged;
         MeterRegistry.Changed -= OnRegistryChanged;
+        Traffic.Changed -= OnRegistryChanged;
     }
 
     private void AddBatch()

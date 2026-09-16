@@ -1,4 +1,5 @@
 using ManyMeterSimulator.Brain;
+using ManyMeterSimulator.Networking.Mqtt;
 
 namespace ManyMeterSimulator.Testing;
 
@@ -28,7 +29,7 @@ public sealed class MqttStressService(PushCoordinator push, IHostApplicationLife
 
     public void Start(MqttPushRequest request, bool prepare, MqttLoopOptions? loop = null)
     {
-        request = request with { BatchIds = request.BatchIds.ToArray() };
+        request = request with { BatchIds = request.BatchIds.ToArray(), PublishesPerSecond = request.PublishesPerSecond ?? MqttPublishRateLimiter.MinimumRate };
         request.Validate();
         loop?.Validate();
         if (prepare && loop is not null) throw new ArgumentException("Continuous loops generate fresh payloads; prepared data is single-use.");
@@ -52,7 +53,11 @@ public sealed class MqttStressService(PushCoordinator push, IHostApplicationLife
         try
         {
             run = await push.OpenMqttRunAsync(request, ct);
-            lock (_sync) _run = run;
+            lock (_sync)
+            {
+                run.SetPublishRate(_state.Request!.PublishesPerSecond!.Value);
+                _run = run;
+            }
             ct.ThrowIfCancellationRequested();
             if (prepare)
             {
@@ -87,6 +92,20 @@ public sealed class MqttStressService(PushCoordinator push, IHostApplicationLife
                 lock (_sync) if (ReferenceEquals(_run, run)) _run = null;
             }
         }
+    }
+
+    public void SetPublishRate(int rate)
+    {
+        MqttPublishRateLimiter.Validate(rate);
+        lock (_sync)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (!_state.IsActive || _stopping || _state.Request is null)
+                throw new InvalidOperationException("There is no active MQTT stress run to adjust.");
+            _run?.SetPublishRate(rate);
+            _state = _state with { Request = _state.Request with { PublishesPerSecond = rate } };
+        }
+        Changed?.Invoke();
     }
 
     public void Fire()
@@ -153,7 +172,7 @@ public sealed class MqttStressService(PushCoordinator push, IHostApplicationLife
     private void SetState(MqttStressState state)
     {
         lock (_sync) _state = state with { Phase = _stopping ? "Stopping" : state.Phase,
-            Request = state.Request ?? _state.Request, Loop = state.Loop ?? _state.Loop };
+            Request = _state.Request ?? state.Request, Loop = state.Loop ?? _state.Loop };
         Changed?.Invoke();
     }
 

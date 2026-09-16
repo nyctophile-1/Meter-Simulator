@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
+    <Compile Include="..\tools\MeterCapture\ProfileWireValues.cs" Link="Capture\ProfileWireValues.cs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -29,6 +30,12 @@
              Link="Templates\SA1231166HP_values.xml" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\ManyMeterSimulator\Templates\SA1231166HP_values_bill.xml"
              Link="Templates\SA1231166HP_values_bill.xml" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\ManyMeterSimulator\Templates\D1_Master.xml"
+             Link="Templates\D1_Master.xml" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\ManyMeterSimulator\Templates\Template-31-D2.xml"
+             Link="Templates\Template-31-D2.xml" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\ManyMeterSimulator\Templates\SZ0000014HP_Only_Push.xml"
+             Link="Templates\SZ0000014HP_Only_Push.xml" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

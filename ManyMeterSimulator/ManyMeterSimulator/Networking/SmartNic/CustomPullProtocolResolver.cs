@@ -10,7 +10,18 @@ namespace ManyMeterSimulator.Networking.SmartNic;
 public readonly record struct CustomPullProtocolProfile(
     int HesTemplateId,
     CustomPullWireProfile WireProfile,
-    uint? ResponseMagicNumber);
+    uint? ResponseMagicNumber,
+    int? MeterProfileHeaderTemplateId = null)
+{
+    public void ValidateResponseHeader()
+    {
+        bool valid = WireProfile == CustomPullWireProfile.NewHeader
+            ? MeterProfileHeaderTemplateId == 3
+            : (WireProfile == CustomPullWireProfile.Legacy || WireProfile == CustomPullWireProfile.LegacyFg23)
+                && MeterProfileHeaderTemplateId is 0 or 1 or 2;
+        if (!valid) throw new NotSupportedException("Exported meter profile header is missing, unverified or incompatible with the custom framing.");
+    }
+}
 
 /// <summary>
 /// Converts persisted batch metadata into a safe custom-pull protocol profile. A malformed or
@@ -58,7 +69,7 @@ public sealed class CustomPullProtocolResolver
                     error = $"response magic {selected} is not registered for HES template {templateId}";
                     return false;
                 }
-                profile = new CustomPullProtocolProfile(templateId, CustomPullWireProfile.NewHeader, selected);
+                profile = new CustomPullProtocolProfile(templateId, CustomPullWireProfile.NewHeader, selected, template.MeterProfileHeaderTemplateId);
                 error = string.Empty;
                 return true;
             }
@@ -70,7 +81,7 @@ public sealed class CustomPullProtocolResolver
                 return false;
             }
 
-            profile = new CustomPullProtocolProfile(templateId, CustomPullWireProfile.NewHeader, magics[0]);
+            profile = new CustomPullProtocolProfile(templateId, CustomPullWireProfile.NewHeader, magics[0], template.MeterProfileHeaderTemplateId);
             error = string.Empty;
             return true;
         }
@@ -85,7 +96,7 @@ public sealed class CustomPullProtocolResolver
         profile = new CustomPullProtocolProfile(
             templateId,
             template.IsFG23 ? CustomPullWireProfile.LegacyFg23 : CustomPullWireProfile.Legacy,
-            null);
+            null, template.MeterProfileHeaderTemplateId);
         error = string.Empty;
         return true;
     }

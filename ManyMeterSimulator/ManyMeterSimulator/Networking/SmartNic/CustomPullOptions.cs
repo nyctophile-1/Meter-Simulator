@@ -26,4 +26,5 @@ public sealed class CustomPullOptions
     public Dictionary<int, int> BlockPeriodMinutesByTemplate { get; set; } = new();
     public int ResponseTimestampOffsetMinutes { get; set; } = 330;
     public int[]? EventsWithPowerProfile { get; set; }
+    public Dictionary<int, Dictionary<int, int>> EventIds { get; set; } = new();
 }

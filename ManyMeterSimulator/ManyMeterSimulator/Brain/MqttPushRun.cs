@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using ManyMeterSimulator.Diagnostics;
+using ManyMeterSimulator.Networking.Push;
 using ManyMeterSimulator.Networking.Mqtt;
 using ManyMeterSimulator.Networking.Nic;
 
@@ -17,9 +19,11 @@ public sealed record MqttPushRequest
     public int ChunkSize { get; init; }
     public int ChunkIntervalSeconds { get; init; }
     public int PreparedMemoryMiB { get; init; } = 256;
+    public int? PublishesPerSecond { get; init; }
 
     public void Validate()
     {
+        if (PublishesPerSecond is { } rate) MqttPublishRateLimiter.Validate(rate);
         if (BatchIds.Count == 0 || BatchIds.Distinct().Count() != BatchIds.Count)
             throw new ArgumentException("Select at least one batch, without duplicates.");
         if (PublisherCount is < 1 or > MqttPushPool.MaximumPublisherCount)
@@ -66,6 +70,7 @@ public sealed class MqttPushRun : IAsyncDisposable
     private readonly MqttPushSource[] _sources;
     private readonly IReadOnlyDictionary<BrokerBinding, IMqttPushPool> _pools;
     private readonly MqttPushRequest _request;
+    private readonly MqttPublishRateLimiter? _rateLimiter;
     private readonly CancellationTokenSource _stop;
     private readonly Action<Action> _unsubscribe;
     private readonly bool _ciphering;
@@ -77,25 +82,30 @@ public sealed class MqttPushRun : IAsyncDisposable
     private long _preparedMeters;
     private string? _invalidReason;
     private readonly object _lifetimeSync = new();
-    internal Action<bool?, TimeSpan>? MeterCompleted { get; set; }
+    private readonly SimulatorMetrics? _metrics;
     public MqttLoopSummary? LoopResult { get; private set; }
     private MqttPushSummary? _lastPass;
 
     internal MqttPushRun(MqttPushSource[] sources, IReadOnlyDictionary<BrokerBinding, IMqttPushPool> pools,
         MqttPushRequest request, bool ciphering, CancellationTokenSource stop,
-        Action<Action> subscribe, Action<Action> unsubscribe)
+        Action<Action> subscribe, Action<Action> unsubscribe, SimulatorMetrics? metrics = null)
     {
         _sources = sources;
         _pools = pools;
         _request = request;
+        _rateLimiter = request.PublishesPerSecond is { } rate ? new(rate) : null;
         _ciphering = ciphering;
         _stop = stop;
         _unsubscribe = unsubscribe;
+        _metrics = metrics;
         subscribe(CheckConfiguration);
         CheckConfiguration();
     }
 
     public long TotalMeters => _sources.Sum(s => s.Count);
+    public int? PublishesPerSecond => _rateLimiter?.Rate;
+    public void SetPublishRate(int rate) => (_rateLimiter
+        ?? throw new InvalidOperationException("This run was opened without a publish rate limit.")).SetRate(rate);
     public long PreparedBytes => Interlocked.Read(ref _preparedBytes);
     public long PreparedMessages => Interlocked.Read(ref _preparedMessages);
     public long PreparedMeters => Interlocked.Read(ref _preparedMeters);
@@ -151,7 +161,7 @@ public sealed class MqttPushRun : IAsyncDisposable
                 long bytes = 128 + messages.Sum(m => m.Payload.LongLength + 2L * m.Topic.Length + 160);
                 if (Interlocked.Add(ref _preparedBytes, bytes) > _request.PreparedMemoryMiB * 1024L * 1024L)
                     throw new InvalidOperationException("Prepared dataset exceeded its memory budget. Select fewer meters or increase Prepared memory.");
-                prepared.Add(new PreparedMeter(item.Source.Binding, messages));
+                prepared.Add(new PreparedMeter(item.Source.Binding, item.Meter.Nic, messages));
                 Interlocked.Increment(ref _preparedMeters);
                 Interlocked.Add(ref _preparedMessages, messages.Count);
                 return ValueTask.CompletedTask;
@@ -263,31 +273,42 @@ public sealed class MqttPushRun : IAsyncDisposable
                     CancellationToken = cancellationToken,
                 }, async (workItem, ct) =>
                 {
-                    long started = MeterCompleted is null ? 0 : Stopwatch.GetTimestamp();
+                    long started = Stopwatch.GetTimestamp();
+                    NicType nic = workItem.Prepared?.Nic ?? workItem.Meter.Nic;
                     try
                     {
-                        PreparedMeter item = workItem.Prepared ?? new PreparedMeter(workItem.Source!.Binding,
+                        PreparedMeter item = workItem.Prepared ?? new PreparedMeter(workItem.Source!.Binding, nic,
                             workItem.Source.Build(workItem.Meter));
                         if (item.Messages.Count == 0)
                         {
                             Interlocked.Increment(ref skipped);
-                            MeterCompleted?.Invoke(null, TimeSpan.Zero);
+                            _metrics?.RecordPushSkipped(nic);
                             return;
                         }
-                        var delivery = await _pools[item.Binding].PublishMeterAsync(item.Messages, ct);
+                        var delivery = await _pools[item.Binding].PublishMeterAsync(item.Messages, ct, _rateLimiter);
                         Interlocked.Add(ref messagesSent, delivery.Sent);
                         Interlocked.Add(ref messagesFailed, delivery.Failed);
+                        _metrics?.RecordPushPayloads(nic, delivery.Sent, delivery.Failed);
                         if (delivery.Failed == 0) Interlocked.Increment(ref metersSent);
                         else Interlocked.Increment(ref metersFailed);
                         if (delivery.Error is not null) Interlocked.CompareExchange(ref firstError, delivery.Error, null);
-                        MeterCompleted?.Invoke(delivery.Failed == 0, Stopwatch.GetElapsedTime(started));
+                        _metrics?.RecordPushMeter(nic, delivery.Failed == 0, Stopwatch.GetElapsedTime(started));
+                    }
+                    catch (PushCanceledException ex)
+                    {
+                        Interlocked.Add(ref messagesSent, ex.Sent);
+                        Interlocked.Add(ref messagesFailed, ex.Failed);
+                        Interlocked.Increment(ref metersFailed);
+                        _metrics?.RecordPushPayloads(nic, ex.Sent, ex.Failed);
+                        _metrics?.RecordPushMeter(nic, false, Stopwatch.GetElapsedTime(started));
+                        throw;
                     }
                     catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
                     catch (Exception ex)
                     {
                         Interlocked.Increment(ref metersFailed);
                         Interlocked.CompareExchange(ref firstError, ex.Message, null);
-                        MeterCompleted?.Invoke(false, Stopwatch.GetElapsedTime(started));
+                        _metrics?.RecordPushMeter(nic, false, Stopwatch.GetElapsedTime(started));
                     }
                 });
             }
@@ -334,6 +355,6 @@ public sealed class MqttPushRun : IAsyncDisposable
         finally { _stop.Dispose(); }
     }
 
-    private sealed record PreparedMeter(BrokerBinding Binding, IReadOnlyList<NicPublish> Messages);
+    private sealed record PreparedMeter(BrokerBinding Binding, NicType Nic, IReadOnlyList<NicPublish> Messages);
     private readonly record struct Work(MqttPushSource? Source, MeterRef Meter, PreparedMeter? Prepared);
 }

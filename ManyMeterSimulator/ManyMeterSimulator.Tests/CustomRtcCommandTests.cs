@@ -63,7 +63,7 @@ public class CustomRtcCommandTests
         Directory.CreateDirectory(folder);
         try
         {
-            File.WriteAllText(Path.Combine(folder, "MeterTemplate.csv"), "Id,TemplateName,PushHeaderLength,PullHeaderLength,IsFG23\n93,rtc,12,12,0\n");
+            File.WriteAllText(Path.Combine(folder, "MeterTemplate.csv"), "Id,TemplateName,PushHeaderLength,PullHeaderLength,IsFG23,MeterProfileHeaderTemplateId\n93,rtc,12,12,0,3\n");
             File.WriteAllText(Path.Combine(folder, "MagicNumberMapping.csv"), "MagicNumber,TemplateId\n1050946,93\n1116430,93\n");
             var model = new HesDataModelLoader(NullLogger<HesDataModelLoader>.Instance).Load(folder);
             var ingress = new CustomPullIngress(registry, new CustomPullProtocolResolver(model, Options.Create(new CustomPullOptions { ResponseMagicNumbers = new() { [93] = 1050946 } })));
@@ -162,11 +162,39 @@ public class CustomRtcCommandTests
     }
 
     [Fact]
-    public void UnknownLegacyLayout_IsNotReportedAsSuccess()
+    public void UnknownResponseLayout_IsNotReportedAsSuccess()
     {
-        var inbound = Request(false);
-        inbound = inbound with { Protocol = inbound.Protocol with { HesTemplateId = 1 } };
+        var inbound = Request(true);
+        inbound = inbound with { Protocol = inbound.Protocol with { MeterProfileHeaderTemplateId = 99 } };
         Assert.Throws<NotSupportedException>(() => CustomRtcCommand.Encode(inbound, new GXDateTime(DateTime.UtcNow)));
+    }
+
+    [Theory]
+    [InlineData(1)] [InlineData(26)] [InlineData(47)] [InlineData(702)]
+    public void RtcResponseUsesHeaderMetadataRegardlessOfMeterTemplateNumber(int templateId)
+    {
+        var inbound = Request(true);
+        inbound = inbound with { Protocol = inbound.Protocol with { HesTemplateId = templateId } };
+        Assert.Equal(33, CustomRtcCommand.Encode(inbound, new GXDateTime(DateTime.UtcNow)).Length);
+        inbound = inbound with { Protocol = inbound.Protocol with { MeterProfileHeaderTemplateId = null } };
+        Assert.Throws<NotSupportedException>(() => CustomRtcCommand.Encode(inbound, new GXDateTime(DateTime.UtcNow)));
+    }
+
+    [Theory]
+    [InlineData(0, 3, true)]
+    [InlineData(0, 0, false)]
+    [InlineData(1, 0, true)]
+    [InlineData(1, 1, true)]
+    [InlineData(2, 2, true)]
+    [InlineData(1, 3, false)]
+    [InlineData(1, 99, false)]
+    [InlineData(3, 0, false)]
+    public void ResponseHeaderMustMatchVerifiedWireShape(int variant, int header, bool supported)
+    {
+        var wire = variant switch { 0 => CustomPullWireProfile.NewHeader, 1 => CustomPullWireProfile.Legacy, 2 => CustomPullWireProfile.LegacyFg23, _ => new CustomPullWireProfile(4, 3, false) };
+        var profile = new CustomPullProtocolProfile(1, wire, null, header);
+        if (supported) profile.ValidateResponseHeader();
+        else Assert.Throws<NotSupportedException>(() => profile.ValidateResponseHeader());
     }
 
     private static CustomPullInbound Request(bool modern)
@@ -176,6 +204,6 @@ public class CustomRtcCommandTests
         var request = new CustomPullRequest(1, 1, frameId, 1000000042, 1000000042, 48, CustomPullWireSelector.GetWithoutData, 0, 0, 0);
         Assert.True(CustomPullCommandDecoder.TryDecode(meter, request, out var intent, out _));
         return new CustomPullInbound(meter, new MeterBatch { Id = 1, Name = "rtc", TemplateName = "meter.xml", StartIndex = 42, Count = 1 },
-            new CustomPullProtocolProfile(41, modern ? CustomPullWireProfile.NewHeader : CustomPullWireProfile.Legacy, modern ? 123u : null), request, intent);
+            new CustomPullProtocolProfile(41, modern ? CustomPullWireProfile.NewHeader : CustomPullWireProfile.Legacy, modern ? 123u : null, modern ? 3 : 0), request, intent);
     }
 }

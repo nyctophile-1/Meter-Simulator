@@ -1,0 +1,29 @@
+{
+  "verified_utc": "2026-09-13T15:40:19Z",
+  "goal_complete": false,
+  "source_tests": {
+    "passed": 581,
+    "failed": 0,
+    "skipped": 0
+  },
+  "focused_tests": 42,
+  "source_files": {
+    "ManyMeterSimulator/ManyMeterSimulator/Networking/SmartNic/CustomPullOptions.cs": "d087d15e61cdffc9f2ea750c230cb023e2004557057c1e56dbc37c65ee2e05c5",
+    "ManyMeterSimulator/ManyMeterSimulator/Networking/SmartNic/CustomProfileDataGenerator.cs": "2fd4d3ddc73c0f47419d3c097ebb51d198f2d01a9111980b5686531a91c6cd8e",
+    "ManyMeterSimulator/ManyMeterSimulator/Networking/SmartNic/CustomProfileCommand.cs": "09a1a4b2dad2bb51b0cc215112d6ad040289da5962012a2fb792fc5a07d23129",
+    "ManyMeterSimulator/ManyMeterSimulator/Networking/SmartNic/CustomPullProtocolResolver.cs": "830b6a6f80a89ce32e2ac1a98e68164d585cd20e78f06abc71fe206fde69d449",
+    "ManyMeterSimulator/ManyMeterSimulator/Networking/SmartNic/CustomRtcCommand.cs": "5e5078db7258d72cd3378da1e482fe53491f19f21cdccc26ee92d1a22eaf76dd",
+    "ManyMeterSimulator/ManyMeterSimulator.Tests/CustomRtcCommandTests.cs": "8d6c940f0d930d8357dacf4e1d2aa1d3b74a36e37c2502d6927a9c94f2f0ea68",
+    "ManyMeterSimulator/ManyMeterSimulator.Tests/CustomProfileCommandTests.cs": "bf2706fb58278024929b78627bbf00e898a0120a35442c143e228da06687e8bc",
+    "ManyMeterSimulator/docs/custom-pull-metadata.md": "a8bbb9a36af59bdf42ece29d27d636f6a070e94df4344caff3aa2a7ea94f5b83"
+  },
+  "deployment_performed": false,
+  "live_hes_pull_performed": false,
+  "configuration_changed": false,
+  "findings": [
+    "Generated custom-pull event IDs now configured per template and command",
+    "RTC response support now validates exported header layout rather than template number",
+    "ESW status .18 versus filter .26 distinguished; HES command 66 supports a template OBIS override",
+    "Daily source values preserved; energy unit compatibility still unresolved"
+  ]
+}

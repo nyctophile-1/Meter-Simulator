@@ -12744,7 +12744,32 @@
     <Description>Alert Push Setup</Description>
     <Access>1133333</Access>
     <MethodAccess>0</MethodAccess>
-    <ObjectList />
+    <ObjectList>
+      <Item>
+        <ObjectType>1</ObjectType>
+        <LN>0.0.96.1.2.255</LN>
+        <AI>2</AI>
+        <DI>0</DI>
+      </Item>
+      <Item>
+        <ObjectType>40</ObjectType>
+        <LN>0.4.25.9.0.255</LN>
+        <AI>1</AI>
+        <DI>0</DI>
+      </Item>
+      <Item>
+        <ObjectType>8</ObjectType>
+        <LN>0.0.1.0.0.255</LN>
+        <AI>2</AI>
+        <DI>0</DI>
+      </Item>
+      <Item>
+        <ObjectType>1</ObjectType>
+        <LN>0.0.94.91.18.255</LN>
+        <AI>2</AI>
+        <DI>0</DI>
+      </Item>
+    </ObjectList>
     <Service>0</Service>
     <Destination />
     <Message>0</Message>
@@ -12858,7 +12883,7 @@
     <Description>Event Status Word 1 (ESW-1)</Description>
     <Access>13</Access>
     <MethodAccess />
-    <Value Type="0" />
+    <Value Type="4">00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000</Value>
   </GXDLMSData>
   <GXDLMSTcpUdpSetup>
     <LN>0.0.25.0.0.255</LN>

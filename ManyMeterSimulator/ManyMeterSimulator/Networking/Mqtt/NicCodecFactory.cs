@@ -22,6 +22,14 @@ namespace ManyMeterSimulator.Networking.Mqtt;
 /// </summary>
 public sealed class NicCodecFactory
 {
+    public INicCodec? CreatePush(NicType transport, string wirepasGatewayId, string wirepasSinkId,
+        string kmeshGatewayId, uint kmeshSinkId) => NicTypes.TransportFor(transport) switch
+    {
+        NicType.MqttWirepas => new WirepasCodec(wirepasGatewayId, wirepasSinkId),
+        NicType.MqttKmesh => new KmeshCodec(kmeshGatewayId, kmeshSinkId),
+        _ => Create(transport),
+    };
+
     /// <summary>
     /// A codec for this transport, or null if it has none. Always a FRESH instance: two callers
     /// sharing one would reintroduce the cross-broker reassembly problem this type exists to solve.

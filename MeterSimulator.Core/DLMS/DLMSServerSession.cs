@@ -25,7 +25,7 @@ namespace MeterSimulator.DLMS
         public bool AllSent => Failed == 0 && Sent > 0;
     }
 
-    public class DLMSServerSession : GXDLMSSecureServer
+    public partial class DLMSServerSession : GXDLMSSecureServer
     {
         private readonly DLMSMeter _meter;
         private readonly string _templatePath;
@@ -290,7 +290,9 @@ namespace MeterSimulator.DLMS
                 .Where(p => pushSetupLogicalName == null || p.LogicalName == pushSetupLogicalName)
                 .ToList();
 
-            if (pushObjects.Count == 0)
+            bool includeDaily = (pushSetupLogicalName is null or DailyPushLogicalName)
+                && !pushObjects.Any(p => p.LogicalName == DailyPushLogicalName) && CanBuildDailyPush;
+            if (pushObjects.Count == 0 && !includeDaily)
             {
                 CoreLog.Warn(
                     $"[Push] {_meter.MeterNo}: no PushSetup with a non-empty push_object_list — " +
@@ -303,7 +305,7 @@ namespace MeterSimulator.DLMS
             // fields matching the HES's SerialNumber-ordered schema) — no nested profile buffer to
             // encode. A push that represents a load profile's row (e.g. Block Load) still needs its
             // per-row values pulled from that profile's latest buffer entry first.
-            SyncBlockLoadPushValues();
+            if (pushObjects.Count > 0) SyncBlockLoadPushValues();
 
             var payloads = new List<byte[]>(pushObjects.Count);
             foreach (var push in pushObjects)
@@ -314,9 +316,10 @@ namespace MeterSimulator.DLMS
                 byte[][] frames;
                 lock (PushEncodeLock)
                 {
-                    SyncPushValues(push);
+                    var encodingPush = push.LogicalName == EventStatusWord.PushLogicalName ? PrepareEswPush(push) : push;
+                    SyncPushValues(encodingPush);
                     ConfigureNotifyCiphering(useCiphering);
-                    frames = Notify.GeneratePushSetupMessages(DateTime.UtcNow, push);
+                    frames = Notify.GeneratePushSetupMessages(DateTime.UtcNow, encodingPush);
                 }
 
                 // GeneratePushSetupMessages returns the wrapper frames for this PushSetup — one for
@@ -326,12 +329,33 @@ namespace MeterSimulator.DLMS
                 payloads.Add(Concat(frames));
             }
 
+            if (includeDaily) payloads.AddRange(BuildDailyPush(useCiphering));
             return payloads;
         }
 
         /// <summary>Available push setups without encoding or advancing invocation counters.</summary>
         public IReadOnlyList<string> GetPushSetupLogicalNames() => _objects.OfType<GXDLMSPushSetup>()
-            .Where(p => p.PushObjectList.Count > 0).Select(p => p.LogicalName).Distinct().ToArray();
+            .Where(p => p.PushObjectList.Count > 0).Select(p => p.LogicalName)
+            .Concat(CanBuildDailyPush ? [DailyPushLogicalName] : Array.Empty<string>()).Distinct().ToArray();
+
+        public string GetEventStatusWord()
+        {
+            string? value = _meter.GetValue(EventStatusWord.LogicalName)?.ToString();
+            EventStatusWord.Validate(value);
+            return value!;
+        }
+
+        private GXDLMSPushSetup PrepareEswPush(GXDLMSPushSetup push)
+        {
+            var status = new GXDLMSData(EventStatusWord.LogicalName) { Value = new GXBitString(GetEventStatusWord()) };
+            status.SetDataType(2, DataType.BitString);
+            var result = new GXDLMSPushSetup(push.LogicalName);
+            // Keep a push from changing the template default inherited by future meter sessions.
+            foreach (var capture in push.PushObjectList)
+                result.PushObjectList.Add(new GXKeyValuePair<GXDLMSObject, GXDLMSCaptureObject>(
+                    capture.Key.LogicalName == EventStatusWord.LogicalName ? status : capture.Key, capture.Value));
+            return result;
+        }
 
         private static byte[] Concat(byte[][] frames)
         {
@@ -489,7 +513,8 @@ namespace MeterSimulator.DLMS
         private static void EnsureBufferFreshness(GXDLMSProfileGeneric profile)
         {
             DateTimeOffset? latest = MeterObjectLoader.LatestConcreteTimestamp(profile);
-            if (latest is null || DateTimeOffset.UtcNow - latest.Value <= BlockLoadFreshnessTolerance)
+            TimeSpan drift = DateTimeOffset.UtcNow - (latest ?? DateTimeOffset.UtcNow);
+            if (latest is null || (drift >= TimeSpan.Zero && drift <= BlockLoadFreshnessTolerance))
             {
                 return;
             }
@@ -500,7 +525,7 @@ namespace MeterSimulator.DLMS
                 // refreshed the buffer while this thread was waiting for the lock.
                 latest = MeterObjectLoader.LatestConcreteTimestamp(profile);
                 TimeSpan staleness = DateTimeOffset.UtcNow - (latest ?? DateTimeOffset.UtcNow);
-                if (latest is null || staleness <= BlockLoadFreshnessTolerance)
+                if (latest is null || (staleness >= TimeSpan.Zero && staleness <= BlockLoadFreshnessTolerance))
                 {
                     return;
                 }
@@ -508,7 +533,7 @@ namespace MeterSimulator.DLMS
                 int shifted = MeterObjectLoader.ShiftProfileTimestamps(profile, staleness);
                 CoreLog.Debug(
                     $"[Push] {profile.LogicalName}: buffer was {staleness.TotalMinutes:F0}m stale, " +
-                    $"re-shifted {shifted} timestamp(s) forward");
+                    $"re-shifted {shifted} timestamp(s)");
             }
         }
 

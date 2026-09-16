@@ -1,0 +1,73 @@
+{
+  "verified_utc": "2026-09-13T16:10:00Z",
+  "goal_complete": false,
+  "tests": {
+    "before": {
+      "total": 2,
+      "passed": 0,
+      "failed": 2,
+      "notExecuted": 0
+    },
+    "after": {
+      "total": 24,
+      "passed": 24,
+      "failed": 0,
+      "notExecuted": 0
+    },
+    "full": {
+      "total": 581,
+      "passed": 581,
+      "failed": 0,
+      "notExecuted": 0
+    }
+  },
+  "daily_generated_packet": {
+    "before_payload_sha256": "e0a8a71047657c9dda440213f206166a9b691b4af9614778d06519887a739aca",
+    "after_payload_sha256": "0bc99af196b4b530585d9229fe2d40e66f2c6e01310fe90c9f45248c4be39dfd",
+    "before_deviation": -32768,
+    "after_deviation": 0,
+    "after_rtc_hex": "07ea090dff100825ff000000",
+    "energy_values_preserved": true,
+    "energy_values": [
+      4684814.453125,
+      4883597.16796875,
+      0.0,
+      0.0
+    ],
+    "published": false
+  },
+  "common_datetime_probe": {
+    "assembly_sha256": "e3a0e04145aa611f542676c3429a4e9ceea01ea1c6039d0cd5486e7d0d8691bf",
+    "cases": 8,
+    "failed_explicit_expectations": 4,
+    "nonzero_and_unspecified_policy_pending": true,
+    "production_datetime_fix_applied": false,
+    "no_database_connection": true
+  },
+  "deployment_performed": false,
+  "live_push_sent": false,
+  "receipt": "C:\\Users\\ayush\\Documents\\MAYA-release-receipts\\scenario-verification-20260913-1610",
+  "artifacts": {
+    "daily-deviation-after.log": "8d0276c99d61dcc257148ca743860329b85044de9209253e17641a47b6c9f619",
+    "daily-deviation-after.trx": "455e72878f66d04d1cabe98e8530976d2c066883ff0c02772ec973f9b1c532ae",
+    "daily-deviation-before.log": "9a6b91e30a03d5be1a5bf8056765d9c72a85853d6979e74c0e1b1198f0b69bcc",
+    "daily-deviation-before.trx": "3d70436859d374cc0f9b297406c153c9350263adca91d6f7fdd8d3a21866ee58",
+    "daily-deviation-config.json": "d8279f4607bae502159712ad516dbb74f9b836ba01d2e7e90b61d6760e91b493",
+    "daily-deviation-correlation.json": "f5cb0729a74531ccd176afe22107f878a2e334a048072bc2b2a05e31e4861267",
+    "daily-deviation-full.log": "923f68a8c5105a4a7174b44b9062453e8568d13f14266691b87d5820c82ea6ca",
+    "daily-deviation-full.trx": "601a91ac996e20194a9939d2f1f3a4e78b02723ea45c4d76b65d859fd8e1aea9",
+    "daily-deviation-probe.log": "e393e3f399c95038c556c3087e186eb2428c92b110f26765f0e9ded395cf13c2",
+    "datetime-cases-provenance.json": "a397a72f5b35bebf9afb7a99a3a09c5da714f8f53f720c2040c9bbe3258a3192",
+    "datetime-cases.json": "c31926b6c47c44e406c8da116b2097133cc71ee167e73628517ad9ef6578d66b",
+    "datetime-common-probe.log": "be58a2652e8a652d7310e6f00f1483c89341a3b1add05c63abbe9b98f8dadcf3",
+    "datetime-common-result.json": "07f8a2e8ca2767b73352f0be93cc9ef2f5812ce51bb99cfa524d8269510401bd",
+    "common-datetime-probe\\cases.json": "c31926b6c47c44e406c8da116b2097133cc71ee167e73628517ad9ef6578d66b",
+    "common-datetime-probe\\DateTimeProbe.csproj": "e3d6eac1bd86f49b2bc08a528b5de559796e414f06305a67e5b2e68d72610e69",
+    "common-datetime-probe\\Program.cs": "9835bafafb94e02309b5e25afa705598aff0bb30a3a4fd4afcec6dae89934b62",
+    "common-datetime-probe\\README.md": "a3e95c4e39bd8647bd6774108af4b47c9eab5d43b2ac3ca700104678d49d3a57",
+    "daily-deviation\\0bc99af196b4b530585d9229fe2d40e66f2c6e01310fe90c9f45248c4be39dfd.bin": "0bc99af196b4b530585d9229fe2d40e66f2c6e01310fe90c9f45248c4be39dfd",
+    "daily-deviation\\generated.json": "3954a1fb4e7aebb092bc9cb07c6e1eea4bd478f783d518e53106d0b0ac5c9767",
+    "maya-source\\ManyMeterSimulator\\ManyMeterSimulator.Tests\\DailyPushTests.cs": "dc6ff79909948d03770a0fe07070e8804e779d00821ddd36f87a6fa9edb52a54",
+    "maya-source\\MeterSimulator.Core\\DLMS\\DLMSServerSession.DailyPush.cs": "ca6d71ddb87af2d44fddc5e3d3d7d22bfd888e10ed12bf83c14b0c6d887ac70b"
+  }
+}

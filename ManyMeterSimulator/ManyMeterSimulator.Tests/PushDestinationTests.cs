@@ -70,7 +70,7 @@ public class PushDestinationTests
         private sealed class StubPool(StubPushPublisher owner) : IMqttPushPool
         {
             public bool IsConnected => owner.Connected;
-            public Task<MqttPushDelivery> PublishMeterAsync(IReadOnlyList<NicPublish> messages, CancellationToken cancellationToken)
+            public Task<MqttPushDelivery> PublishMeterAsync(IReadOnlyList<NicPublish> messages, CancellationToken cancellationToken, ManyMeterSimulator.Networking.Mqtt.MqttPublishRateLimiter? rateLimiter = null)
             {
                 owner.Published += messages.Count;
                 return Task.FromResult(new MqttPushDelivery(messages.Count, 0));

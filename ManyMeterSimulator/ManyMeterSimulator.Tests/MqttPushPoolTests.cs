@@ -6,6 +6,31 @@ namespace ManyMeterSimulator.Tests;
 public class MqttPushPoolTests
 {
     [Fact]
+    public async Task CancellationRetainsPreviouslySentFragmentsInDashboardCounters()
+    {
+        using var stop = new CancellationTokenSource();
+        int calls = 0;
+        var connection = new TestConnection(ct =>
+        {
+            if (++calls == 2) { stop.Cancel(); ct.ThrowIfCancellationRequested(); }
+            return Task.CompletedTask;
+        });
+        await using var pool = await MqttPushPool.OpenAsync([connection], 1, TimeSpan.FromSeconds(5), default);
+        var metrics = new ManyMeterSimulator.Diagnostics.SimulatorMetrics();
+        var nic = ManyMeterSimulator.Networking.Nic.NicType.Mqtt4G;
+        var binding = new BrokerBinding(nic, "test");
+        await using var run = new ManyMeterSimulator.Brain.MqttPushRun([
+            new(1, 1, binding, () => [new(1, nic)], _ => [new("push", [1]), new("push", [2]), new("push", [3])], () => true)],
+            new Dictionary<BrokerBinding, IMqttPushPool> { [binding] = pool }, new() { BatchIds = [1], MaxConcurrency = 1 },
+            false, CancellationTokenSource.CreateLinkedTokenSource(stop.Token), _ => { }, _ => { }, metrics);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run.SendLiveAsync());
+        Assert.Equal(1, metrics.Snapshot(0).TotalPushPayloadsSent);
+        Assert.Equal(2, metrics.Snapshot(0).TotalPushPayloadsFailed);
+        Assert.Equal(1, metrics.Snapshot(0).TotalPushMetersFailed);
+        Assert.Equal(2, calls);
+    }
+
+    [Fact]
     public async Task PoolPublishesAcrossConnections_AndKeepsEachMetersFragmentsTogether()
     {
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);

@@ -1,0 +1,44 @@
+[
+  {
+    "profile": "instant",
+    "raw_id": "1bc1c689-4d78-4f26-b853-aefed91b4e0f",
+    "payload_sha256": "34498fda7e99497a428b69cd62b7c595e6c22e8465063fa476d6719b6f4cd066",
+    "encoded_rtc": "2026-09-13T15:26:40",
+    "encoded_deviation_minutes": 0,
+    "persisted_id": 40115507,
+    "stored_rtc": "2026-09-13T09:56:40",
+    "rtc_difference_minutes": -330.0
+  },
+  {
+    "profile": "block",
+    "raw_id": "f7b09814-111d-4111-8e5b-04a9531494d8",
+    "payload_sha256": "1650a708275ec09214a31abd156701593c3aea313a9256c93d6fc7323953cca2",
+    "encoded_rtc": "2026-09-13T15:30:00",
+    "encoded_deviation_minutes": 0,
+    "persisted_id": 39593468,
+    "stored_rtc": "2026-09-13T10:00:00",
+    "rtc_difference_minutes": -330.0
+  },
+  {
+    "profile": "daily",
+    "raw_id": "955574f8-2e4e-4ad3-b9ea-89b801641a86",
+    "payload_sha256": "e0a8a71047657c9dda440213f206166a9b691b4af9614778d06519887a739aca",
+    "encoded_rtc": "2026-09-13T15:26:40",
+    "encoded_deviation_minutes": -32768,
+    "persisted_id": null,
+    "import_kwh": 4684814.453125,
+    "import_kvah": 4883597.16796875,
+    "outcome": "HES energy validation rejected the unscaled template values"
+  },
+  {
+    "profile": "esw",
+    "raw_id": "df38b1a3-58c4-4e99-b848-16ef77ea2393",
+    "payload_sha256": "ad2944bae0cd867ba479da29cd1bdccf97750e80fca033668933dfbc6933f033",
+    "encoded_rtc": "2026-09-13T15:26:40",
+    "encoded_deviation_minutes": 0,
+    "persisted_id": 3658978,
+    "stored_rtc": "2026-09-13T09:56:40",
+    "rtc_difference_minutes": -330.0,
+    "exact_128_bit_match": true
+  }
+]

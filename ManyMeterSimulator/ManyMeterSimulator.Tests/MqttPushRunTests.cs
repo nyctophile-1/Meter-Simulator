@@ -160,7 +160,7 @@ public partial class MqttPushRunTests
     {
         var fixture = new Fixture(3);
         fixture.Publisher.Reject = true;
-        var result = await fixture.Push.PushBatchAsync(fixture.Batch.Id);
+        var result = await fixture.Push.PushBatchAsync(fixture.Batch.Id, pushSetupLogicalName: MqttPushProfiles.CustomDaily);
         Assert.True(result.Ok);
         Assert.Equal(0, result.Sent);
         Assert.Equal(3, result.Failed);
@@ -214,19 +214,21 @@ public partial class MqttPushRunTests
 
     private sealed class Fixture
     {
+        public SimulatorMetrics Metrics { get; } = new();
         public MeterRegistry Batches { get; } = new();
         public NetworkRegistry Network { get; } = new();
         public RecordingPublisher Publisher { get; } = new();
         public MeterSessionManager Sessions { get; }
         public PushCoordinator Push { get; }
         public MeterBatch Batch { get; }
-        public MqttPushRequest Request => new() { BatchIds = [Batch.Id], PublisherCount = 4, MaxConcurrency = 8 };
+        public MqttPushRequest Request => new() { BatchIds = [Batch.Id], PublisherCount = 4, MaxConcurrency = 8,
+            PushSetupLogicalName = MqttPushProfiles.CustomDaily };
 
-        public Fixture(int count, bool ciphering = false)
+        public Fixture(int count, bool ciphering = false, string template = "unused.xml", int customTemplateId = 93)
         {
             Network.AddBroker(new BrokerEndpoint { Key = "local", Host = "unused.invalid" }, verified: true);
-            Batch = Batches.AddBatch("custom", "unused.xml", count, NicType.MqttWirepas,
-                93, "local", customPushHeaderKind: CustomPushHeaderKind.New);
+            Batch = Batches.AddBatch("custom", template, count, NicType.MqttWirepas,
+                customTemplateId, "local", customPushHeaderKind: CustomPushHeaderKind.New);
             Batches.TryStart(Batch.Id);
             var templates = new TemplateRegistry(Options.Create(new TemplateOptions
             { Folder = Path.Combine(AppContext.BaseDirectory, "Templates") }), new TestEnvironment(), NullLogger<TemplateRegistry>.Instance);
@@ -235,7 +237,7 @@ public partial class MqttPushRunTests
             var options = Options.Create(new PushOptions { UseCiphering = ciphering });
             Push = new PushCoordinator(Batches, Sessions, Network, new TcpPushSender(NullLogger<TcpPushSender>.Instance, options),
                 Publisher, new NicCodecFactory(), options, Options.Create(new CustomPushOptions()),
-                new SimulatorMetrics(), NullLogger<PushCoordinator>.Instance);
+                Metrics, NullLogger<PushCoordinator>.Instance, CustomPushFixtureModel.DailyEncoder(customTemplateId));
         }
     }
 
@@ -260,10 +262,12 @@ public partial class MqttPushRunTests
 
     private sealed class RecordingPool(RecordingPublisher owner) : IMqttPushPool
     {
+        public MqttPublishRateLimiter? RateLimiter { get; private set; }
         public bool Disposed { get; private set; }
         public bool IsConnected => !Disposed;
-        public async Task<MqttPushDelivery> PublishMeterAsync(IReadOnlyList<NicPublish> messages, CancellationToken cancellationToken)
+        public async Task<MqttPushDelivery> PublishMeterAsync(IReadOnlyList<NicPublish> messages, CancellationToken cancellationToken, ManyMeterSimulator.Networking.Mqtt.MqttPublishRateLimiter? rateLimiter = null)
         {
+            RateLimiter = rateLimiter;
             cancellationToken.ThrowIfCancellationRequested();
             if (owner.BeforePublish is { } before) await before(cancellationToken);
             foreach (var message in messages) owner.Messages.Enqueue(message);

@@ -20,7 +20,7 @@ public sealed class CustomRtcCommand(MeterSessionManager sessions)
             throw new NotSupportedException("Only custom GetRTC is implemented.");
         if (inbound.Batch.Status != BatchStatus.Running || inbound.Meter.Nic != NicType.MqttWirepas)
             throw new InvalidOperationException("Custom GetRTC requires a running Wirepas batch.");
-        ValidateProfile(inbound.Protocol);
+        inbound.Protocol.ValidateResponseHeader();
         cancellationToken.ThrowIfCancellationRequested();
         var association = sessions.GetOrCreate(inbound.Meter).CreateReadAssociation();
         try { return Encode(inbound, ReadClock(association, cancellationToken)); }
@@ -58,17 +58,9 @@ public sealed class CustomRtcCommand(MeterSessionManager sessions)
         }
     }
 
-    private static void ValidateProfile(CustomPullProtocolProfile profile)
-    {
-        // HES ParseProfileData has additional vendor-specific layouts for IDs <= 26.
-        // Do not invent their identities/offsets. New-header layout is independent of ID.
-        if (profile.WireProfile != CustomPullWireProfile.NewHeader && profile.HesTemplateId <= 26)
-            throw new NotSupportedException("Legacy GetRTC requires a verified HES template ID above 26.");
-    }
-
     public static byte[] Encode(CustomPullInbound inbound, GXDateTime clock)
     {
-        ValidateProfile(inbound.Protocol);
+        inbound.Protocol.ValidateResponseHeader();
         bool modern = inbound.Protocol.WireProfile == CustomPullWireProfile.NewHeader;
         if (!modern && MeterNodeIds.Value(inbound.Meter.Index) > 0xFFFFFF)
             throw new NotSupportedException("This legacy HES response layout carries only a 24-bit RF node ID.");

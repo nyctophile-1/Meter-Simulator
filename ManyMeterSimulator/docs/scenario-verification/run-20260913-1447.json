@@ -1,0 +1,33 @@
+{
+  "verified_utc": "2026-09-13T14:58:53.032586+00:00",
+  "goal_complete": false,
+  "source_branch": "Custom-Push-Implementation",
+  "source_tests": {
+    "passed": 511,
+    "failed": 0,
+    "skipped": 0
+  },
+  "hes": {
+    "host": "10.254.3.185",
+    "service": "vayu-core-push-rf-drop",
+    "pid": 116854,
+    "started": "2026-09-13T14:24:31Z",
+    "restarts": 0,
+    "application_sha256": "d568c79eab716e48ecfe59cec809e68d489e7331ab62d6b8e1033d3b0567c2be",
+    "common_sha256": "1a2688814b7a3167e78d2eb152a9fc1af9d17ad084118cff42b0c6d5dafa625d"
+  },
+  "packets": {
+    "normal_topic": 6,
+    "diagnostic_drop_replay": 6,
+    "matched_raw_receipts_after_replay": 6,
+    "exact_esw_bit_checks": 2
+  },
+  "database": "KimbalHES replica 10.254.3.137, recovery=true, read-only transactions",
+  "deployment_performed": false,
+  "local_public_dlms_reads": {
+    "nonempty": 5,
+    "empty": 8,
+    "alternate_billing_access_denied": 1,
+    "hes_end_to_end_verified": false
+  }
+}

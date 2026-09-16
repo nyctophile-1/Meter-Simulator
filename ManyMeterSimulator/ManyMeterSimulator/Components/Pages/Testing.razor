@@ -17,6 +17,7 @@
 @inject TestRunEngine RunEngine
 @inject TestRunStore RunStore
 @inject MqttStressService MqttStress
+@inject TcpStressService TcpStress
 @inject ISnackbar Snackbar
 @inject IJSRuntime JS
 @implements IDisposable
@@ -311,7 +312,7 @@
                 </div>
                 <div class="wf-actions">
                     <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Success"
-                               Disabled="@(_testRunActive||MqttStress.State.IsActive||plan.Tasks.Count==0||BaseConfigurationError(plan) is not null)"
+                               Disabled="@(_testRunActive||AnyStressActive||plan.Tasks.Count==0||BaseConfigurationError(plan) is not null)"
                                OnClick="@(()=>OpenRunDialog(plan))">Run</MudButton>
                     <MudButton Size="Size.Small" Variant="Variant.Outlined"
                                OnClick="@(()=>OpenEditPlan(plan))">Edit</MudButton>
@@ -355,7 +356,7 @@
             <div class="wf-header">
                 <div style="flex:1;min-width:0;"><div class="wf-title">@plan.DisplayName</div></div>
                 <div class="wf-actions">
-                    <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Success" Disabled="@(_testRunActive||MqttStress.State.IsActive||plan.Tasks.Count==0)" OnClick="@(()=>OpenRunDialog(plan))">Run</MudButton>
+                    <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Success" Disabled="@(_testRunActive||AnyStressActive||plan.Tasks.Count==0)" OnClick="@(()=>OpenRunDialog(plan))">Run</MudButton>
                     <MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="@(()=>OpenEditPlan(plan))">Edit</MudButton>
                     <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Error" OnClick="@(()=>DeletePlan(plan))">Delete</MudButton>
                 </div>
@@ -520,7 +521,7 @@
             <div class="sec-sub">Ad-hoc checks against a live batch. Base results come from the <b>Test Push</b> plan.</div>
         </div>
         <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Loop"
-                   OnClick="OpenLoopDialog" Disabled="@(_testRunActive || MqttStress.State.IsActive)">Loop push</MudButton>
+                   OnClick="OpenLoopDialog" Disabled="@(_testRunActive || AnyStressActive)">Loop push</MudButton>
     </div>
 
     <MudSelect T="string" Label="Profile" @bind-Value="_pushProfileFilter" Dense="true" Variant="Variant.Outlined"
@@ -585,7 +586,7 @@
                     </div>
                     <div style="width:110px;flex-shrink:0;text-align:right;">
                         <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
-                                   Disabled="@(_pushingBatchIds.Contains(b.Id) || _testRunActive || MqttStress.State.IsActive)"
+                                   Disabled="@(_pushingBatchIds.Contains(b.Id) || _testRunActive || AnyStressActive)"
                                    OnClick="@(() => SendPushAsync(b.Id))">
                             @(_pushingBatchIds.Contains(b.Id) ? "Sending..." : "Send")
                         </MudButton>
@@ -597,7 +598,17 @@
 </div>
 </MudTabPanel>
 <MudTabPanel Text="MQTT stress">
-    <MqttStressPanel Disabled="@(_testRunActive || _scheduleState.IsRunning || _pushingBatchIds.Count > 0)" />
+    @foreach (var active in RunEngine.ActiveMqttRates)
+    {
+        <MudPaper Outlined="true" Class="pa-5 mb-4" @key="active.TaskId">
+            <MudText Typo="Typo.h6">Live MQTT rate · @active.Label</MudText>
+            <MqttPublishRateControl Value="active.Rate" ValueChanged="@(rate => SetTaskMqttRate(active.TaskId, rate))" />
+        </MudPaper>
+    }
+    <MqttStressPanel Disabled="@(_testRunActive || _scheduleState.IsRunning || _pushingBatchIds.Count > 0 || TcpStress.State.IsActive)" />
+</MudTabPanel>
+<MudTabPanel Text="TCP stress">
+    <TcpStressPanel Disabled="@(_testRunActive || _scheduleState.IsRunning || _pushingBatchIds.Count > 0 || MqttStress.State.IsActive)" />
 </MudTabPanel>
 </MudTabs>
 
@@ -677,7 +688,7 @@
                                         <div class="job-name">
                                             @t.TaskLabel
                                             <span class="tbadge @TaskBadgeClass(t.TaskType)">@ShortType(t.TaskType)</span>
-                                            @if (t.TaskType != TestTaskType.MqttStressLoop) { <span style="font-size:.72rem;color:var(--mud-palette-text-secondary);font-weight:400;">score @t.TaskScore.ToString("N0")</span> }
+                                            @if (t.TaskType is not (TestTaskType.MqttStressLoop or TestTaskType.TcpStressLoop)) { <span style="font-size:.72rem;color:var(--mud-palette-text-secondary);font-weight:400;">score @t.TaskScore.ToString("N0")</span> }
                                         </div>
                                         <div class="job-sub">
                                             @if (t.TaskType == TestTaskType.MqttStressLoop)
@@ -688,6 +699,15 @@
                                                 }
                                                 <div>Client completion totals; incoming message rate is measured in EMQX. In-flight delivery at Stop may be unconfirmed.</div>
                                                 @if ((t.Error ?? t.MqttLoop?.Totals.Error) is { } error) { <div style="color:var(--mud-palette-error)">@error</div> }
+                                            }
+                                            else if (t.TaskType == TestTaskType.TcpStressLoop)
+                                            {
+                                                @if (t.TcpLoop is { } loop)
+                                                {
+                                                    <text>@loop.CompletedCycles.ToString("N0") full passes · @loop.Totals.MessagesSent.ToString("N0") TCP payloads written · @loop.Totals.MessagesFailed.ToString("N0") failed/unconfirmed · @loop.Totals.MetersSent.ToString("N0") meter sends (including repeats) · @loop.Totals.MetersFailed.ToString("N0") failed meter sends · @loop.Totals.MetersSkipped.ToString("N0") skipped · @loop.Totals.SendTime.TotalSeconds.ToString("F1")s elapsed</text>
+                                                }
+                                                <div>Client completion totals; ingestion rate is measured at the TCP receiver. In-flight delivery at Stop may be unconfirmed.</div>
+                                                @if ((t.Error ?? t.TcpLoop?.Totals.Error) is { } error) { <div style="color:var(--mud-palette-error)">@error</div> }
                                             }
                                             else if (t.TaskType == TestTaskType.PullListener)
                                             {
@@ -707,7 +727,7 @@
                                             }
                                         </div>
                                     </div>
-                                    <div class="job-dur">@(t.TaskType == TestTaskType.MqttStressLoop && t.DurationMinutes == 0 ? "until stopped" : $"{t.DurationMinutes} min")</div>
+                                    <div class="job-dur">@((t.TaskType is TestTaskType.MqttStressLoop or TestTaskType.TcpStressLoop) && t.DurationMinutes == 0 ? "until stopped" : $"{t.DurationMinutes} min")</div>
                                 </div>
                             }
                         </div>
@@ -1018,12 +1038,13 @@
             @if (!_planLocked)
             {
                 <MudItem xs="12">
-                    <MudSelect T="TestTaskType" @bind-Value="_taskType" Label="Job type" Variant="Variant.Outlined" Margin="Margin.Dense">
+                    <MudSelect T="TestTaskType" @bind-Value="_taskType" @bind-Value:after="OnTaskTypeChanged" Label="Job type" Variant="Variant.Outlined" Margin="Margin.Dense">
                         <MudSelectItem T="TestTaskType" Value="TestTaskType.PullListener">Pull Listener &mdash; measure all inbound HES traffic</MudSelectItem>
                         <MudSelectItem T="TestTaskType" Value="TestTaskType.PushLoop">Push Loop &mdash; repeat a full push every N seconds</MudSelectItem>
                         <MudSelectItem T="TestTaskType" Value="TestTaskType.BurstPush">All Push &mdash; N back-to-back full pushes</MudSelectItem>
                         <MudSelectItem T="TestTaskType" Value="TestTaskType.PartialPush">Partial Push &mdash; random subset of selected batches</MudSelectItem>
                         <MudSelectItem T="TestTaskType" Value="TestTaskType.MqttStressLoop">MQTT Stress Loop &mdash; continuous high-throughput pushes</MudSelectItem>
+                        <MudSelectItem T="TestTaskType" Value="TestTaskType.TcpStressLoop">TCP Stress Loop &mdash; continuous high-throughput pushes</MudSelectItem>
                     </MudSelect>
                 </MudItem>
             }
@@ -1044,24 +1065,28 @@
                     <MudNumericField T="int" @bind-Value="_taskOffset" Label="Offset (min)" Variant="Variant.Outlined" Margin="Margin.Dense" Min="0" Max="240" Disabled="@_planLocked" />
                 </MudItem>
                 <MudItem xs="6">
-                    <MudNumericField T="int" @bind-Value="_taskDuration" Label="@(_taskType == TestTaskType.MqttStressLoop ? "Duration (min, 0 = until stopped)" : "Duration (min)")" Variant="Variant.Outlined" Margin="Margin.Dense" Min="@(_taskType == TestTaskType.MqttStressLoop ? 0 : 1)" Max="10080" Disabled="@(_planLocked && !_editingOfficial)" />
+                    <MudNumericField T="int" @bind-Value="_taskDuration" Label="@(EditingStressTask ? "Duration (min, 0 = until stopped)" : "Duration (min)")" Variant="Variant.Outlined" Margin="Margin.Dense" Min="@(EditingStressTask ? 0 : 1)" Max="10080" Disabled="@(_planLocked && !_editingOfficial)" />
                 </MudItem>
             }
 
-            @if (_taskType == TestTaskType.MqttStressLoop)
+            @if (EditingStressTask)
             {
                 <MudItem xs="12"><MudSelect T="string" Value="@_taskEnvironment" ValueChanged="OnTaskEnvironmentChanged" Label="Environment" Variant="Variant.Outlined" Margin="Margin.Dense">@foreach (var env in Network.Environments) { <MudSelectItem T="string" Value="@env.Key">@env.DisplayName</MudSelectItem> }</MudSelect></MudItem>
-                <MudItem xs="12"><MudSelect T="int" @bind-SelectedValues="_taskBatches" Label="MQTT batches" MultiSelection="true" Variant="Variant.Outlined" Margin="Margin.Dense">@foreach (var batch in TaskEnvironmentBatches.Where(b => NicTypes.IsMqtt(b.NicType))) { <MudSelectItem T="int" Value="@batch.Id">@batch.Name (@batch.Count.ToString("N0") meters)</MudSelectItem> }</MudSelect></MudItem>
+                <MudItem xs="12"><MudSelect T="int" @bind-SelectedValues="_taskBatches" Label="@(_taskType == TestTaskType.TcpStressLoop ? "TCP batches" : "MQTT batches")" MultiSelection="true" Variant="Variant.Outlined" Margin="Margin.Dense">@foreach (var batch in TaskEnvironmentBatches.Where(b => IsTaskNic(b.NicType))) { <MudSelectItem T="int" Value="@batch.Id">@batch.Name (@batch.Count.ToString("N0") meters)</MudSelectItem> }</MudSelect></MudItem>
                 <MudItem xs="12"><MqttProfileSelect BatchIds="_taskBatches" @bind-Value="_taskMqttProfile" /></MudItem>
+                @if (_taskType == TestTaskType.MqttStressLoop)
+                {
+                <MudItem xs="12"><MqttPublishRateControl @bind-Value="_taskMqttRate" /></MudItem>
                 <MudItem xs="6"><MudNumericField T="int" @bind-Value="_taskMqttPublishers" @bind-Value:after="() => _taskMqttConcurrency = Math.Max(_taskMqttConcurrency, _taskMqttPublishers)" Label="Publishers per broker / transport" Min="1" Max="@ManyMeterSimulator.Networking.Mqtt.MqttPushPool.MaximumPublisherCount" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
                 <MudItem xs="6"><MudSelect T="int" @bind-Value="_taskMqttQos" Label="Publish QoS" Variant="Variant.Outlined" Margin="Margin.Dense"><MudSelectItem T="int" Value="0">0</MudSelectItem><MudSelectItem T="int" Value="1">1</MudSelectItem><MudSelectItem T="int" Value="2">2</MudSelectItem></MudSelect></MudItem>
-                <MudItem xs="6"><MudNumericField T="int" @bind-Value="_taskMqttConcurrency" Label="Concurrent meters" Min="@_taskMqttPublishers" Max="1024" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                }
+                <MudItem xs="6"><MudNumericField T="int" @bind-Value="_taskMqttConcurrency" Label="@(_taskType == TestTaskType.TcpStressLoop ? "Concurrent TCP connections" : "Concurrent meters")" Min="@(_taskType == TestTaskType.TcpStressLoop ? 1 : _taskMqttPublishers)" Max="1024" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
                 <MudItem xs="6"><MudNumericField T="int?" @bind-Value="_taskMetersPerBatch" Label="Meters per batch (empty = all)" Min="1" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
                 <MudItem xs="12"><MudCheckBox T="bool" @bind-Value="_taskMqttRandom">Choose a fresh random subset each pass</MudCheckBox></MudItem>
                 <MudItem xs="6"><MudNumericField T="int" @bind-Value="_taskMqttWaveSize" Label="Wave size (0 = whole pass)" Min="0" Max="1000000" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
                 <MudItem xs="6"><MudNumericField T="int" @bind-Value="_taskMqttWavePause" Label="Pause between waves (sec)" Min="0" Max="3600" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
                 <MudItem xs="12"><MudNumericField T="int" @bind-Value="_taskMqttCyclePause" Label="Pause after each full pass (sec, 0 = none)" Min="0" Max="3600" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
-                <MudItem xs="12"><MudAlert Severity="Severity.Info" Dense="true">Start selected batches before running. Connections are reused and payloads regenerated each pass. Use EMQX for incoming message rate; Stop saves the client totals collected so far.</MudAlert></MudItem>
+                <MudItem xs="12"><MudAlert Severity="Severity.Info" Dense="true">Start selected batches before running. Payloads are regenerated each pass. TCP connects from each meter's own IP; MQTT reuses publishers. Measure incoming rate at the receiver. Stop saves client totals.</MudAlert></MudItem>
             }
             else if (_taskType == TestTaskType.PushLoop)
             {
@@ -1124,6 +1149,22 @@
 </MudDialog>
 
 @code {
+    private bool EditingStressTask => _taskType is TestTaskType.MqttStressLoop or TestTaskType.TcpStressLoop;
+    private bool IsTaskNic(NicType nic) => _taskType == TestTaskType.TcpStressLoop ? nic == NicType.Tcp4G : NicTypes.IsMqtt(nic);
+    private void OnTaskTypeChanged() { if (_taskType == TestTaskType.TcpStressLoop) _taskMqttConcurrency = Math.Max(256, _taskMqttConcurrency); }
+    private void ReadTcpTask(TcpStressLoopTask task)
+    {
+        var request = task.Request;
+        _taskMqttConcurrency = request.MaxConcurrency;
+        _taskMqttProfile = request.PushSetupLogicalName ?? "all";
+        _taskMqttWaveSize = request.ChunkSize;
+        _taskMqttWavePause = request.ChunkIntervalSeconds;
+        _taskMqttCyclePause = task.CyclePauseSeconds;
+        _taskMqttRandom = request.SelectRandomly;
+        _taskBatches = request.BatchIds.ToArray();
+        _taskMetersPerBatch = request.MaximumMetersPerBatch;
+    }
+    private bool AnyStressActive => MqttStress.State.IsActive || TcpStress.State.IsActive;
     private IReadOnlyList<MeterBatch> _batches = Array.Empty<MeterBatch>();
     private IReadOnlyList<TestPlan> _plans = Array.Empty<TestPlan>();
     private IReadOnlyList<TestRunReport> _reports = Array.Empty<TestRunReport>();
@@ -1199,6 +1240,13 @@
     private int _taskBursts = 3;
     private int? _taskMetersPerBatch;
     private int _taskMqttPublishers = 8, _taskMqttQos = 2, _taskMqttConcurrency = 64;
+    private int _taskMqttRate = 100;
+
+    private void SetTaskMqttRate(string taskId, int rate)
+    {
+        try { RunEngine.SetMqttPublishRate(taskId, rate); }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
     private int _taskMqttWaveSize, _taskMqttWavePause, _taskMqttCyclePause;
     private bool _taskMqttRandom;
     private string _taskMqttProfile = "all";
@@ -1218,6 +1266,7 @@
     {
         Refresh();
         MqttStress.Changed += OnStressChanged;
+        TcpStress.Changed += OnStressChanged;
         Schedule.Changed += OnScheduleChanged;
         TestPlans.Changed += OnPlansChanged;
         RunEngine.Changed += OnRunChanged;
@@ -1266,6 +1315,9 @@
     {
         ("0.0.25.9.0.255", "Instantaneous Profile"),
         ("0.5.25.9.0.255", "Load Survey (Block Load)"),
+        (MqttPushProfiles.Esw, "ESW (Event Status Word)"),
+        (MqttPushProfiles.CustomDaily, "Daily (template 93 custom push)"),
+        (MqttPushProfiles.Daily, "Daily (DLMS)"),
         (null, "All"),
     };
 
@@ -1273,7 +1325,7 @@
 
     private async Task SendPushAsync(int batchId)
     {
-        if (MqttStress.State.IsActive) return;
+        if (AnyStressActive) return;
         _pushingBatchIds.Add(batchId);
         try
         {
@@ -1293,7 +1345,7 @@
     }
 
     private void OpenLoopDialog() { _loopBatchIds = _scheduleState.BatchIds.ToList(); _loopIntervalMin = _scheduleState.IntervalMinutes > 0 ? _scheduleState.IntervalMinutes : PushScheduleService.AllowedIntervalMinutes[0]; _loopOpen = true; }
-    private void StartLoop() { if (MqttStress.State.IsActive) return; try { Schedule.Start(_loopBatchIds.ToList(), _loopIntervalMin); _loopOpen = false; } catch (ArgumentException ex) { Snackbar.Add(ex.Message, Severity.Error); } }
+    private void StartLoop() { if (AnyStressActive) return; try { Schedule.Start(_loopBatchIds.ToList(), _loopIntervalMin); _loopOpen = false; } catch (ArgumentException ex) { Snackbar.Add(ex.Message, Severity.Error); } }
     private void StopLoop() { Schedule.Stop(); }
 
     // Run
@@ -1302,7 +1354,7 @@
     {
         if (_runPlan is null) return;
         DateTimeOffset at = DateTimeOffset.UtcNow;
-        try { if (MqttStress.State.IsActive) throw new InvalidOperationException("Stop the MQTT stress run first."); RunEngine.ScheduleRun(_runPlan, _runLabel, at); _runOpen = false; Snackbar.Add("Run started.", Severity.Info); }
+        try { if (AnyStressActive) throw new InvalidOperationException("Stop the active stress run first."); RunEngine.ScheduleRun(_runPlan, _runLabel, at); _runOpen = false; Snackbar.Add("Run started.", Severity.Info); }
         catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
     }
     private void StopRun() { RunEngine.StopNow(); }
@@ -1335,7 +1387,7 @@
     private void SavePlan()
     {
         _planError = null;
-        _planEnvs = _planTasks.Where(t => t.Type is TestTaskType.PushLoop or TestTaskType.BurstPush or TestTaskType.PartialPush or TestTaskType.MqttStressLoop)
+        _planEnvs = _planTasks.Where(t => t.Type is TestTaskType.PushLoop or TestTaskType.BurstPush or TestTaskType.PartialPush or TestTaskType.MqttStressLoop or TestTaskType.TcpStressLoop)
             .Select(t => t.EnvironmentKey).Where(key => !string.IsNullOrWhiteSpace(key)).Select(key => key!).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         if (!_editingBase && string.IsNullOrWhiteSpace(_planName)) { _planError = "Name is required."; return; }
         if (_planEnvs.Count > 1) { _planError = "All push tasks in a plan must use the same environment."; return; }
@@ -1361,18 +1413,24 @@
 
     // Tasks
     private void OpenAddTask() { _taskEditing = false; _taskTarget = null; _taskType = TestTaskType.PushLoop; _taskLabel = ""; _taskOffset = 0; _taskDuration = 15; _taskInterval = 300; _taskBursts = 3; _taskMetersPerBatch = null; _taskPartialMode = PartialPushMode.Count; _taskPartialCount = 1_000; _taskPartialPercentage = 10; _taskBatches = Array.Empty<int>(); _taskEnvironment = null; ReadMqttTask(null); _taskOpen = true; }
-    private void OpenEditTask(TestTask t) { _taskEditing = true; _taskTarget = t; _taskType = t.Type; _taskLabel = t.Label; _taskOffset = t.OffsetMinutes; _taskDuration = t.DurationMinutes; _taskInterval = t is PushLoopTask pl ? pl.PushIntervalSec : 300; _taskBursts = t is BurstPushTask bt ? bt.BurstCount : t is PartialPushTask pt ? pt.BurstCount : 3; _taskMetersPerBatch = t is BurstPushTask standard ? standard.MetersPerBatch : null; _taskPartialMode = t is PartialPushTask partial ? partial.Mode : PartialPushMode.Count; _taskPartialCount = t is PartialPushTask partialCount ? partialCount.MeterCount : 1_000; _taskPartialPercentage = t is PartialPushTask partialPercent ? partialPercent.Percentage : 10; _taskBatches = t is PushLoopTask pl2 ? pl2.BatchIds.ToList() : t is BurstPushTask bt2 ? bt2.BatchIds.ToList() : t is PartialPushTask pt2 ? pt2.BatchIds.ToList() : Array.Empty<int>(); _taskEnvironment = t.EnvironmentKey; ReadMqttTask(t as MqttStressLoopTask); _taskOpen = true; }
+    private void OpenEditTask(TestTask t) { _taskEditing = true; _taskTarget = t; _taskType = t.Type; _taskLabel = t.Label; _taskOffset = t.OffsetMinutes; _taskDuration = t.DurationMinutes; _taskInterval = t is PushLoopTask pl ? pl.PushIntervalSec : 300; _taskBursts = t is BurstPushTask bt ? bt.BurstCount : t is PartialPushTask pt ? pt.BurstCount : 3; _taskMetersPerBatch = t is BurstPushTask standard ? standard.MetersPerBatch : null; _taskPartialMode = t is PartialPushTask partial ? partial.Mode : PartialPushMode.Count; _taskPartialCount = t is PartialPushTask partialCount ? partialCount.MeterCount : 1_000; _taskPartialPercentage = t is PartialPushTask partialPercent ? partialPercent.Percentage : 10; _taskBatches = t is PushLoopTask pl2 ? pl2.BatchIds.ToList() : t is BurstPushTask bt2 ? bt2.BatchIds.ToList() : t is PartialPushTask pt2 ? pt2.BatchIds.ToList() : Array.Empty<int>(); _taskEnvironment = t.EnvironmentKey; ReadMqttTask(t as MqttStressLoopTask); if (t is TcpStressLoopTask tcp) ReadTcpTask(tcp); _taskOpen = true; }
 
     private void SaveTask()
     {
-        if (_taskType == TestTaskType.MqttStressLoop && (string.IsNullOrWhiteSpace(_taskEnvironment)
-            || _taskBatches.Any(id => !TaskEnvironmentBatches.Any(b => b.Id == id && NicTypes.IsMqtt(b.NicType)))))
-        { Snackbar.Add("Choose an environment and MQTT batches belonging to it.", Severity.Error); return; }
+        if (EditingStressTask && (string.IsNullOrWhiteSpace(_taskEnvironment)
+            || _taskBatches.Any(id => !TaskEnvironmentBatches.Any(b => b.Id == id && IsTaskNic(b.NicType)))))
+        { Snackbar.Add("Choose an environment and matching batches belonging to it.", Severity.Error); return; }
         TestTask n = _taskType switch
         {
             TestTaskType.MqttStressLoop => new MqttStressLoopTask { Label = _taskLabel, OffsetMinutes = _taskOffset, DurationMinutes = _taskDuration,
                 EnvironmentKey = _taskEnvironment, CyclePauseSeconds = _taskMqttCyclePause,
                 Request = new MqttPushRequest { BatchIds = _taskBatches.ToArray(), PublisherCount = _taskMqttPublishers, Qos = _taskMqttQos,
+                    PublishesPerSecond = _taskMqttRate,
+                    MaxConcurrency = _taskMqttConcurrency, MaximumMetersPerBatch = _taskMetersPerBatch, SelectRandomly = _taskMqttRandom,
+                    PushSetupLogicalName = _taskMqttProfile == "all" ? null : _taskMqttProfile, ChunkSize = _taskMqttWaveSize, ChunkIntervalSeconds = _taskMqttWavePause } },
+            TestTaskType.TcpStressLoop => new TcpStressLoopTask { Label = _taskLabel, OffsetMinutes = _taskOffset, DurationMinutes = _taskDuration,
+                EnvironmentKey = _taskEnvironment, CyclePauseSeconds = _taskMqttCyclePause,
+                Request = new TcpPushRequest { BatchIds = _taskBatches.ToArray(),
                     MaxConcurrency = _taskMqttConcurrency, MaximumMetersPerBatch = _taskMetersPerBatch, SelectRandomly = _taskMqttRandom,
                     PushSetupLogicalName = _taskMqttProfile == "all" ? null : _taskMqttProfile, ChunkSize = _taskMqttWaveSize, ChunkIntervalSeconds = _taskMqttWavePause } },
             TestTaskType.PushLoop => new PushLoopTask { Label = _taskLabel, OffsetMinutes = _taskOffset, DurationMinutes = _taskDuration, PushIntervalSec = _taskInterval, BatchIds = _taskBatches.ToList(), EnvironmentKey = _taskEnvironment },
@@ -1385,6 +1443,7 @@
             try { mqtt.Validate(); }
             catch (ArgumentException ex) { Snackbar.Add(ex.Message, Severity.Error); return; }
         }
+        if (n is TcpStressLoopTask tcp) { try { tcp.Validate(); } catch (ArgumentException ex) { Snackbar.Add(ex.Message, Severity.Error); return; } }
         if (_taskEditing && _taskTarget is not null) { int i = _planTasks.IndexOf(_taskTarget); if (i >= 0) _planTasks[i] = n; }
         else _planTasks.Add(n);
         _taskOpen = false;
@@ -1401,6 +1460,7 @@
     {
         var request = task?.Request ?? new MqttPushRequest();
         _taskMqttPublishers = request.PublisherCount;
+        _taskMqttRate = request.PublishesPerSecond ?? 100;
         _taskMqttQos = request.Qos;
         _taskMqttConcurrency = request.MaxConcurrency;
         _taskMqttProfile = request.PushSetupLogicalName ?? "all";
@@ -1502,6 +1562,7 @@
         PartialPushTask pt => pt.Mode == PartialPushMode.Count
             ? $"{pt.BurstCount}x partial push of {pt.MeterCount:N0} random meters"
             : $"{pt.BurstCount}x partial push of {pt.Percentage:N0}% per batch",
+        TcpStressLoopTask tcp => $"{MqttPushProfiles.Label(tcp.Request.PushSetupLogicalName)} · {tcp.Request.BatchIds.Count} batch(es) · {tcp.Request.MaxConcurrency} concurrent connections · pause {tcp.CyclePauseSeconds}s",
         MqttStressLoopTask mqtt => $"{MqttPushProfiles.Label(mqtt.Request.PushSetupLogicalName)} · {mqtt.Request.BatchIds.Count} batch(es) · {mqtt.Request.PublisherCount} publishers · QoS {mqtt.Request.Qos} · pause {mqtt.CyclePauseSeconds}s",
         PushLoopTask pl => $"every {pl.PushIntervalSec}s · {pl.BatchIds.Count} batch(es)",
         BurstPushTask bt => $"{bt.BurstCount}× push · {bt.BatchIds.Count} batch(es)",
@@ -1515,6 +1576,7 @@
         {
             PullListenerTask pull => pull.BatchIds,
             MqttStressLoopTask mqtt => mqtt.Request.BatchIds,
+        TcpStressLoopTask tcp => tcp.Request.BatchIds,
             PushLoopTask loop => loop.BatchIds,
             BurstPushTask push => push.BatchIds,
             PartialPushTask partial => partial.BatchIds,
@@ -1548,6 +1610,7 @@
     private static string TaskBadgeClass(TestTaskType t) => t switch
     {
         TestTaskType.MqttStressLoop => "tbadge-push",
+        TestTaskType.TcpStressLoop => "tbadge-push",
         TestTaskType.PushLoop => "tbadge-push",
         TestTaskType.PullListener => "tbadge-pull",
         TestTaskType.BurstPush => "tbadge-burst",
@@ -1558,6 +1621,7 @@
     private static string ShortType(TestTaskType t) => t switch
     {
         TestTaskType.MqttStressLoop => "mqtt loop",
+        TestTaskType.TcpStressLoop => "tcp loop",
         TestTaskType.PushLoop => "loop",
         TestTaskType.PullListener => "pull",
         TestTaskType.BurstPush => "push",
@@ -1579,5 +1643,5 @@
     private static string StatusRowClass(BatchStatus s) => s switch { BatchStatus.Running => "is-running", BatchStatus.Starting => "is-starting", BatchStatus.Stopped => "is-stopped", _ => "is-idle" };
     private static string NicLabel(NicType n) => n switch { NicType.Tcp4G => "4G TCP", NicType.Mqtt4G => "4G MQTT", NicType.Mqtt4GImg => "4G IMG", NicType.MqttWirepas => "RF Wirepas", NicType.MqttKmesh => "RF Kmesh", _ => n.ToString() };
 
-    public void Dispose() { MqttStress.Changed -= OnStressChanged; Schedule.Changed -= OnScheduleChanged; TestPlans.Changed -= OnPlansChanged; RunEngine.Changed -= OnRunChanged; RunEngine.RunCompleted -= OnRunCompleted; _timer?.Dispose(); }
+    public void Dispose() { MqttStress.Changed -= OnStressChanged; TcpStress.Changed -= OnStressChanged; Schedule.Changed -= OnScheduleChanged; TestPlans.Changed -= OnPlansChanged; RunEngine.Changed -= OnRunChanged; RunEngine.RunCompleted -= OnRunCompleted; _timer?.Dispose(); }
 }

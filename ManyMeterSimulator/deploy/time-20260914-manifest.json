@@ -1,0 +1,55 @@
+{
+  "release": "time-d17d9f77",
+  "source_snapshot_sha256": "d17d9f7780288c7953bc65ca87e247733af56d610c075217fed619bffaecdc4c",
+  "base_release": "profiles-818f418a",
+  "runtime_source_changes": [
+    "MeterSimulator.Core/DLMS/DLMSServerSession.cs",
+    "MeterSimulator.Core/DLMS/MeterObjectLoader.cs"
+  ],
+  "component_files": {
+    "MeterSimulator.Core.dll": "fce7c9c7a9011f8a095f3ff5cea8d825b7948660b6255e2fbada491dc6106a33",
+    "MeterSimulator.Core.pdb": "c113f569f678dce2a6070931a4dbee568f8a4459b620091a2e2ff7b9ade5e385"
+  },
+  "component_archive_sha256": "de869c810db2ae695e1d7eb94e319b0ebf9cf97e5644f4407c9f4f61c0e39400",
+  "application_runtime_sha256": "facc39f3a77821954867427195d058e2c220a5617bc97d54e6aa8eff72415ddc",
+  "gurux_runtime_sha256": "d2d245b5cfb4e87c56c3b4d2af856ab35c25e153b47232e8756f0ac6e1825890",
+  "master_sha256": "9328f37b2c6b0b9a2beceb22f1db326fbd19b3b07aea5b5ddf855cdb2b7fdb38",
+  "tests": "598 passed, 0 failed, 0 skipped; six new alignment cases reproduce three failures before the fix",
+  "targets": {
+    "drishti": {
+      "host": "10.254.3.57",
+      "backup": "/opt/maya-sim/backups/20260913T195845Z-time-d17d9f77",
+      "installation": "verified binary hashes, full saved-state preservation, HTTP, IPv6 listener and route",
+      "deployment_utc": "2026-09-13T19:58:48.463423+00:00",
+      "main_pid": 21039,
+      "restarts": 0,
+      "process_start": "Sun 2026-09-13 19:58:46 UTC"
+    },
+    "eqa": {
+      "host": "15.252.116.146",
+      "backup": "/opt/maya-sim/backups/20260913T200034Z-time-d17d9f77",
+      "installation": "verified binary hashes, full saved-state preservation, HTTP, IPv6 listener and route",
+      "deployment_utc": "2026-09-13T20:02:26.103743+00:00",
+      "complete_backup_local": "C:\\Users\\ayush\\Documents\\MAYA-release-receipts\\time-d17d9f77\\eqa-time-d17d9f77-complete-20260913T200034Z.tar.gz",
+      "complete_backup_sha256": "ec106fcf37f346b98a33aa4e954ad22214256be5faf99b40b88d455869b6169a",
+      "complete_backup_runtime_cache": "/dev/shm/eqa-time-d17d9f77-complete-20260913T200034Z.tar.gz",
+      "main_pid": 5330,
+      "restarts": 0,
+      "process_start": "Sun 2026-09-13 20:02:21 UTC"
+    }
+  },
+  "offline": {
+    "fresh_master_packets": 4,
+    "common_rtc_checks": 4,
+    "common_fix_deployed": false,
+    "common_assembly_sha256": "e71c67ad58eb432118e3e8386f42c1f1762e444798823692512379b633adf764"
+  },
+  "verification_limits": [
+    "Full D1 live matrix remains incomplete",
+    "HES push and routing consumers inactive at last check",
+    "Fleet ownership selection pending; overlapping IDs still respond from both hosts",
+    "Existing batch template choices preserved",
+    "Block push retains nearest-half-hour rounding",
+    "D2/D3 deferred"
+  ]
+}

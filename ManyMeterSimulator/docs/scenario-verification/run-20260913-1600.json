@@ -1,0 +1,46 @@
+{
+  "verified_utc": "2026-09-13T16:00:00Z",
+  "goal_complete": false,
+  "scope": "Common new-header fragment frame-ID overflow source fix",
+  "base_commit": "0337feb506a1c9963ffd42d50c3aa592327c10dc",
+  "checkout": "C:\\Users\\ayush\\OneDrive\\Documents\\Development\\Sinhal Repos\\.codex\\worktrees\\vayu-common-push-frame-id",
+  "source_sha256": "76f7048f9459d5959d7900c370115321d69bc9065eac98443935c50d039d52be",
+  "before": {
+    "passed": 18,
+    "failed": 6,
+    "failure": "Int32 overflow in high-ID push cases"
+  },
+  "after": {
+    "passed": 24,
+    "failed": 0
+  },
+  "checked_arithmetic": {
+    "passed": 24,
+    "failed": 0
+  },
+  "common_build": {
+    "errors": 0,
+    "warnings": 2074
+  },
+  "test_scope": "Exact extracted production methods with in-memory dependency stand-ins; not database or deployed-runtime verification",
+  "database_catalog": "Read-only inspection: frameid integer, no nonnegative constraint",
+  "deployment_performed": false,
+  "package_published": false,
+  "receipt": "C:\\Users\\ayush\\Documents\\MAYA-release-receipts\\scenario-verification-20260913-1600",
+  "artifacts": {
+    "common-frame-id.patch": "4fa0154b0020ffd56f027e53c391e61296bbdea720a5cdbea221a2d4f205b6d2",
+    "fragment-catalog.log": "8dbae795d63e18d3cc0e28c1ae16885943140ccd9ab54cf96092b27929727b04",
+    "fragment-catalog.sql": "3297aefa971522c01756ce931bce1004bcb53dbdbee147c6a156d0694d704a9d",
+    "frame-id-common-build.log": "269ea18c19e96b84a75ffa572097593acb9d85fbda864cb213ecac0b0b5fec66",
+    "Program.cs": "e182e64461c101e9e18c708e74f5f73f2b90dc9994ca0548482c088588fbfca6",
+    "README.md": "51db86226a572abdaf4a081af670efb4f75625539f98314369b4c3c895b46f7d",
+    "run.py": "1cd7ddbf0044b1d5231fc9a2df3810e7b8300476fe7690829e760951bdeebd85",
+    "frame-id-after\\checked-result.log": "7ab7595595575ab8b652a2634ca84ffaf8e9d1d6bdb39c4396bc21120c12d5be",
+    "frame-id-after\\Extracted.cs": "94e720197f9fb36398163502c47ce27de3d22caf7f89c1aacad9fdac8647af79",
+    "frame-id-after\\result.log": "7ab7595595575ab8b652a2634ca84ffaf8e9d1d6bdb39c4396bc21120c12d5be",
+    "frame-id-after\\source.json": "8e360ebd663dcb3208758270184bcc0467bb7e83123b4d19a1f65bf18d42f630",
+    "frame-id-before\\Extracted.cs": "f7eeef491e96efcc1bf2c398b1d07a51d6e4f358d715302ab45f68dc9d64e14f",
+    "frame-id-before\\result.log": "65c16392d5873afd335a156df3bca1cdaeda05be18a475f02b72d9ad4ef3994b",
+    "frame-id-before\\source.json": "36696aaf77af1e66a8d09c80ff953ba15a50868ac0976b87733f27433be778cc"
+  }
+}

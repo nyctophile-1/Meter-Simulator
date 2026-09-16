@@ -183,15 +183,17 @@ public class PushBlockLoadProfileTests
     }
 
     [Fact]
-    public void BuildPushPayloads_Unfiltered_SendsBothInstantAndBlockLoadAsSeparatePayloads()
+    public void BuildPushPayloads_Unfiltered_SendsInstantBlockLoadAndEswAsSeparatePayloads()
     {
         DLMSServerSession session = BuildSession();
 
         IReadOnlyList<byte[]> payloads = session.BuildPushPayloads(useCiphering: true);
 
-        Assert.Equal(2, payloads.Count);
+        Assert.Equal(4, payloads.Count);
         var selfLns = payloads.Select(p => Convert.ToHexString((byte[])DecodePush(p)[1])).ToHashSet();
         Assert.Contains(Convert.ToHexString(new byte[] { 0, 0, 25, 9, 0, 255 }), selfLns); // Instant
         Assert.Contains(Convert.ToHexString(new byte[] { 0, 5, 25, 9, 0, 255 }), selfLns); // Block Load
+        Assert.Contains(Convert.ToHexString(new byte[] { 0, 4, 25, 9, 0, 255 }), selfLns);
+        Assert.Contains(Convert.ToHexString(new byte[] { 0, 6, 25, 9, 0, 255 }), selfLns);
     }
 }

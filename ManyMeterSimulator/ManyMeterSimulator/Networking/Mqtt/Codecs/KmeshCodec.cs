@@ -16,8 +16,33 @@ namespace ManyMeterSimulator.Networking.Mqtt.Codecs;
 /// HES's <c>PullHeaderLength == 7</c> for Kmesh templates is a DISCRIMINATOR, not a length — there
 /// are no seven header bytes to strip. Reading it as a length is the obvious trap here.
 /// </summary>
-public sealed class KmeshCodec : INicCodec
+public sealed class KmeshCodec(string pushGatewayId = "sim-gw", uint pushSinkId = 1) : INicCodec
 {
+    public IReadOnlyList<NicPublish> EncodePush(string nodeId, ReadOnlyMemory<byte> dlmsPush)
+    {
+        if (dlmsPush.IsEmpty) return [];
+        if (string.IsNullOrWhiteSpace(pushGatewayId)) throw new ArgumentException("Gateway is required.");
+        if (!MeterRef.TryFromNodeId(nodeId, NicType.MqttKmesh, out var meter))
+            throw new ArgumentException("Kmesh push requires an assigned simulator node id.", nameof(nodeId));
+        var message = new PushDataMessage
+        {
+            Header = new CommonHeader
+            {
+                NodeAddr = uint.Parse(nodeId), GatewayId = pushGatewayId, SinkId = pushSinkId,
+                EpochMs = (ulong)DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), TraveltimeMs = 0,
+            },
+            Data = new PushData
+            {
+                RespType = RequestType.KapDlmsWraperPushData,
+                MeterNumber = meter.Serial,
+                FrameId = (uint)Random.Shared.NextInt64(uint.MaxValue),
+                FragInfo = new FragmentInfo { ThisFrag = 1, TotalFrag = 1 },
+                Payload = ByteString.CopyFrom(dlmsPush.Span),
+            },
+        };
+        return [new NicPublish($"gateway/push/meter/{pushGatewayId}/{nodeId}", message.ToByteArray())];
+    }
+
     public NicType Nic => NicType.MqttKmesh;
 
     public IReadOnlyList<string> RequestTopicFilters { get; } = new[] { NicTopics.KmeshRequestFilter };

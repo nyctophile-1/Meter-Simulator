@@ -27,7 +27,7 @@ public sealed class MqttRoutingService(
         foreach (var batch in registry.Batches)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (batch.Status != BatchStatus.Running) continue;
+            if (batch.Status != BatchStatus.Running || !batch.Traffic.Routing) continue;
 
             var endpoint = batch.BrokerKey is { } key ? network.Broker(key) : null;
             if (endpoint is not { Enabled: true }) continue;
@@ -57,7 +57,7 @@ public sealed class MqttRoutingService(
                     batch.Id, sent, batch.Count);
             }
 
-            bool IsCurrent() => batch.Status == BatchStatus.Running &&
+            bool IsCurrent() => batch.Status == BatchStatus.Running && batch.Traffic.Routing &&
                 string.Equals(batch.BrokerKey, endpoint.Key, StringComparison.OrdinalIgnoreCase) &&
                 registry.Batches.Contains(batch) && network.Broker(endpoint.Key) is { Enabled: true } current &&
                 current.Host == endpoint.Host && current.Port == endpoint.Port &&

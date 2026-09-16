@@ -58,6 +58,7 @@ public sealed class TcpPushSender
         IReadOnlyList<byte[]> payloads,
         CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (!TryParseDestination(destination, defaultPort, out string host, out int port))
         {
             _logger.LogWarning("Push {Meter}: bad destination '{Destination}'", meterNo, destination);
@@ -154,6 +155,7 @@ public sealed class TcpPushSender
                 connectCts.CancelAfter(TimeSpan.FromSeconds(Math.Max(1, _options.ConnectTimeoutSeconds)));
                 await client.ConnectAsync(host, port, connectCts.Token);
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
             catch (Exception ex)
             {
                 _logger.LogDebug(
@@ -174,8 +176,11 @@ public sealed class TcpPushSender
                     writeCts.CancelAfter(sendTimeout);
 
                     await stream.WriteAsync(payloads[i], writeCts.Token);
-                    await stream.FlushAsync(writeCts.Token);
                     sent++;
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw new PushCanceledException(sent, payloads.Count - sent, cancellationToken);
                 }
                 catch (Exception ex)
                 {

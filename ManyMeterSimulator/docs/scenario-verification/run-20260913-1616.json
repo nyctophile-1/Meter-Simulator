@@ -1,0 +1,37 @@
+{
+  "verified_utc": "2026-09-13T16:16:00Z",
+  "goal_complete": false,
+  "nominal_rows": 86,
+  "not_applicable_dlms_rtc_push": 3,
+  "complete_end_to_end_rows": 0,
+  "push_runtime": {
+    "pid": 129983,
+    "active": true,
+    "restarts": 0,
+    "start_utc": "2026-09-13T14:55:43Z",
+    "common_sha256": "bcce384debce0f3f1cca458e81551e0aa28f023afafeb4f3d06d5012417c898f",
+    "application_sha256": "6c604a951dd75c067bec5a4bf61af6b8722aae04aa9ca405fd0b10b688a47145"
+  },
+  "pull_runtime": {
+    "pid": 134152,
+    "active": true,
+    "restarts": 0,
+    "start_utc": "2026-09-13T14:58:44Z"
+  },
+  "unauthenticated_command_endpoint_http_status": 401,
+  "new_push_sent": false,
+  "deployment_performed": false,
+  "remaining_inputs": [
+    "D2/D3 XMLs and registered meter/category/HES mappings, with 8 and 10 identified separately",
+    "Authorized HES API session or credential location and isolated registered test identity for workstation pull responses",
+    "ESW versus ESWF custom-pull contract",
+    "DLMS deviation convention and unspecified-deviation timezone policy",
+    "Remaining service-host/normal-topic forwarding details and compatible Daily units/profile data; populated D1 Billing/event push definitions"
+  ],
+  "prior_pending_input_records": [
+    "run-20260913-1600.json",
+    "run-20260913-1610.json",
+    "run-20260913-1613.json"
+  ],
+  "matrix_sha256": "cafeeceeddc51bcd8044cdf269b9a1598c895cd81c0f977d40f6da09c627045a"
+}

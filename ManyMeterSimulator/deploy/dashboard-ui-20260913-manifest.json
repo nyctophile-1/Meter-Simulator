@@ -1,0 +1,47 @@
+{
+  "release": "maya-ui-20260913",
+  "source_snapshot_sha256": "6881ba2a460ccf0020b20423ca2e5697305256a744d6a5a73008e37a0e1a10e5",
+  "base_commit": "f133aa1685f0b1b8a1483808499c4bedde321c51",
+  "included_commit": "c1fe203",
+  "provenance": "Isolated snapshot preserving deployed Profile-Simulation plus local TCP stress work and dashboard changes; no commit or push",
+  "archive_sha256": "f78339f1e37795358960c1bd91618c6cbdae0159f73d867c566dc4a4dd137b00",
+  "application_sha256": "100ee8e3b24f9dc3c20c99dc38adaed0e9bc7765f2e89aa394e380e9557226c4",
+  "core_sha256": "b4ddebc458a44608f6904ecaa3dd8f5d45bf390e10b89132f3ca194b89a32d24",
+  "tests": "462 full suite passed; 53 focused passed (includes added cancellation regression)",
+  "targets": {
+    "drishti": {
+      "host": "10.254.3.57",
+      "key_path": "C:\\Users\\ayush\\Downloads\\observability 1.pem",
+      "backup": "/opt/maya-sim/backups/20260913T095412Z-f133aa1",
+      "backup_format": "full data directory",
+      "installation": "verified",
+      "start_utc": "2026-09-13T09:54:14Z",
+      "main_pid": 7771,
+      "restarts": 0,
+      "verification": "Both DLL hashes match; local/workstation HTTP 200; IPv6 listener/route correct; 300001 live meters restored; 3 running and 5 stopped batches preserved; config/templates/keys/reports unchanged; logical batch/network equality; enabled MQTT connections restored; authenticated dashboard inspected"
+    },
+    "eqa": {
+      "host": "15.252.116.146",
+      "key_path": "C:\\Users\\ayush\\OneDrive\\Documents\\Development\\Sinhal Repos\\all_creds\\maya-sim-ehes-eqa.pem",
+      "backup": "/opt/maya-sim/backups/20260913T095545Z-f133aa1",
+      "backup_format": "full data tar.gz",
+      "installation": "verified",
+      "start_utc": "2026-09-13T09:56:24Z",
+      "main_pid": 20834,
+      "restarts": 0,
+      "backup_data_sha256": "5b802702621d9ccca46bd71fc06030a5a4033b48635c35c9394d7c930709125a",
+      "verification": "Both DLL hashes match; local/workstation HTTP 200; IPv6 listener/route correct; 500000 live meters restored; 6 running and 1 stopped batches preserved; config/templates/keys/reports unchanged; logical batch/network equality; enabled MQTT connection restored; authenticated dashboard inspected",
+      "warnings": [
+        "Disk approximately 97% used, 1.1 GiB available",
+        "Optimization environment TCP target displayed Connection refused; MQTT connection succeeded; external TCP/HES receipt not tested"
+      ]
+    }
+  },
+  "verification_completed_utc": "2026-09-13T09:59:34.969608+00:00",
+  "unexecuted_checks": [
+    "No production fleet push/stress run or HES ingestion test",
+    "No commit or push"
+  ],
+  "source_review": "Preserved deployed Profile-Simulation base; merged c1fe203 without commit; applied local workspace changes in isolated worktree. Full suite then focused tests passed. Subsequent UI layout refinements were compiled in both Linux and local publishes and visually checked.",
+  "visual_qa": "Local published dashboard at 1270px width: all six KPI cards aligned; all NIC columns visible without horizontal scroll; both authenticated deployed dashboards verified."
+}

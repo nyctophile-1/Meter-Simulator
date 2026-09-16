@@ -61,6 +61,7 @@ public enum CustomCommandType
     GetControlEventProfile = 47,
     GetRealtimeClock = 48,
     GetStoredInstantaneousProfile = 50,
+    GetESWF = 66,
     GetDiData = 83,
 }
 

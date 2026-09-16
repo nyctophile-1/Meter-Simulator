@@ -21,6 +21,33 @@ code {
 }
 
 /* ---------- Dashboard ---------- */
+.dashboard-kpis {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+    gap: 8px;
+}
+
+.nic-statistics.mud-simple-table table {
+    table-layout: fixed;
+    min-width: 0;
+    width: 100%;
+}
+
+.nic-statistics.mud-simple-table table th,
+.nic-statistics.mud-simple-table table td {
+    white-space: normal;
+    padding: 10px 6px;
+    font-size: 0.8125rem;
+}
+
+.nic-statistics th:first-child {
+    width: 28%;
+}
+
+.nic-statistics .nic-badge {
+    white-space: normal;
+}
+
 .kpi-card {
     border-left: 3px solid #4ec9b0;
     height: 100%;

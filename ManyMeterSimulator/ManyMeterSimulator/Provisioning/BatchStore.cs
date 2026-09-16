@@ -66,6 +66,8 @@ public sealed record PersistedBatch
 
     public BatchStatus Status { get; init; }
 
+    public BatchTrafficSettings Traffic { get; init; } = new();
+
     /// <summary>
     /// Key of the HES environment this batch is bound to (version ≥ 2), or null for unbound.
     /// </summary>

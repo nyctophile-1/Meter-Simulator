@@ -21,6 +21,7 @@ public class CustomProfileCommandTests
     [InlineData(3, 22)] [InlineData(4, 19)] [InlineData(5, 20)] [InlineData(6, 21)]
     [InlineData(41, 23)] [InlineData(42, 24)] [InlineData(43, 25)] [InlineData(44, 26)]
     [InlineData(45, 27)] [InlineData(46, 28)] [InlineData(47, 29)] [InlineData(50, 22)] [InlineData(83, 83)]
+    [InlineData(66, 5)]
     public void AllProfiles_GenerateUsingExportedEqaLayout(byte command, byte responseType)
     {
         var registry = new MeterRegistry();
@@ -33,9 +34,10 @@ public class CustomProfileCommandTests
         var model = new HesDataModelLoader(NullLogger<HesDataModelLoader>.Instance).Load(Path.Combine(AppContext.BaseDirectory, "Fixtures", "CustomPull"));
         var options = new CustomPullOptions { MeterCategories = new() { [93] = "1P" }, EventsWithPowerProfile = [1,2,3,4,5,6,7,8,9,10,11,12,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,66,67,68,69,70,81,82,201,202,203,204,205,206,207,208,209,210,211,212,213,214,215,216,887,888,889,890,891,892] };
         var meter = new MeterRef(42, NicType.MqttWirepas);
+        options.EventIds[93] = new() { [41] = 7, [42] = 51, [43] = 101, [44] = 151, [45] = 201, [46] = 251, [47] = 301, [83] = 889 };
         var batch = Assert.Single(registry.Batches);
         var request = new CustomPullRequest(1, 1, 5415, 1000000042, 1000000042, command,
-            command == 3 ? CustomPullWireSelector.GetWithoutData : CustomPullWireSelector.GetWithEntryRange, command == 3 ? (byte)0 : (byte)8, 1, 1);
+            command is 3 or 66 ? CustomPullWireSelector.GetWithoutData : CustomPullWireSelector.GetWithEntryRange, command is 3 or 66 ? (byte)0 : (byte)8, 1, 1);
         Assert.True(CustomPullCommandDecoder.TryDecode(meter, request, out var intent, out var error), error);
         var inbound = new CustomPullInbound(meter, batch!, new(93, CustomPullWireProfile.NewHeader, 1050946), request, intent);
         var packets = new CustomProfileCommand(sessions, model, Options.Create(options)).Execute(inbound, CancellationToken.None);
@@ -45,9 +47,27 @@ public class CustomProfileCommandTests
         Assert.Equal(5415u, BinaryPrimitives.ReadUInt32LittleEndian(packet.AsSpan(8)));
         Assert.Equal(packet.Length, BinaryPrimitives.ReadUInt16LittleEndian(packet.AsSpan(4)));
         Assert.True(packet.Length > 23);
-        int expectedDataBytes = command switch { 3 or 50 => 70, 4 => 18, 5 => 20, 6 => 85, 41 or 42 or 45 or 83 => 23, _ => 6 };
+        int expectedDataBytes = command switch { 3 or 50 => 70, 4 => 18, 5 => 20, 6 => 85, 66 => 22, 41 or 42 or 45 or 83 => 23, _ => 6 };
         Assert.Equal(23 + expectedDataBytes, packet.Length);
         Assert.Equal(42u, BinaryPrimitives.ReadUInt32LittleEndian(packet.AsSpan(16)));
+        if (command == 66)
+        {
+            Assert.Equal(4, packet[27]);
+            Assert.Equal(128, packet[28]);
+            string bits = string.Concat(packet.AsSpan(29, 16).ToArray().Select(b => Convert.ToString(b, 2).PadLeft(8, '0')));
+            Assert.Equal(sessions.GetOrCreate(meter).GetEventStatusWord(), bits);
+            var rtc = DateTimeOffset.FromUnixTimeSeconds(BinaryPrimitives.ReadUInt32LittleEndian(packet.AsSpan(23))).AddMinutes(-330);
+            Assert.InRange(rtc, DateTimeOffset.UtcNow.AddSeconds(-5), DateTimeOffset.UtcNow.AddSeconds(1));
+            Assert.False(CustomPullCommandDecoder.TryDecode(meter, request with { Selector = CustomPullWireSelector.GetWithEntryRange }, out _, out _));
+        }
+        if (options.EventIds[93].TryGetValue(command, out int eventId))
+        {
+            Assert.Equal(eventId, BinaryPrimitives.ReadUInt16LittleEndian(packet.AsSpan(27)));
+            options.EventIds[93].Remove(command);
+            Assert.Throws<InvalidOperationException>(() => new CustomProfileCommand(sessions, model, Options.Create(options)).Execute(inbound, CancellationToken.None));
+            options.EventIds[93][command] = 65536;
+            Assert.Throws<InvalidOperationException>(() => new CustomProfileCommand(sessions, model, Options.Create(options)).Execute(inbound, CancellationToken.None));
+        }
         var publish = WirepasCustomPushEnvelope.Create("direct_4g", "direct_4g", meter.NodeId, 13, packet);
         Assert.Equal("gw-event/received_data/direct_4g/direct_4g/1000000042/13/13", publish.Topic);
     }

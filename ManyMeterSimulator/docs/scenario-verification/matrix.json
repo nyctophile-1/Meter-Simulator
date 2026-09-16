@@ -1,0 +1,791 @@
+{
+  "goal_complete": false,
+  "nominal_scenarios": 86,
+  "notes": [
+    "Three DLMS RTC-push rows are not applicable after user clarification; retained visibly rather than silently removed.",
+    "D3 category codes 8 and 10 are tracked as variants; neither is proven by testing the other.",
+    "Events require applicable event-family subcases; GRBlockLoad and fakerouting extras need per-category evidence.",
+    "Wave 1 is D1; D2/D3 are deferred by user instruction. Direct database command insertion is authorized; an API session is not a prerequisite.",
+    "D1 GetRTC completed through existing live responders for DLMS and custom. The new D1 master and locale fix have local verification only.",
+    "ber-d2d245b5 deployed and preservation verified on DRISHTI and EQA. Subsequent local Daily master revision has physical wire-value parity and 591 passing tests; not yet deployed.",
+    "HES push/routing inactive at 18:56 UTC. Both MAYA servers answered the same node in command 98932916; duplicate responders must be isolated before another live DLMS lifecycle claim.",
+    "profiles-818f418a deployed on both targets with592tests. Custom ESW read98932984 persisted3908521 with all128bits/currentRTC; isolated DLMS Instant98932983 completed protocol but HES rejected old selected XML energy values. Corrected master is deployed, existing batch choices retained.",
+    "time-d17d9f77 deployed both targets, 598tests. Future profile timestamps align to UTC now and preserve spacing. Four freshly generated DLMS packet RTCs pass the local Common parser; Common changes remain undeployed. This adds offline/runtime deployment evidence, not new HES persistence passes."
+  ],
+  "scenarios": [
+    {
+      "id": "D1-dlms-push-instant",
+      "category": "D1",
+      "category_codes": "6",
+      "mode": "dlms-push",
+      "profile": "instant",
+      "status": "diagnostic-rtc-failed-normal-route-unverified",
+      "evidence": "Latest HES PID 129983: raw 1bc1c689-4d78-4f26-b853-aefed91b4e0f. Persisted ID 40115507; encoded RTC 2026-09-13T15:26:40 with deviation 0, stored 2026-09-13T09:56:40 (330 minutes early)."
+    },
+    {
+      "id": "D1-dlms-push-block",
+      "category": "D1",
+      "category_codes": "6",
+      "mode": "dlms-push",
+      "profile": "block",
+      "status": "diagnostic-rtc-failed-normal-route-unverified",
+      "evidence": "Latest HES PID 129983: raw f7b09814-111d-4111-8e5b-04a9531494d8. Persisted ID 39593468; encoded RTC 2026-09-13T15:30:00 with deviation 0, stored 2026-09-13T10:00:00 (330 minutes early)."
+    },
+    {
+      "id": "D1-dlms-push-daily",
+      "category": "D1",
+      "category_codes": "6",
+      "mode": "dlms-push",
+      "profile": "daily",
+      "status": "diagnostic-validation-failed-normal-route-unverified",
+      "evidence": "Latest HES PID 129983: raw 955574f8-2e4e-4ad3-b9ea-89b801641a86. Daily energy validation rejected import kWh 4684814.453 and import kVAh 4883597.167; no profile row. Physical wire capture subsequently established client-export scaling by1000. Local D1 master now uses three wire-value Daily rows with unchanged model; XML/pull/push numeric parity regression passes. HES retest pending active consumer."
+    },
+    {
+      "id": "D1-dlms-push-bill",
+      "category": "D1",
+      "category_codes": "6",
+      "mode": "dlms-push",
+      "profile": "bill",
+      "status": "unsupported-by-current-selected-XML",
+      "evidence": "Session advertises Instant, Block, Daily and ESW only."
+    },
+    {
+      "id": "D1-dlms-push-events",
+      "category": "D1",
+      "category_codes": "6",
+      "mode": "dlms-push",
+      "profile": "events",
+      "status": "unsupported-by-current-selected-XML",
+      "evidence": "Session advertises Instant, Block, Daily and ESW only."
+    },
+    {
+      "id": "D1-dlms-push-esw",
+      "category": "D1",
+      "category_codes": "6",
+      "mode": "dlms-push",
+      "profile": "esw",
+      "status": "diagnostic-rtc-failed-normal-route-unverified",
+      "evidence": "Latest HES PID 129983: raw df38b1a3-58c4-4e99-b848-16ef77ea2393. Persisted ID 3658978; encoded RTC 2026-09-13T15:26:40 with deviation 0, stored 2026-09-13T09:56:40 (330 minutes early)."
+    },
+    {
+      "id": "D1-dlms-push-getrtc",
+      "category": "D1",
+      "category_codes": "6",
+      "mode": "dlms-push",
+      "profile": "getrtc",
+      "status": "not-applicable",
+      "evidence": "User clarified RTC push is custom Wirepas only; GetRTC pull remains required."
+    },
+    {
+      "id": "D1-custom-push-instant",
+      "category": "D1",
+      "category_codes": "6",
+      "mode": "custom-push",
+      "profile": "instant",
+      "status": "diagnostic-values-pass-normal-route-unverified",
+      "evidence": "Latest HES PID 129983: exact raw bytes and all configured values match; persisted IDs 40051043. Custom encoder not deployed to MAYA; normal-topic routing unverified."
+    },
+    {
+      "id": "D1-custom-push-block",
+      "category": "D1",
+      "category_codes": "6",
+      "mode": "custom-push",
+      "profile": "block",
+      "status": "diagnostic-values-pass-normal-route-unverified",
+      "evidence": "Latest HES PID 129983: exact raw bytes and all configured values match; persisted IDs 39563268. Custom encoder not deployed to MAYA; normal-topic routing unverified."
+    },
+    {
+      "id": "D1-custom-push-daily",
+      "category": "D1",
+      "category_codes": "6",
+      "mode": "custom-push",
+      "profile": "daily",
+      "status": "diagnostic-values-pass-normal-route-unverified",
+      "evidence": "Latest HES PID 129983: exact raw bytes and all configured values match; persisted IDs 2117590. Custom encoder not deployed to MAYA; normal-topic routing unverified."
+    },
+    {
+      "id": "D1-custom-push-bill",
+      "category": "D1",
+      "category_codes": "6",
+      "mode": "custom-push",
+      "profile": "bill",
+      "status": "diagnostic-values-pass-normal-route-unverified",
+      "evidence": "Latest HES PID 129983: exact raw bytes and all configured values match; persisted IDs 378981. Custom encoder not deployed to MAYA; normal-topic routing unverified."
+    },
+    {
+      "id": "D1-custom-push-events",
+      "category": "D1",
+      "category_codes": "6",
+      "mode": "custom-push",
+      "profile": "events",
+      "status": "diagnostic-values-pass-normal-route-unverified",
+      "evidence": "Latest HES PID 129983: exact raw bytes and all configured values match; persisted IDs 4285884, 4285882, 4285881, 4285883, 4285886, 4285887, 4285885. Custom encoder not deployed to MAYA; normal-topic routing unverified."
+    },
+    {
+      "id": "D1-custom-push-esw",
+      "category": "D1",
+      "category_codes": "6",
+      "mode": "custom-push",
+      "profile": "esw",
+      "status": "diagnostic-values-pass-normal-route-unverified",
+      "evidence": "Latest HES PID 129983: exact raw bytes and all configured values match; persisted IDs 3639314. Custom encoder not deployed to MAYA; normal-topic routing unverified."
+    },
+    {
+      "id": "D1-custom-push-getrtc",
+      "category": "D1",
+      "category_codes": "6",
+      "mode": "custom-push",
+      "profile": "getrtc",
+      "status": "diagnostic-values-pass-normal-route-unverified",
+      "evidence": "Latest HES PID 129983: exact raw bytes and all configured values match; persisted IDs 809187. Custom encoder not deployed to MAYA; normal-topic routing unverified."
+    },
+    {
+      "id": "D1-dlms-pull-instant",
+      "category": "D1",
+      "category_codes": "6",
+      "mode": "dlms-pull",
+      "profile": "instant",
+      "status": "live-protocol-pass-persistence-failed",
+      "evidence": "98932983/frame10004 completed one try19:32:22.667849UTC.14observedmessages, seven requests/seven responses, no duplicates while EQA was in authorized deployment backup. HES rejected energy values from existingSAtemplate; no Instant row. Corrected D1master is deployed but not selected for this batch."
+    },
+    {
+      "id": "D1-dlms-pull-block",
+      "category": "D1",
+      "category_codes": "6",
+      "mode": "dlms-pull",
+      "profile": "block",
+      "status": "local-only-not-HES-verified",
+      "evidence": "Public DLMS exchange returned a nonempty response; no HES command lifecycle or persistence verified."
+    },
+    {
+      "id": "D1-dlms-pull-daily",
+      "category": "D1",
+      "category_codes": "6",
+      "mode": "dlms-pull",
+      "profile": "daily",
+      "status": "local-only-not-HES-verified",
+      "evidence": "Public DLMS exchange returned a nonempty response; no HES command lifecycle or persistence verified."
+    },
+    {
+      "id": "D1-dlms-pull-bill",
+      "category": "D1",
+      "category_codes": "6",
+      "mode": "dlms-pull",
+      "profile": "bill",
+      "status": "local-master-success-live-pending",
+      "evidence": "D1_Master imports 13 compatible Billing rows. Host-culture date parsing caused the prior error 3. Invariant UTC parsing passes en-IN/en-US/fr-FR and fresh bounded public DLMS Billing read. Not yet live HES proof for this master."
+    },
+    {
+      "id": "D1-dlms-pull-events",
+      "category": "D1",
+      "category_codes": "6",
+      "mode": "dlms-pull",
+      "profile": "events",
+      "status": "local-four-families-success-live-pending",
+      "evidence": "D1_Master contains 39 physical D1 event rows across voltage, power, transaction and other profiles. Fresh local DLMS reads pass for those four families. Current, non-rollover and control remain empty on physical source. Not live HES lifecycle proof."
+    },
+    {
+      "id": "D1-dlms-pull-esw",
+      "category": "D1",
+      "category_codes": "6",
+      "mode": "dlms-pull",
+      "profile": "esw",
+      "status": "local-only-not-HES-verified",
+      "evidence": "Public DLMS exchange returned a nonempty response; no HES command lifecycle or persistence verified."
+    },
+    {
+      "id": "D1-dlms-pull-getrtc",
+      "category": "D1",
+      "category_codes": "6",
+      "mode": "dlms-pull",
+      "profile": "getrtc",
+      "status": "live-command-success-fraction-unverified",
+      "evidence": "Direct DB command 98932773, MY00400001: status 4, successful true, one try; completed 2026-09-13T17:41:14.290780Z, response 2026-09-13T17:41:13.255Z. Existing runtime; whole-second current time verified, fraction not packet-correlated. See d1-master.md."
+    },
+    {
+      "id": "D1-custom-pull-instant",
+      "category": "D1",
+      "category_codes": "6",
+      "mode": "custom-pull",
+      "profile": "instant",
+      "status": "live-command-and-persistence-verified",
+      "evidence": "Deployed MAYA d1-cd070faf answered custom GetInstantaneousProfile frame 10001. HES command 98932914 completed status4 on first try; persisted instantaneous row40991843 links hescommandid98932914, RTC2026-09-13T18:26:16, created18:26:17.160, voltage231.000. Full field parity remains to be audited."
+    },
+    {
+      "id": "D1-custom-pull-block",
+      "category": "D1",
+      "category_codes": "6",
+      "mode": "custom-pull",
+      "profile": "block",
+      "status": "not-run",
+      "evidence": "Current full source suite passes, including custom profile/RTC tests; no fresh end-to-end HES pull executed."
+    },
+    {
+      "id": "D1-custom-pull-daily",
+      "category": "D1",
+      "category_codes": "6",
+      "mode": "custom-pull",
+      "profile": "daily",
+      "status": "not-run",
+      "evidence": "Current full source suite passes, including custom profile/RTC tests; no fresh end-to-end HES pull executed."
+    },
+    {
+      "id": "D1-custom-pull-bill",
+      "category": "D1",
+      "category_codes": "6",
+      "mode": "custom-pull",
+      "profile": "bill",
+      "status": "not-run",
+      "evidence": "Current full source suite passes, including custom profile/RTC tests; no fresh end-to-end HES pull executed."
+    },
+    {
+      "id": "D1-custom-pull-events",
+      "category": "D1",
+      "category_codes": "6",
+      "mode": "custom-pull",
+      "profile": "events",
+      "status": "not-run",
+      "evidence": "581-test full suite passes. Generated family IDs now explicitly configured per template; bytes and missing/invalid configuration tested. No HES command lifecycle or persistence verification."
+    },
+    {
+      "id": "D1-custom-pull-esw",
+      "category": "D1",
+      "category_codes": "6",
+      "mode": "custom-pull",
+      "profile": "esw",
+      "status": "live-read-and-persistence-pass",
+      "evidence": "HES GetESWF66 maps to ESW-1. Command98932984/frame10002 status4 one try, persistedESW3908521 RTC19:32:45UTC. All128bits match deployedPKG9ESW-1 and differ from filter. Isolated DRISHTI response before EQA RF recovery; other categories/legacyheaders unproven."
+    },
+    {
+      "id": "D1-custom-pull-getrtc",
+      "category": "D1",
+      "category_codes": "6",
+      "mode": "custom-pull",
+      "profile": "getrtc",
+      "status": "live-command-success",
+      "evidence": "Direct DB command 98932775, MY00100001: status 4, successful true, one try; completed 2026-09-13T17:41:36.987755Z, response 2026-09-13T17:41:36Z. Existing runtime; current-time result. See d1-master.md."
+    },
+    {
+      "id": "D2-dlms-push-instant",
+      "category": "D2",
+      "category_codes": "7",
+      "mode": "dlms-push",
+      "profile": "instant",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: "
+    },
+    {
+      "id": "D2-dlms-push-block",
+      "category": "D2",
+      "category_codes": "7",
+      "mode": "dlms-push",
+      "profile": "block",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: "
+    },
+    {
+      "id": "D2-dlms-push-daily",
+      "category": "D2",
+      "category_codes": "7",
+      "mode": "dlms-push",
+      "profile": "daily",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: "
+    },
+    {
+      "id": "D2-dlms-push-bill",
+      "category": "D2",
+      "category_codes": "7",
+      "mode": "dlms-push",
+      "profile": "bill",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: "
+    },
+    {
+      "id": "D2-dlms-push-events",
+      "category": "D2",
+      "category_codes": "7",
+      "mode": "dlms-push",
+      "profile": "events",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: "
+    },
+    {
+      "id": "D2-dlms-push-esw",
+      "category": "D2",
+      "category_codes": "7",
+      "mode": "dlms-push",
+      "profile": "esw",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: "
+    },
+    {
+      "id": "D2-dlms-push-getrtc",
+      "category": "D2",
+      "category_codes": "7",
+      "mode": "dlms-push",
+      "profile": "getrtc",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: User clarified RTC push is custom Wirepas only; GetRTC pull remains required."
+    },
+    {
+      "id": "D2-custom-push-instant",
+      "category": "D2",
+      "category_codes": "7",
+      "mode": "custom-push",
+      "profile": "instant",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: Metadata encoder passes arbitrary 3P/CT fixture tests. User XMLs, HES mappings and category-specific runtime evidence still required; legacy custom headers unsupported by new encoder."
+    },
+    {
+      "id": "D2-custom-push-block",
+      "category": "D2",
+      "category_codes": "7",
+      "mode": "custom-push",
+      "profile": "block",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: Metadata encoder passes arbitrary 3P/CT fixture tests. User XMLs, HES mappings and category-specific runtime evidence still required; legacy custom headers unsupported by new encoder."
+    },
+    {
+      "id": "D2-custom-push-daily",
+      "category": "D2",
+      "category_codes": "7",
+      "mode": "custom-push",
+      "profile": "daily",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: Metadata encoder passes arbitrary 3P/CT fixture tests. User XMLs, HES mappings and category-specific runtime evidence still required; legacy custom headers unsupported by new encoder."
+    },
+    {
+      "id": "D2-custom-push-bill",
+      "category": "D2",
+      "category_codes": "7",
+      "mode": "custom-push",
+      "profile": "bill",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: Metadata encoder passes arbitrary 3P/CT fixture tests. User XMLs, HES mappings and category-specific runtime evidence still required; legacy custom headers unsupported by new encoder."
+    },
+    {
+      "id": "D2-custom-push-events",
+      "category": "D2",
+      "category_codes": "7",
+      "mode": "custom-push",
+      "profile": "events",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: Metadata encoder passes arbitrary 3P/CT fixture tests. User XMLs, HES mappings and category-specific runtime evidence still required; legacy custom headers unsupported by new encoder."
+    },
+    {
+      "id": "D2-custom-push-esw",
+      "category": "D2",
+      "category_codes": "7",
+      "mode": "custom-push",
+      "profile": "esw",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: Metadata encoder passes arbitrary 3P/CT fixture tests. User XMLs, HES mappings and category-specific runtime evidence still required; legacy custom headers unsupported by new encoder."
+    },
+    {
+      "id": "D2-custom-push-getrtc",
+      "category": "D2",
+      "category_codes": "7",
+      "mode": "custom-push",
+      "profile": "getrtc",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: Metadata encoder passes arbitrary 3P/CT fixture tests. User XMLs, HES mappings and category-specific runtime evidence still required; legacy custom headers unsupported by new encoder."
+    },
+    {
+      "id": "D2-dlms-pull-instant",
+      "category": "D2",
+      "category_codes": "7",
+      "mode": "dlms-pull",
+      "profile": "instant",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: "
+    },
+    {
+      "id": "D2-dlms-pull-block",
+      "category": "D2",
+      "category_codes": "7",
+      "mode": "dlms-pull",
+      "profile": "block",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: "
+    },
+    {
+      "id": "D2-dlms-pull-daily",
+      "category": "D2",
+      "category_codes": "7",
+      "mode": "dlms-pull",
+      "profile": "daily",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: "
+    },
+    {
+      "id": "D2-dlms-pull-bill",
+      "category": "D2",
+      "category_codes": "7",
+      "mode": "dlms-pull",
+      "profile": "bill",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: "
+    },
+    {
+      "id": "D2-dlms-pull-events",
+      "category": "D2",
+      "category_codes": "7",
+      "mode": "dlms-pull",
+      "profile": "events",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: "
+    },
+    {
+      "id": "D2-dlms-pull-esw",
+      "category": "D2",
+      "category_codes": "7",
+      "mode": "dlms-pull",
+      "profile": "esw",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: "
+    },
+    {
+      "id": "D2-dlms-pull-getrtc",
+      "category": "D2",
+      "category_codes": "7",
+      "mode": "dlms-pull",
+      "profile": "getrtc",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: "
+    },
+    {
+      "id": "D2-custom-pull-instant",
+      "category": "D2",
+      "category_codes": "7",
+      "mode": "custom-pull",
+      "profile": "instant",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: "
+    },
+    {
+      "id": "D2-custom-pull-block",
+      "category": "D2",
+      "category_codes": "7",
+      "mode": "custom-pull",
+      "profile": "block",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: "
+    },
+    {
+      "id": "D2-custom-pull-daily",
+      "category": "D2",
+      "category_codes": "7",
+      "mode": "custom-pull",
+      "profile": "daily",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: "
+    },
+    {
+      "id": "D2-custom-pull-bill",
+      "category": "D2",
+      "category_codes": "7",
+      "mode": "custom-pull",
+      "profile": "bill",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: "
+    },
+    {
+      "id": "D2-custom-pull-events",
+      "category": "D2",
+      "category_codes": "7",
+      "mode": "custom-pull",
+      "profile": "events",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: "
+    },
+    {
+      "id": "D2-custom-pull-esw",
+      "category": "D2",
+      "category_codes": "7",
+      "mode": "custom-pull",
+      "profile": "esw",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: "
+    },
+    {
+      "id": "D2-custom-pull-getrtc",
+      "category": "D2",
+      "category_codes": "7",
+      "mode": "custom-pull",
+      "profile": "getrtc",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: "
+    },
+    {
+      "id": "D3-dlms-push-instant",
+      "category": "D3",
+      "category_codes": "8;10",
+      "mode": "dlms-push",
+      "profile": "instant",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: "
+    },
+    {
+      "id": "D3-dlms-push-block",
+      "category": "D3",
+      "category_codes": "8;10",
+      "mode": "dlms-push",
+      "profile": "block",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: "
+    },
+    {
+      "id": "D3-dlms-push-daily",
+      "category": "D3",
+      "category_codes": "8;10",
+      "mode": "dlms-push",
+      "profile": "daily",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: "
+    },
+    {
+      "id": "D3-dlms-push-bill",
+      "category": "D3",
+      "category_codes": "8;10",
+      "mode": "dlms-push",
+      "profile": "bill",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: "
+    },
+    {
+      "id": "D3-dlms-push-events",
+      "category": "D3",
+      "category_codes": "8;10",
+      "mode": "dlms-push",
+      "profile": "events",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: "
+    },
+    {
+      "id": "D3-dlms-push-esw",
+      "category": "D3",
+      "category_codes": "8;10",
+      "mode": "dlms-push",
+      "profile": "esw",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: "
+    },
+    {
+      "id": "D3-dlms-push-getrtc",
+      "category": "D3",
+      "category_codes": "8;10",
+      "mode": "dlms-push",
+      "profile": "getrtc",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: User clarified RTC push is custom Wirepas only; GetRTC pull remains required."
+    },
+    {
+      "id": "D3-custom-push-instant",
+      "category": "D3",
+      "category_codes": "8;10",
+      "mode": "custom-push",
+      "profile": "instant",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: Metadata encoder passes arbitrary 3P/CT fixture tests. User XMLs, HES mappings and category-specific runtime evidence still required; legacy custom headers unsupported by new encoder."
+    },
+    {
+      "id": "D3-custom-push-block",
+      "category": "D3",
+      "category_codes": "8;10",
+      "mode": "custom-push",
+      "profile": "block",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: Metadata encoder passes arbitrary 3P/CT fixture tests. User XMLs, HES mappings and category-specific runtime evidence still required; legacy custom headers unsupported by new encoder."
+    },
+    {
+      "id": "D3-custom-push-daily",
+      "category": "D3",
+      "category_codes": "8;10",
+      "mode": "custom-push",
+      "profile": "daily",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: Metadata encoder passes arbitrary 3P/CT fixture tests. User XMLs, HES mappings and category-specific runtime evidence still required; legacy custom headers unsupported by new encoder."
+    },
+    {
+      "id": "D3-custom-push-bill",
+      "category": "D3",
+      "category_codes": "8;10",
+      "mode": "custom-push",
+      "profile": "bill",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: Metadata encoder passes arbitrary 3P/CT fixture tests. User XMLs, HES mappings and category-specific runtime evidence still required; legacy custom headers unsupported by new encoder."
+    },
+    {
+      "id": "D3-custom-push-events",
+      "category": "D3",
+      "category_codes": "8;10",
+      "mode": "custom-push",
+      "profile": "events",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: Metadata encoder passes arbitrary 3P/CT fixture tests. User XMLs, HES mappings and category-specific runtime evidence still required; legacy custom headers unsupported by new encoder."
+    },
+    {
+      "id": "D3-custom-push-esw",
+      "category": "D3",
+      "category_codes": "8;10",
+      "mode": "custom-push",
+      "profile": "esw",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: Metadata encoder passes arbitrary 3P/CT fixture tests. User XMLs, HES mappings and category-specific runtime evidence still required; legacy custom headers unsupported by new encoder."
+    },
+    {
+      "id": "D3-custom-push-getrtc",
+      "category": "D3",
+      "category_codes": "8;10",
+      "mode": "custom-push",
+      "profile": "getrtc",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: Metadata encoder passes arbitrary 3P/CT fixture tests. User XMLs, HES mappings and category-specific runtime evidence still required; legacy custom headers unsupported by new encoder."
+    },
+    {
+      "id": "D3-dlms-pull-instant",
+      "category": "D3",
+      "category_codes": "8;10",
+      "mode": "dlms-pull",
+      "profile": "instant",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: "
+    },
+    {
+      "id": "D3-dlms-pull-block",
+      "category": "D3",
+      "category_codes": "8;10",
+      "mode": "dlms-pull",
+      "profile": "block",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: "
+    },
+    {
+      "id": "D3-dlms-pull-daily",
+      "category": "D3",
+      "category_codes": "8;10",
+      "mode": "dlms-pull",
+      "profile": "daily",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: "
+    },
+    {
+      "id": "D3-dlms-pull-bill",
+      "category": "D3",
+      "category_codes": "8;10",
+      "mode": "dlms-pull",
+      "profile": "bill",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: "
+    },
+    {
+      "id": "D3-dlms-pull-events",
+      "category": "D3",
+      "category_codes": "8;10",
+      "mode": "dlms-pull",
+      "profile": "events",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: "
+    },
+    {
+      "id": "D3-dlms-pull-esw",
+      "category": "D3",
+      "category_codes": "8;10",
+      "mode": "dlms-pull",
+      "profile": "esw",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: "
+    },
+    {
+      "id": "D3-dlms-pull-getrtc",
+      "category": "D3",
+      "category_codes": "8;10",
+      "mode": "dlms-pull",
+      "profile": "getrtc",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: "
+    },
+    {
+      "id": "D3-custom-pull-instant",
+      "category": "D3",
+      "category_codes": "8;10",
+      "mode": "custom-pull",
+      "profile": "instant",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: "
+    },
+    {
+      "id": "D3-custom-pull-block",
+      "category": "D3",
+      "category_codes": "8;10",
+      "mode": "custom-pull",
+      "profile": "block",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: "
+    },
+    {
+      "id": "D3-custom-pull-daily",
+      "category": "D3",
+      "category_codes": "8;10",
+      "mode": "custom-pull",
+      "profile": "daily",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: "
+    },
+    {
+      "id": "D3-custom-pull-bill",
+      "category": "D3",
+      "category_codes": "8;10",
+      "mode": "custom-pull",
+      "profile": "bill",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: "
+    },
+    {
+      "id": "D3-custom-pull-events",
+      "category": "D3",
+      "category_codes": "8;10",
+      "mode": "custom-pull",
+      "profile": "events",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: "
+    },
+    {
+      "id": "D3-custom-pull-esw",
+      "category": "D3",
+      "category_codes": "8;10",
+      "mode": "custom-pull",
+      "profile": "esw",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: "
+    },
+    {
+      "id": "D3-custom-pull-getrtc",
+      "category": "D3",
+      "category_codes": "8;10",
+      "mode": "custom-pull",
+      "profile": "getrtc",
+      "status": "deferred-future-wave",
+      "evidence": "Deferred to a future wave by user instruction. Prior evidence: "
+    },
+    {
+      "id": "extra-custom-pull-grblockload",
+      "category": "all",
+      "category_codes": "6;7;8;10",
+      "mode": "custom-pull",
+      "profile": "grblockload",
+      "status": "not-run-end-to-end",
+      "evidence": "Existing GapBlockCommandTests pass; per-category live response and persistence remain required."
+    },
+    {
+      "id": "extra-fakerouting",
+      "category": "all",
+      "category_codes": "6;7;8;10",
+      "mode": "routing",
+      "profile": "fakerouting",
+      "status": "partial-live-pass-D1-wirepas-and-direct4g",
+      "evidence": "Normal-route keepalives advanced only lastcommunicatedon for nodes 1000100001 and 1000400001 at 15:47:22.516551 and 15:47:43.330267 UTC. Gateway/sink preserved; PUBACK/observer and sequential DB checks correlated. Other category/NIC and initialization cases remain open."
+    }
+  ]
+}

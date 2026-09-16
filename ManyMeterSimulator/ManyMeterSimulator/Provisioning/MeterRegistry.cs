@@ -386,6 +386,19 @@ public sealed class MeterRegistry
     public string? GetTemplateNameForAddress(IPAddress address) =>
         GetBatchForAddress(address)?.TemplateName;
 
+    public bool SetTraffic(int batchId, BatchTrafficKind kind, bool enabled)
+    {
+        lock (_lock)
+        {
+            var batch = _batches.FirstOrDefault(b => b.Id == batchId);
+            if (batch is null) return false;
+            batch.Traffic = batch.Traffic.With(kind, enabled);
+            Persist();
+        }
+        Changed?.Invoke();
+        return true;
+    }
+
     private bool TrySetStatus(int batchId, BatchStatus status)
     {
         lock (_lock)
@@ -427,6 +440,7 @@ public sealed class MeterRegistry
                     StartIndex = pb.StartIndex,
                     Count = pb.Count,
                     Status = pb.Status,
+                    Traffic = pb.Traffic ?? new(),
                     EnvironmentKey = pb.EnvironmentKey ?? pb.BrokerKey ?? pb.PushTargetKey,
                     CreatedAtUtc = pb.CreatedAtUtc,
                 });
@@ -476,6 +490,7 @@ public sealed class MeterRegistry
                     StartIndex = pb.StartIndex,
                     Count = pb.Count,
                     Status = pb.Status,
+                    Traffic = pb.Traffic ?? new(),
                     EnvironmentKey = pb.EnvironmentKey ?? pb.BrokerKey ?? pb.PushTargetKey,
                     CreatedAtUtc = pb.CreatedAtUtc,
                 });
@@ -513,6 +528,7 @@ public sealed class MeterRegistry
             StartIndex = b.StartIndex,
             Count = b.Count,
             Status = b.Status,
+            Traffic = b.Traffic,
             EnvironmentKey = b.EnvironmentKey,
             CreatedAtUtc = b.CreatedAtUtc,
         }).ToList(),

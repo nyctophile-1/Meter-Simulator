@@ -1,0 +1,54 @@
+{
+  "release": "ber-d2d245b5",
+  "base_release": "d1-cd070faf",
+  "base_source_snapshot_sha256": "cd070fafe7f779cdff20b3f15c9006d8cc922fc47fde03bcb9caebca5c5bdd2d",
+  "component": "Gurux.DLMS, Version=0.0.1.0, Culture=neutral, PublicKeyToken=null",
+  "source_path": "Gurux/Gurux.DLMS.Net/Development/GXDLMSServer.cs",
+  "source_sha256": "b5e03d86dfbcd4e09290977fcae2259572016db3b719419e28b17845c943e901",
+  "files": {
+    "Gurux.DLMS.dll": "d2d245b5cfb4e87c56c3b4d2af856ab35c25e153b47232e8756f0ac6e1825890",
+    "Gurux.DLMS.pdb": "bd8f96bd56894647b53cb8d6f2cb7fed767ba1ea94269d2a29737c9775c4fb9b"
+  },
+  "tests": "590 passed; 0 failed; 0 skipped; local Release suite; BER regression failed before and passed after",
+  "application_sha256": "16e270deae921bd0bacc5805d6e1704127166c092d05fee78a2906d18fcf27c4",
+  "core_sha256": "6705b7ca4cd19f9e6cb9b72af7c76c0394584a3f51fc7c87de40c57c24391cfa",
+  "previous_gurux_sha256": "bb1779d3c9a402d706c0d243b66a8882eb8e20a7a929e0830faa883a3fe6855b",
+  "targets": {
+    "drishti": {
+      "host": "10.254.3.57",
+      "backup": "/opt/maya-sim/backups/20260913T184526Z-ber-d2d245b5",
+      "installation": "hashes, saved logical state, HTTP, listener and route verified",
+      "deployment_utc": "2026-09-13T18:45:30.233842+00:00",
+      "main_pid": 18332,
+      "restarts": 0
+    },
+    "eqa": {
+      "host": "15.252.116.146",
+      "backup": "/opt/maya-sim/backups/20260913T185217Z-ber-d2d245b5",
+      "installation": "hashes, saved logical state, HTTP, listener and route verified",
+      "deployment_utc": "2026-09-13T18:53:52.071483+00:00",
+      "complete_backup_local": "C:\\Users\\ayush\\Documents\\MAYA-release-receipts\\ber-d2d245b5\\eqa-ber-d2d245b5-complete-20260913T185217Z.tar.gz",
+      "complete_backup_sha256": "a1b78bb9d19803e07e7503e5e56bf92e4e50e847a5d5a49ca31a4d32a5149ffd",
+      "complete_backup_runtime_cache": "/dev/shm/eqa-ber-d2d245b5-complete-20260913T185217Z.tar.gz",
+      "main_pid": 3142,
+      "restarts": 0
+    }
+  },
+  "live_instant_retest": {
+    "command_id": 98932915,
+    "status": "failed after one attempt",
+    "completed_utc": "2026-09-13T18:59:49.848625Z",
+    "next_response_command": 196,
+    "note": "No end-to-end pass; subsequent observed retest 98932916 pending"
+  },
+  "observed_instant_retest": {
+    "command_id": 98932916,
+    "status": "failed",
+    "completed_utc": "2026-09-13T19:06:14.446149Z",
+    "duplicate_responders": [
+      "10.254.3.57",
+      "15.252.116.146"
+    ],
+    "next_response_command": 99
+  }
+}

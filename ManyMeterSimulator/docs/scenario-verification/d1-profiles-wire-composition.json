@@ -1,0 +1,146 @@
+{
+  "base": "D1_Master.xml",
+  "meter_type": "6",
+  "category": "D1",
+  "sources": [
+    {
+      "name": "D1_Master.xml",
+      "sha256": "46a55065714be77c4fb814dda211dfda88527b71179ab879919f03fff1e2a4df"
+    },
+    {
+      "name": "meter-profile-wire.xml",
+      "sha256": "db023e7adb61a1fb4b6fb1f49f2bcf5f5aff2176a2d42f8a8092f664e09070a3"
+    }
+  ],
+  "output": "D1_Master_profiles.xml",
+  "output_sha256": "36b5e3c0dae10e5c379864d4406a3804f862b98924f476dee015a5a8eb0e6743",
+  "model_unchanged": true,
+  "objects": 160,
+  "imported_profiles": [
+    {
+      "logical_name": "1.0.94.91.0.255",
+      "source": "meter-profile-wire.xml",
+      "rows": 1
+    },
+    {
+      "logical_name": "0.0.99.98.0.255",
+      "source": "meter-profile-wire.xml",
+      "rows": 13
+    },
+    {
+      "logical_name": "0.0.99.98.2.255",
+      "source": "meter-profile-wire.xml",
+      "rows": 13
+    },
+    {
+      "logical_name": "0.0.99.98.3.255",
+      "source": "meter-profile-wire.xml",
+      "rows": 1
+    },
+    {
+      "logical_name": "0.0.99.98.4.255",
+      "source": "meter-profile-wire.xml",
+      "rows": 12
+    }
+  ],
+  "profiles": [
+    {
+      "logical_name": "0.0.94.91.10.255",
+      "rows": 1,
+      "columns": 8
+    },
+    {
+      "logical_name": "1.0.94.91.0.255",
+      "rows": 1,
+      "columns": 22
+    },
+    {
+      "logical_name": "1.0.94.91.3.255",
+      "rows": 1,
+      "columns": 14
+    },
+    {
+      "logical_name": "1.0.99.1.0.255",
+      "rows": 100,
+      "columns": 8
+    },
+    {
+      "logical_name": "1.0.94.91.4.255",
+      "rows": 1,
+      "columns": 7
+    },
+    {
+      "logical_name": "1.0.99.2.0.255",
+      "rows": 3,
+      "columns": 5
+    },
+    {
+      "logical_name": "1.0.94.91.5.255",
+      "rows": 1,
+      "columns": 4
+    },
+    {
+      "logical_name": "1.0.98.1.0.255",
+      "rows": 13,
+      "columns": 32
+    },
+    {
+      "logical_name": "1.0.94.91.6.255",
+      "rows": 1,
+      "columns": 28
+    },
+    {
+      "logical_name": "1.0.94.91.7.255",
+      "rows": 1,
+      "columns": 5
+    },
+    {
+      "logical_name": "0.0.99.98.0.255",
+      "rows": 13,
+      "columns": 8
+    },
+    {
+      "logical_name": "0.0.99.98.1.255",
+      "rows": 0,
+      "columns": 8
+    },
+    {
+      "logical_name": "0.0.99.98.2.255",
+      "rows": 13,
+      "columns": 2
+    },
+    {
+      "logical_name": "0.0.99.98.3.255",
+      "rows": 1,
+      "columns": 2
+    },
+    {
+      "logical_name": "0.0.99.98.4.255",
+      "rows": 12,
+      "columns": 8
+    },
+    {
+      "logical_name": "0.0.99.98.5.255",
+      "rows": 0,
+      "columns": 2
+    },
+    {
+      "logical_name": "0.0.99.98.6.255",
+      "rows": 0,
+      "columns": 2
+    }
+  ],
+  "explicitly_replaced_profiles": [
+    "0.0.99.98.0.255",
+    "0.0.99.98.2.255",
+    "0.0.99.98.3.255",
+    "0.0.99.98.4.255",
+    "1.0.94.91.0.255"
+  ],
+  "push_setups": [
+    "0.0.25.9.0.255",
+    "0.5.25.9.0.255",
+    "0.4.25.9.0.255"
+  ],
+  "timestamp_policy": "Source timestamps retained; simulator runtime supplies current clock and shifts profile recency."
+}

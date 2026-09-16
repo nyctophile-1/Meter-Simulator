@@ -1,0 +1,225 @@
+[
+  {
+    "profile": "custom:instant",
+    "raw_id": "4860a969-8074-4bfc-a197-7b2c75b41e2f",
+    "persisted_id": 40051043,
+    "payload_sha256": "73c488071f6fc30301f7ee5770e89f397ffadb50ef1cd427fe922c4a45b40daf",
+    "checked_fields": [
+      "RtcDateTime",
+      "Voltage",
+      "PhaseCurrent",
+      "NeutralCurrent",
+      "TotalPowerFactor",
+      "Frequency",
+      "ApparentPowerKva",
+      "ActivePowerKw",
+      "CumulativeEnergyKwh",
+      "CumulativeEnergyKvah",
+      "Mdw",
+      "MdwDateTime",
+      "MdVa",
+      "MdVaDatetime",
+      "TotalPowerOnDuration",
+      "CumulativeTamperCount",
+      "CumulativeBillingCount",
+      "CumulativeProgrammingCount",
+      "CumulativeEnergyKwhExport",
+      "CumulativeEnergyKvahExport",
+      "LoadLimitFunctionStatus",
+      "LoadLimitValueKw"
+    ],
+    "diagnostic_drop_path": true,
+    "normal_route_verified": false
+  },
+  {
+    "profile": "custom:block",
+    "raw_id": "56337f04-eb24-4502-b029-586bbed3f3ff",
+    "persisted_id": 39563268,
+    "payload_sha256": "745535af42b198d0d2ee4018c155ec2ccff6e819e9c2ed22e1348e0ef371452f",
+    "checked_fields": [
+      "RtcDateTime",
+      "AverageVoltage",
+      "CumulativeEnergyKwhImport",
+      "CumulativeEnergyKvahImport",
+      "CumulativeEnergyKwhExport",
+      "CumulativeEnergyKvahExport",
+      "AverageCurrent",
+      "NeutralCurrent"
+    ],
+    "diagnostic_drop_path": true,
+    "normal_route_verified": false
+  },
+  {
+    "profile": "custom:daily",
+    "raw_id": "8ec4344c-fc0e-4019-bd6f-57af9f1195e9",
+    "persisted_id": 2117590,
+    "payload_sha256": "93c90ee181b581fb3251239bb54f9099176e5226779608462c20461f7d570cc3",
+    "checked_fields": [
+      "RtcDateTime",
+      "CumulativeEnergyKwhImport",
+      "CumulativeEnergyKvahImport",
+      "CumulativeEnergyKwhExport",
+      "CumulativeEnergyKvahExport"
+    ],
+    "diagnostic_drop_path": true,
+    "normal_route_verified": false
+  },
+  {
+    "profile": "custom:bill",
+    "raw_id": "26a9a5f5-e223-4ecb-84d2-94e39d6ffb3f",
+    "persisted_id": 378981,
+    "payload_sha256": "fb7a237dec05eaefb5e816c997f6bb5e11c7434f4ff7f6026a98c2f5768e8367",
+    "checked_fields": [
+      "ImportModeBillingDate",
+      "AveragePFForBillingPeriod",
+      "CumulativeEnergyKwhImport",
+      "CumulativeEnergyKwhTZ1",
+      "CumulativeEnergyKwhTZ2",
+      "CumulativeEnergyKwhTZ3",
+      "CumulativeEnergyKwhTZ4",
+      "CumulativeEnergyKwhTZ5",
+      "CumulativeEnergyKwhTZ6",
+      "CumulativeEnergyKvahImport",
+      "CumulativeEnergyKvahTZ1",
+      "CumulativeEnergyKvahTZ2",
+      "CumulativeEnergyKvahTZ3",
+      "CumulativeEnergyKvahTZ4",
+      "CumulativeEnergyKvahTZ5",
+      "CumulativeEnergyKvahTZ6",
+      "MaxDemandKwh",
+      "MaxDemandWhDateTime",
+      "MaxDemandKvah",
+      "MaxDemandVahDateTime",
+      "BillingPowerOnDuration",
+      "CumulativeEnergyKwhExport",
+      "CumulativeEnergyKvahExport"
+    ],
+    "diagnostic_drop_path": true,
+    "normal_route_verified": false
+  },
+  {
+    "profile": "custom:esw",
+    "raw_id": "7992ce97-e36c-4308-a2c8-aee47b0488b4",
+    "persisted_id": 3639314,
+    "payload_sha256": "5a8d76b5a37368c0d49a826e4c2f23fdde4892d708dbed424cf0f5dfe662c6b8",
+    "checked_fields": [
+      "RtcDateTime",
+      "EventStatusWord (128 bits)"
+    ],
+    "diagnostic_drop_path": true,
+    "normal_route_verified": false
+  },
+  {
+    "profile": "custom:rtc",
+    "raw_id": "e0007eb0-2790-4780-94e7-b92d725fea56",
+    "persisted_id": 809187,
+    "payload_sha256": "4dadc0ae7d710c95a475ec4b9f09eb4d8aa48ad2ae859a4ef3cdb55ac012d39a",
+    "checked_fields": [
+      "DeviceRtc"
+    ],
+    "diagnostic_drop_path": true,
+    "normal_route_verified": false
+  },
+  {
+    "profile": "custom:event:voltage",
+    "raw_id": "a89db602-ddf0-4c2c-860f-44d22aac7935",
+    "persisted_id": 4285884,
+    "payload_sha256": "027aa438ce412d9de75aebebb462d59292b27fc53846cc77b5244482b687eda7",
+    "checked_fields": [
+      "RtcDateTime",
+      "EventId",
+      "Current",
+      "Voltage",
+      "PowerFactor",
+      "CumulativeEnergyKwh",
+      "CumulativeEnergyKwhExport",
+      "CumulativeTamperCount"
+    ],
+    "diagnostic_drop_path": true,
+    "normal_route_verified": false
+  },
+  {
+    "profile": "custom:event:current",
+    "raw_id": "b23ba08a-073e-4973-bab0-c6a3fff3de4e",
+    "persisted_id": 4285882,
+    "payload_sha256": "04eb4e480252ca1411b74836ef85c1a061901f0eab1b62c1d10422e21ea19a01",
+    "checked_fields": [
+      "RtcDateTime",
+      "EventId",
+      "Current",
+      "Voltage",
+      "PowerFactor",
+      "CumulativeEnergyKwh",
+      "CumulativeEnergyKwhExport",
+      "CumulativeTamperCount"
+    ],
+    "diagnostic_drop_path": true,
+    "normal_route_verified": false
+  },
+  {
+    "profile": "custom:event:power",
+    "raw_id": "4efb520a-cf14-434c-afe3-27a63e20bc43",
+    "persisted_id": 4285881,
+    "payload_sha256": "792b03ac48db3c2813b8d20f3b9477c62bc823a6e945783c48cc21c906bab06f",
+    "checked_fields": [
+      "RtcDateTime",
+      "EventId"
+    ],
+    "diagnostic_drop_path": true,
+    "normal_route_verified": false
+  },
+  {
+    "profile": "custom:event:transaction",
+    "raw_id": "8e009592-964b-4b3d-8bdd-bf3597a2b53c",
+    "persisted_id": 4285883,
+    "payload_sha256": "31b743c6b72a68c5944d96750b3940d96d4fe7f58b96319c43d7d9ae048e571c",
+    "checked_fields": [
+      "RtcDateTime",
+      "EventId"
+    ],
+    "diagnostic_drop_path": true,
+    "normal_route_verified": false
+  },
+  {
+    "profile": "custom:event:other",
+    "raw_id": "498ad583-7e9c-4b1a-b0b6-760daf855723",
+    "persisted_id": 4285886,
+    "payload_sha256": "21a3cbdac4e173c2322e12cd4e6bb12dc088c67efc3ca7544197c167e0b3f41e",
+    "checked_fields": [
+      "RtcDateTime",
+      "EventId",
+      "Current",
+      "Voltage",
+      "PowerFactor",
+      "CumulativeEnergyKwh",
+      "CumulativeEnergyKwhExport",
+      "CumulativeTamperCount"
+    ],
+    "diagnostic_drop_path": true,
+    "normal_route_verified": false
+  },
+  {
+    "profile": "custom:event:nonrollover",
+    "raw_id": "eeaf1e66-387a-4b0a-9878-52b7f77dd647",
+    "persisted_id": 4285887,
+    "payload_sha256": "492ce2f556f6174e2e2f52ac6a665cb5e580a7b8dbad38e8ade29a1748dfccf0",
+    "checked_fields": [
+      "RtcDateTime",
+      "EventId"
+    ],
+    "diagnostic_drop_path": true,
+    "normal_route_verified": false
+  },
+  {
+    "profile": "custom:event:control",
+    "raw_id": "c5207c33-83cb-4a6c-b5ac-875d8efc45c3",
+    "persisted_id": 4285885,
+    "payload_sha256": "d3191d998b7b36fefb4c6d01c030bf3cbcbd996fde8124ba4243274567727259",
+    "checked_fields": [
+      "RtcDateTime",
+      "EventId"
+    ],
+    "diagnostic_drop_path": true,
+    "normal_route_verified": false
+  }
+]

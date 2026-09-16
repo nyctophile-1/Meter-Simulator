@@ -49,11 +49,11 @@ public class CustomPushFramerTests
             utcNow: DateTimeOffset.FromUnixTimeSeconds(1_788_999_997));
 
         Assert.Equal(31, payload.Length);
-        Assert.Equal(5, payload[0]);
+        Assert.Equal(7, payload[0]);
         Assert.Equal(1, payload[1]);
         Assert.Equal(
         [
-            0x3D, 0xF9, 0xA1, 0x6A, // RTC
+            0x95, 0x46, 0xA2, 0x6A, // HES wall-clock RTC (UTC + 330 minutes)
             0x80, 0xB5, 0x01, 0x00, // import kWh = 112000 -> 112.000
             0x90, 0xDC, 0x01, 0x00, // import kVAh = 122000 -> 122.000
             0x0C, 0x00, 0x00, 0x00, // export kWh = 12 -> 0.012

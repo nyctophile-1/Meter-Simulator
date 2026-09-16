@@ -3,6 +3,7 @@ using ManyMeterSimulator.Networking.Mqtt;
 using ManyMeterSimulator.Networking.Nic;
 using ManyMeterSimulator.Networking.Registry;
 using ManyMeterSimulator.Provisioning;
+using ManyMeterSimulator.Networking.SmartNic;
 
 namespace ManyMeterSimulator.Brain;
 
@@ -22,13 +23,7 @@ public sealed partial class PushCoordinator
                 ChunkSize = _options.ChunkSize == int.MaxValue ? 0 : Math.Clamp(_options.ChunkSize, 0, 1_000_000),
                 ChunkIntervalSeconds = _options.ChunkIntervalSeconds,
             }, cancellationToken);
-            run.MeterCompleted = (ok, latency) =>
-            {
-                if (ok is null) _metrics.RecordPushSkipped(batch.NicType);
-                else _metrics.RecordPushMeter(batch.NicType, ok.Value, latency);
-            };
             var result = await run.SendLiveAsync();
-            _metrics.RecordPushPayloads(batch.NicType, (int)result.MessagesSent, (int)result.MessagesFailed);
             _logger.LogInformation("MQTT push batch {BatchId}: {Sent} meters sent, {Failed} failed, {Skipped} skipped; " +
                 "{Messages} publishes completed, {Rejected} failed/unconfirmed. {Error}", batch.Id,
                 result.MetersSent, result.MetersFailed, result.MetersSkipped, result.MessagesSent, result.MessagesFailed, result.Error);
@@ -53,7 +48,7 @@ public sealed partial class PushCoordinator
                     _options.PublishTimeoutSeconds, stop.Token));
             return new MqttPushRun(sources, pools, request, _options.UseCiphering, stop,
                 handler => { _registry.Changed += handler; _network.Changed += handler; },
-                handler => { _registry.Changed -= handler; _network.Changed -= handler; });
+                handler => { _registry.Changed -= handler; _network.Changed -= handler; }, _metrics);
         }
         catch
         {
@@ -78,20 +73,34 @@ public sealed partial class PushCoordinator
         if (!_mqtt.HasClient(binding))
             throw new InvalidOperationException($"Broker '{endpoint.Key}' has no live client for {binding.Transport}. Start the batch first.");
 
-        bool custom = batch.NicType == NicType.MqttWirepas && batch.HesTemplateId == Template93.HesTemplateId;
+        string? selection = request.PushSetupLogicalName == "custom:93:daily" ? MqttPushProfiles.CustomDaily : request.PushSetupLogicalName;
+        if (selection is null && batch.NicType == NicType.MqttWirepas && batch.HesTemplateId is int declaredTemplate
+            && !_customEncoder.HasTemplate(declaredTemplate))
+            throw new InvalidOperationException($"HES template {declaredTemplate} is missing; select DLMS explicitly or configure its push metadata.");
+        bool custom = selection?.StartsWith("custom:", StringComparison.Ordinal) == true ||
+            selection is null && batch.NicType == NicType.MqttWirepas && _customEncoder.IsCustomTemplate(batch.HesTemplateId);
+        IReadOnlyList<CustomPushProfile> customProfiles = [];
         INicCodec? codec = null;
         if (custom)
         {
-            if (request.PushSetupLogicalName is not null and not MqttPushProfiles.CustomDaily)
-                throw new InvalidOperationException($"Batch '{batch.Name}' supports only template 93 custom daily push. Select All supported profiles or Daily.");
-            if (batch.CustomPushHeaderKind != CustomPushHeaderKind.New)
-                throw new InvalidOperationException("HES template 93 custom push requires the new 12-byte header.");
+            if (batch.NicType != NicType.MqttWirepas || batch.CustomPushHeaderKind != CustomPushHeaderKind.New)
+                throw new InvalidOperationException("Custom push requires Wirepas with the configured new header.");
+            customProfiles = _customEncoder.GetProfiles(batch.HesTemplateId ?? throw new InvalidOperationException("Custom push requires a HES template mapping."));
+            if (selection is not null)
+                customProfiles = [customProfiles.SingleOrDefault(p => p.Key == selection)
+                    ?? throw new InvalidOperationException($"Batch '{batch.Name}' does not support {selection}.")];
+            if (customProfiles.Any(p => p.Kind == "ESW"))
+            {
+                var first = _sessions.GetOrCreate(new MeterRef(batch.StartIndex, batch.NicType));
+                lock (first) _ = first.GetEventStatusWord();
+            }
         }
         else
         {
-            codec = _codecs.Create(binding.Transport)
+            codec = _codecs.CreatePush(binding.Transport, _customPushOptions.WirepasGatewayId,
+                _customPushOptions.WirepasSinkId, _options.KmeshGatewayId, _options.KmeshSinkId)
                 ?? throw new InvalidOperationException($"No push codec for {binding.Transport}.");
-            _ = codec.EncodePush("0", new byte[] { 0 });
+            _ = codec.EncodePush(new MeterRef(batch.StartIndex, batch.NicType).NodeId, new byte[] { 0 });
             var session = _sessions.GetOrCreate(new MeterRef(batch.StartIndex, batch.NicType));
             IReadOnlyList<string> profiles;
             lock (session) profiles = session.GetPushSetupLogicalNames();
@@ -130,12 +139,21 @@ public sealed partial class PushCoordinator
         {
             if (custom)
             {
-                // This verified custom layout needs only a meter index, not a DLMS session.
-                byte[] body = Template93.BuildDaily1P(meter.Index, DateTimeOffset.UtcNow);
-                byte[] framed = CustomPushFramer.Frame(body, CustomPushHeaderKind.New,
-                    unchecked((uint)Random.Shared.NextInt64()), Template93.MagicNumber);
-                return [WirepasCustomPushEnvelope.Create(_customPushOptions.WirepasGatewayId,
-                    _customPushOptions.WirepasSinkId, meter.NodeId, _customPushOptions.WirepasEndpoint, framed)];
+                var packets = new List<byte[]>(customProfiles.Count);
+                string? esw = null;
+                if (customProfiles.Any(p => p.Kind == "ESW"))
+                {
+                    var eswSession = _sessions.GetOrCreate(meter);
+                    lock (eswSession) esw = eswSession.GetEventStatusWord();
+                }
+                var timestamp = DateTimeOffset.UtcNow;
+                foreach (var profile in customProfiles)
+                    packets.Add(_customEncoder.Encode(batch.HesTemplateId!.Value, profile.Key, meter.Index,
+                        unchecked((uint)Random.Shared.NextInt64()), timestamp,
+                        field => CustomProfileDataGenerator.Value(field, meter.Index, timestamp, profile.Kind, profile.EventId), esw));
+                return packets.Select(packet => WirepasCustomPushEnvelope.Create(_customPushOptions.WirepasGatewayId,
+                    _customPushOptions.WirepasSinkId, meter.NodeId, _customPushOptions.WirepasEndpoint,
+                    packet)).ToArray();
             }
 
             var session = _sessions.GetOrCreate(meter);

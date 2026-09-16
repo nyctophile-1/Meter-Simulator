@@ -1,0 +1,98 @@
+{
+  "release": "mqtt-rate-6cc1d932",
+  "source_snapshot_sha256": "6cc1d9322145eb85b112b11b70547d55f826231dc4477e4d3f548c98614ba0b9",
+  "base_release": "time-d17d9f77",
+  "workspace_commit": "c1fe203fb439c97e3b73e7983601cf3d7e798512",
+  "provenance": "Isolated prior deployed source plus current MQTT live rate slider; uncommitted source snapshot",
+  "source_changes": [
+    "ManyMeterSimulator/ManyMeterSimulator.Tests/MqttPushRunTests.cs",
+    "ManyMeterSimulator/ManyMeterSimulator.Tests/MqttRoutingServiceTests.cs",
+    "ManyMeterSimulator/ManyMeterSimulator.Tests/MqttStressLoopTests.cs",
+    "ManyMeterSimulator/ManyMeterSimulator.Tests/PushAccountingTests.cs",
+    "ManyMeterSimulator/ManyMeterSimulator.Tests/PushDestinationTests.cs",
+    "ManyMeterSimulator/ManyMeterSimulator/Brain/MqttPushRun.cs",
+    "ManyMeterSimulator/ManyMeterSimulator/Components/Pages/MqttStressPanel.razor",
+    "ManyMeterSimulator/ManyMeterSimulator/Components/Pages/Testing.razor",
+    "ManyMeterSimulator/ManyMeterSimulator/Networking/Mqtt/MqttPushPool.cs",
+    "ManyMeterSimulator/ManyMeterSimulator/Testing/MqttStressService.cs",
+    "ManyMeterSimulator/ManyMeterSimulator/Testing/TestRunEngine.cs",
+    "ManyMeterSimulator/ManyMeterSimulator/Networking/Mqtt/MqttPublishRateLimiter.cs",
+    "ManyMeterSimulator/ManyMeterSimulator/Components/Pages/MqttPublishRateControl.razor",
+    "ManyMeterSimulator/ManyMeterSimulator.Tests/MqttPublishRateLimiterTests.cs",
+    "ManyMeterSimulator/ManyMeterSimulator.Tests/MqttStressRateTests.cs",
+    "ManyMeterSimulator/deploy/mqtt-throughput.md"
+  ],
+  "targets": {
+    "eqa": {
+      "host": "15.252.116.146",
+      "backup": "/opt/maya-sim/backups/20260915T095329Z-mqtt-rate-6cc1d932",
+      "installation": "verified",
+      "deployment_utc": "2026-09-15T09:55:23.096660+00:00",
+      "complete_backup_local": "C:\\Users\\ayush\\Documents\\MAYA-release-receipts\\mqtt-rate-20260915\\eqa-mqtt-rate-6cc1d932-complete-20260915T095329Z.tar.gz",
+      "complete_backup_sha256": "8c604b48c140ee25074a55bf80f3dd46d351e69b060541d9807e00d53c0b1e6c",
+      "complete_backup_runtime_cache": "/dev/shm/eqa-mqtt-rate-6cc1d932-complete-20260915T095329Z.tar.gz",
+      "verification_utc": "2026-09-15T09:58:26.600467+00:00",
+      "runtime": {
+        "MainPID": "1759",
+        "NRestarts": "0",
+        "ExecMainStartTimestamp": "Tue 2026-09-15 09:55:18 UTC",
+        "ActiveState": "active",
+        "SubState": "running",
+        "connected_brokers": [
+          "drishti-broker.kimbal.io:1883"
+        ],
+        "error_log_count": 0,
+        "oom_log_count": 0,
+        "running_meters": 500000,
+        "stopped_meters": 1000000
+      },
+      "verification": "Archive and three DLL hashes match; process stable; local and workstation HTTP 200; IPv6 listener and target route verified; all batches, logical bindings, templates, configuration, keys, saved plans and reports preserved; systemd unit unchanged",
+      "warnings": [
+        "Existing LHES EQMS broker disabled; left disabled",
+        "Root disk approximately 1.4 GiB free"
+      ],
+      "rechecked_utc": "2026-09-15T10:04:23.875517+00:00",
+      "recheck": "Same release and three DLL hashes; PID 1759; active/running; NRestarts 0; local HTTP 200"
+    },
+    "drishti": {
+      "host": "10.254.3.57",
+      "backup": "/opt/maya-sim/backups/20260915T100119Z-mqtt-rate-6cc1d932",
+      "installation": "verified",
+      "deployment_utc": "2026-09-15T10:01:25.488348+00:00",
+      "verification_utc": "2026-09-15T10:04:23.875517+00:00",
+      "runtime": {
+        "MainPID": "1641",
+        "NRestarts": "0",
+        "ExecMainStartTimestamp": "Tue 2026-09-15 10:01:23 UTC",
+        "ActiveState": "active",
+        "SubState": "running",
+        "connected_brokers": [
+          "drishti-broker.kimbal.io:1883",
+          "drishti-broker.kimbal.io:1883",
+          "drishti-broker.kimbal.io:1883"
+        ],
+        "error_log_count": 0,
+        "oom_log_count": 0,
+        "running_meters": 1500000,
+        "stopped_meters": 1,
+        "runtime_files": {
+          "ManyMeterSimulator.dll": "2994ca287afe20ce1fab716d1f37dfb4f55ccc297e97dd4b9e4d115d01a761f5",
+          "MeterSimulator.Core.dll": "3ea5b30f957b114af8f1dd4281c15d69239600513bb71a3b9814b1e52fdee1cd",
+          "Gurux.DLMS.dll": "b78cfece6c73aff43a34e615c4be614bb52e1ce2db77551da74e73d9fb930173"
+        }
+      },
+      "backup_format": "Full local application and data directories",
+      "verification": "Archive and three DLL hashes match; process stable; local and workstation HTTP 200; IPv6 listener and target route verified; all batches, logical bindings, templates, configuration, keys, saved plans and reports preserved; systemd unit unchanged"
+    }
+  },
+  "archive_sha256": "4993e344f9179d664fd3e219b7629f4ea04746918892a8a8c8dc1f26d112cb0d",
+  "runtime_files": {
+    "ManyMeterSimulator.dll": "2994ca287afe20ce1fab716d1f37dfb4f55ccc297e97dd4b9e4d115d01a761f5",
+    "MeterSimulator.Core.dll": "3ea5b30f957b114af8f1dd4281c15d69239600513bb71a3b9814b1e52fdee1cd",
+    "Gurux.DLMS.dll": "b78cfece6c73aff43a34e615c4be614bb52e1ce2db77551da74e73d9fb930173"
+  },
+  "tests": "611 passed, 0 failed, 0 skipped; full Release suite on exact isolated source",
+  "verification_limits": [
+    "No live MQTT stress run or sustained 300,000/sec capacity test started"
+  ]
+}

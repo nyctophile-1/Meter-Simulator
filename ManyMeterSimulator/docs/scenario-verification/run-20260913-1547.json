@@ -1,0 +1,56 @@
+{
+  "verified_utc": "2026-09-13T15:49:11Z",
+  "goal_complete": false,
+  "nominal_scenarios": 86,
+  "normal_route_fakerouting_passes": [
+    {
+      "nodeid": "1000100001",
+      "topic": "FakeRouting/1000100001/2",
+      "normal_route": true,
+      "route_id": 13704414,
+      "gateway": "direct_4g",
+      "sink": "direct_4g",
+      "before": "2026-09-13T15:30:00.547085",
+      "after": "2026-09-13T15:47:22.516551",
+      "updated_after_puback_seconds": 0.04466700553894043,
+      "only_changed_field": "lastcommunicatedon",
+      "observer_match": true
+    },
+    {
+      "nodeid": "1000400001",
+      "topic": "FakeRouting/1000400001/3",
+      "normal_route": true,
+      "route_id": 13071358,
+      "gateway": "direct_4g",
+      "sink": "direct_4g",
+      "before": "2026-09-13T15:30:00.540874",
+      "after": "2026-09-13T15:47:43.330267",
+      "updated_after_puback_seconds": 0.027759075164794922,
+      "only_changed_field": "lastcommunicatedon",
+      "observer_match": true
+    }
+  ],
+  "routing_runtime": {
+    "host": "10.254.3.185",
+    "pid": 139850,
+    "start": "2026-09-13T15:07:15Z",
+    "restarts": 0,
+    "dll_sha256": "222bbf2708dfa97a7503e17d88e3f2dd9c2cbcb71376016d6a2351fdc677e020"
+  },
+  "api": {
+    "base": "https://10.254.3.185/vayu-api/",
+    "command_endpoint": "/api/HES/RequestOnDemandData",
+    "unauthenticated_http_status": 401,
+    "pid": 66008,
+    "dll_sha256": "66597bd3dd9f5a6b6fbcae88770b195b5f3271ded8cf90da58924577b62a9188"
+  },
+  "pull": {
+    "pid": 134152,
+    "command_created": false,
+    "access_requested": true,
+    "selected_meters_have_running_responders": true
+  },
+  "deployment_performed": false,
+  "configuration_changed": false,
+  "probe_source_sha256": "423ce684076c6dc864c6ddad9ce28bb5f7d66693ddcc2ab77981662acf1645c9"
+}

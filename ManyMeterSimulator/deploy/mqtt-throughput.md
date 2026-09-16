@@ -10,6 +10,20 @@ Start and bind the desired MQTT batches on Setup/Network, then open **Testing �
 Select batches, profile, QoS, publishers per broker/transport, concurrent meters and an optional
 per-batch meter limit. Use the same workload settings when comparing runs.
 
+**Target publishes per second** ranges from **100 to 300,000 (3 lakh)**. New stress runs
+start at 100/sec. Drag the slider while sending to change the rate immediately, or enter
+an exact value. This works for live passes, continuous loops and prepared Fire. The setting
+is shared across browsers and survives tab navigation. Each MQTT message, including each
+profile or fragment, uses the same run-wide budget across all selected brokers and batches.
+The target is a sending cap; payload generation, QoS and broker capacity can lower actual TPS.
+Pacing retains at most 10 milliseconds of credit, with no large catch-up burst after a pause.
+Rate reductions discard old credit; messages already in flight can still complete.
+
+Saved **MQTT Stress Loop** jobs have an initial rate setting. While a job runs, adjust its
+slider under **Testing → MQTT stress**. Each concurrent job has its own rate budget and
+control, so their rates add together. Live adjustments apply only to that execution; edit
+the plan to change its next starting rate. Older saved jobs without a rate start at 100/sec.
+
 Publisher pools support 1–256 connections per broker/transport. The stress dropdown includes
 128 and 256; saved MQTT Stress Loop tasks accept any count in that range. Increasing publishers
 raises the form's concurrent-meter value when needed. Defaults remain 8 publishers and 64
@@ -19,7 +33,7 @@ do not add pull subscriptions.
 **Continuous MQTT stress loop** is available in the Run mode dropdown. Set duration to `0`
 to run until Stop, or set a minute duration (up to seven days). Each cycle generates fresh
 payloads for the selected fleet and reuses the same publisher pools. Set wave size and pause
-after each pass to `0` for uninterrupted maximum-speed sending. Pauses apply after completing
+after each pass to `0` for uninterrupted sending at the selected target rate. Pauses apply after completing
 the preceding wave/pass; cycles never overlap. Stop and duration deadlines interrupt active
 publishes and pauses. A cycle with zero successful publishes stops the loop with an error.
 

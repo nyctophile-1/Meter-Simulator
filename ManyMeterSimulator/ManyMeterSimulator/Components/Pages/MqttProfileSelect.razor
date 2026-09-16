@@ -1,6 +1,7 @@
 @using ManyMeterSimulator.Brain
 @inject MeterRegistry Meters
 @inject TemplateRegistry Templates
+@inject ManyMeterSimulator.Networking.CustomPush.CustomPushEncoder CustomEncoder
 
 <MudSelect T="string" Label="Profile" Value="@Value" ValueChanged="ValueChanged" Disabled="@Disabled" Variant="Variant.Outlined" Margin="Margin.Dense">
     <MudSelectItem T="string" Value='@("all")'>All supported profiles</MudSelectItem>
@@ -9,7 +10,7 @@
         <MudSelectItem T="string" Value="@profile.LogicalName">@profile.Label (@profile.LogicalName)</MudSelectItem>
     }
 </MudSelect>
-<MudText Typo="Typo.caption">All sends every non-empty push setup in each batch's template. Template 93 custom push supports daily only. A specific profile must be supported by every selected batch.</MudText>
+<MudText Typo="Typo.caption">DLMS profiles work independently of NIC type. Custom Wirepas profiles use the batch's HES metadata. A specific profile must be supported by every selected batch.</MudText>
 @if (_error is not null) { <MudText Color="Color.Error" Typo="Typo.caption">@_error</MudText> }
 
 @code {
@@ -30,13 +31,13 @@
         var profiles = new List<MqttPushProfile>();
         foreach (var batch in batches)
         {
-            if (MqttPushProfiles.IsCustomDaily(batch))
-                profiles.Add(new(MqttPushProfiles.CustomDaily, MqttPushProfiles.Label(MqttPushProfiles.CustomDaily)));
-            else
+            if (batch.NicType == ManyMeterSimulator.Networking.Nic.NicType.MqttWirepas && CustomEncoder.IsCustomTemplate(batch.HesTemplateId))
             {
-                try { profiles.AddRange(MqttPushProfiles.ReadTemplate(Templates.ResolveOrThrow(batch.TemplateName))); }
-                catch (Exception ex) { _error = $"Cannot read profiles for {batch.Name}: {ex.Message}"; }
+                try { profiles.AddRange(CustomEncoder.GetProfiles(batch.HesTemplateId!.Value).Select(p => new MqttPushProfile(p.Key, p.Label))); }
+                catch (Exception ex) { _error = $"Cannot read custom profiles for {batch.Name}: {ex.Message}"; }
             }
+            try { profiles.AddRange(MqttPushProfiles.ReadTemplate(Templates.ResolveOrThrow(batch.TemplateName))); }
+            catch (Exception ex) { _error = $"Cannot read profiles for {batch.Name}: {ex.Message}"; }
         }
         _profiles = profiles.DistinctBy(p => p.LogicalName).OrderBy(p => p.Label).ToArray();
     }

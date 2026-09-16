@@ -1,0 +1,38 @@
+{
+  "verified_utc": "2026-09-13T16:13:00Z",
+  "goal_complete": false,
+  "base_commit": "0337feb506a1c9963ffd42d50c3aa592327c10dc",
+  "scope": "DLMS hundredths-to-milliseconds source fix",
+  "fraction_before": {
+    "passed": 8,
+    "failed": 12
+  },
+  "fraction_after": {
+    "passed": 20,
+    "failed": 0
+  },
+  "paired_cases_only_expected_fraction_changed": 20,
+  "remaining_complete_utc_failures": 4,
+  "common_assembly_sha256": "1857c87165ecc0ca52b84bf8033e153f700f0923a3028cc90ad2972bae303085",
+  "functions_source_sha256": "3e353507b89e854b90a0d0dec3653291d664eea1bf74221bd4a137a06295d20c",
+  "deviation_policy_pending": true,
+  "database_connected": false,
+  "live_push_sent": false,
+  "package_published": false,
+  "deployment_performed": false,
+  "receipt": "C:\\Users\\ayush\\Documents\\MAYA-release-receipts\\scenario-verification-20260913-1613",
+  "artifacts": {
+    "cases.json": "c31926b6c47c44e406c8da116b2097133cc71ee167e73628517ad9ef6578d66b",
+    "common-fixes.patch": "36a3b7fbdf163ed601e2e4977f6d3cb43689d9116a9e9964aecad816552c3593",
+    "datetime-after-fraction.json": "c9709465810787c85696627aeab6c6737ecc09666a00d7a8ee1769164c9ec5a5",
+    "datetime-after-fraction.log": "d56192d3edeafc984048abb4bdddd795e224dd1d01e9aba3e6faad399d00f29d",
+    "DateTimeProbe.csproj": "e3d6eac1bd86f49b2bc08a528b5de559796e414f06305a67e5b2e68d72610e69",
+    "fraction-after.json": "f913832afbe1c6f3ab474d9a634268f53c220c5b550cbe80a98f7bfc04b2787d",
+    "fraction-after.log": "81bd37def5cd1d8c64c611d7e9a4dd19fc27781e182ae9194a60321ed2d92246",
+    "fraction-before.json": "24c02258cfb5d7df5d22b26ab9fe189a6aff2268eab1fdc17550bb13bf5e699b",
+    "fraction-before.log": "2731f22e1f80c208a2525ff8ac56b7da7eefa3f95dd02c40f241f243e62421c3",
+    "fraction-cases.json": "4b752e8b4bd97e6351baf063b1ce69ecffa79532ad709dc322401abb1f146a1f",
+    "Program.cs": "ba4b4c22860286c1557f4760f0080a195562308ca431e9579e2d577042423b3b",
+    "README.md": "5b378d61c354a5cbdba30f9a675bd205b33bf0c513f0bfc80b986b1b086fe435"
+  }
+}

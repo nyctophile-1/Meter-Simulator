@@ -47,8 +47,16 @@ namespace ManyMeterSimulator.Networking.Mqtt.Codecs;
 /// in pieces we currently report as <see cref="NicDecodeStatus.Unsupported"/>. This is the one
 /// variant where inbound fragmentation is real.
 /// </summary>
-public sealed class WirepasCodec : INicCodec, ICustomPullRequestCodec
+public sealed class WirepasCodec(string pushGatewayId = "sim-gw", string pushSinkId = "sink1") : INicCodec, ICustomPullRequestCodec
 {
+    public IReadOnlyList<NicPublish> EncodePush(string nodeId, ReadOnlyMemory<byte> dlmsPush)
+    {
+        if (dlmsPush.IsEmpty) return [];
+        var framed = BuildFramedResponse((ushort)Random.Shared.Next(ushort.MaxValue + 1), dlmsPush.Span);
+        return [ManyMeterSimulator.Networking.CustomPush.WirepasCustomPushEnvelope.Create(
+            pushGatewayId, pushSinkId, nodeId, 1, framed)];
+    }
+
     /// <summary>The transparent DLMS endpoint.</summary>
     public const uint DlmsEndpoint = 3;
 

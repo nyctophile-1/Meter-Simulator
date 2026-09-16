@@ -8,6 +8,25 @@ namespace ManyMeterSimulator.Tests;
 
 public sealed class MqttRoutingServiceTests
 {
+    [Theory]
+    [InlineData(NicType.Tcp4G, "4")]
+    [InlineData(NicType.Mqtt4G, "3")]
+    [InlineData(NicType.Mqtt4GImg, "3")]
+    [InlineData(NicType.MqttWirepas, "2")]
+    [InlineData(NicType.MqttKmesh, "1")]
+    public async Task BatchSchedulerRoutingSenderUsesEmptyTransportAwareTopic(NicType nic, string suffix)
+    {
+        var f = new Fixture();
+        var batch = f.Add(nic, "a");
+        var sender = new ManyMeterSimulator.Brain.BatchTrafficSender(null!, f.Network, f.Publisher);
+        await using (var session = await sender.OpenAsync(batch, BatchTrafficKind.Routing, default))
+            await session.SendAsync(batch.StartIndex, default);
+        var item = Assert.Single(f.Publisher.Messages);
+        Assert.Equal("FakeRouting/1000000001/" + suffix, item.Message.Topic);
+        Assert.Empty(item.Message.Payload);
+        Assert.True(Assert.Single(f.Publisher.Pools).Disposed);
+    }
+
     [Fact]
     public async Task PublishesEveryActiveNodeOnceOnItsBoundBrokerPerCycle()
     {
@@ -129,7 +148,7 @@ public sealed class MqttRoutingServiceTests
     {
         public bool Disposed { get; private set; }
         public bool IsConnected => !Disposed;
-        public Task<MqttPushDelivery> PublishMeterAsync(IReadOnlyList<NicPublish> messages, CancellationToken cancellationToken)
+        public Task<MqttPushDelivery> PublishMeterAsync(IReadOnlyList<NicPublish> messages, CancellationToken cancellationToken, ManyMeterSimulator.Networking.Mqtt.MqttPublishRateLimiter? rateLimiter = null)
         {
             owner.Messages.Add((brokerKey, Assert.Single(messages)));
             owner.AfterPublish?.Invoke();

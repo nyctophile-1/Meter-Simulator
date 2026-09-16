@@ -1,0 +1,57 @@
+{
+  "release": "tcp-restore-582d07b1",
+  "commit": "582d07b1d4caec7bc7991511d6483ba8ee7c60d9",
+  "preserved_commit": "7e3b3a463b08f6d5a4effc9e12f2fe38ed84144e",
+  "preserved_rcdc_commit": "e95b419b8879120046b02ac84f1ad8edd6e25c20",
+  "branch": "codex/mqtt-rate-rcdc-20260915",
+  "source_directory": "C:\\Users\\ayush\\Documents\\MAYA-release-receipts\\mqtt-rate-commit-20260915\\source",
+  "source_archive_sha256": "ff8eef89074b8f639d6d028742ad8e8c5613d0c9330529042af8cb8090c06a65",
+  "archive_sha256": "34932efece97e22d4eee670bb4141ee597b465b9739de41e3f0ea7b1bb85dd32",
+  "runtime_files": {
+    "ManyMeterSimulator.dll": "66c091512f584796f631639dc79ae2a827103a8db88ccab4f8205c5e094d0e7a",
+    "MeterSimulator.Core.dll": "e5f20f0c585f0a7c6fa794e814ca47ae1f1d5a4137404f2117c25b21ff8320f0",
+    "Gurux.DLMS.dll": "75c85daef67257315bc2565a0890ccee6fc030e463b452495f09f7d3091e3b57"
+  },
+  "replaced_runtime_files": {
+    "ManyMeterSimulator.dll": "7f2a70b5172b8e2883fefa54bcae9319e88cb873d3783f53f4c733bbd9076fef",
+    "MeterSimulator.Core.dll": "d3374ed5d1f52c6d0d9a073a1058afad61d8630eba98456e78290d024f3abf53",
+    "Gurux.DLMS.dll": "c3601dbbcb4a70e31be191d051131e8e5a8225c591fc039864751927a4bc082c"
+  },
+  "tests": "470 passed, 0 failed, 0 skipped; full Release suite",
+  "targets": {
+    "drishti": {
+      "host": "10.254.3.57",
+      "backup": "/opt/maya-sim/backups/20260915T113138Z-tcp-restore-582d07b1",
+      "installation": "verified",
+      "deployment_utc": "2026-09-15T11:31:43.271308+00:00",
+      "verification_utc": "2026-09-16T08:52:03.830981+00:00",
+      "runtime": {
+        "MainPID": "4842",
+        "NRestarts": "0",
+        "ExecMainStartTimestamp": "Tue 2026-09-15 11:31:41 UTC",
+        "ActiveState": "active",
+        "SubState": "running",
+        "connected_brokers": [
+          "drishti-broker.kimbal.io:1883",
+          "drishti-broker.kimbal.io:1883",
+          "drishti-broker.kimbal.io:1883"
+        ],
+        "error_log_count": 0,
+        "oom_log_count": 0,
+        "running_meters": 1500000,
+        "stopped_meters": 1,
+        "runtime_files": {
+          "ManyMeterSimulator.dll": "66c091512f584796f631639dc79ae2a827103a8db88ccab4f8205c5e094d0e7a",
+          "MeterSimulator.Core.dll": "e5f20f0c585f0a7c6fa794e814ca47ae1f1d5a4137404f2117c25b21ff8320f0",
+          "Gurux.DLMS.dll": "75c85daef67257315bc2565a0890ccee6fc030e463b452495f09f7d3091e3b57"
+        }
+      },
+      "backup_format": "Full local application and data directories",
+      "verification": "Archive and three DLL hashes match; process stable; local and workstation HTTP 200; IPv6 listener and target route verified; all batches, logical bindings, templates, configuration, keys, saved plans and reports preserved; systemd unit unchanged; authenticated Testing page includes TCP stress and MQTT stress"
+    }
+  },
+  "verification_limits": [
+    "No live TCP or MQTT stress run was started; authenticated server-rendered Testing page verified both tabs"
+  ],
+  "git_status": "Local commit on codex/mqtt-rate-rcdc-20260915; not pushed"
+}

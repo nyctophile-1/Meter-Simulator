@@ -58,6 +58,7 @@ public static class CustomPullCommandDecoder
             >= 41 and <= 47 => (CustomCommandType)rawCommand,
             48 => CustomCommandType.GetRealtimeClock,
             50 => CustomCommandType.GetStoredInstantaneousProfile,
+            66 => CustomCommandType.GetESWF,
             83 or 90 => CustomCommandType.GetDiData, // GetDIEventProfile is sent as GetDIData
             _ => CustomCommandType.Unknown,
         };
@@ -71,6 +72,7 @@ public static class CustomPullCommandDecoder
         CustomCommandType.GetInstantaneousProfile
             or CustomCommandType.GetNamePlate
             or CustomCommandType.GetSingleActionSchedule
+            or CustomCommandType.GetESWF
             or CustomCommandType.GetRealtimeClock => selector == CustomDataSelector.GetWithoutData,
 
         CustomCommandType.GetBlockLoadProfile

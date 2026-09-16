@@ -2068,17 +2068,20 @@ namespace Gurux.DLMS
                 replyData.Set(Settings.Gateway.PhysicalDeviceAddress);
             }
 
+            GXByteBuffer information = new GXByteBuffer();
+            information.SetUInt8(4);
+            GXCommon.SetObjectCount(tmp.Length, information);
+            information.Set(tmp);
+            GXByteBuffer release = new GXByteBuffer();
+            release.SetUInt8(0x80);
+            release.SetUInt8(0x01);
+            release.SetUInt8(0x00);
+            release.SetUInt8(0xBE);
+            GXCommon.SetObjectCount(information.Size, release);
+            release.Set(information);
             replyData.SetUInt8(0x63);
-            //Len.
-            replyData.SetUInt8((byte)(tmp.Length + 3));
-            replyData.SetUInt8(0x80);
-            replyData.SetUInt8(0x01);
-            replyData.SetUInt8(0x00);
-            replyData.SetUInt8(0xBE);
-            replyData.SetUInt8((byte)(tmp.Length + 1));
-            replyData.SetUInt8(4);
-            replyData.SetUInt8((byte)(tmp.Length));
-            replyData.Set(tmp);
+            GXCommon.SetObjectCount(release.Size, replyData);
+            replyData.Set(release);
         }
 
         ///<summary>

@@ -5,19 +5,6 @@ namespace ManyMeterSimulator.Networking.SmartNic;
 /// <summary>Deterministic simulation values in engineering units, independent of the XML snapshot.</summary>
 public static class CustomProfileDataGenerator
 {
-    public static int EventId(CustomCommandType command) => command switch
-    {
-        CustomCommandType.GetVoltageEventProfile => 1,
-        CustomCommandType.GetCurrentEventProfile => 51,
-        CustomCommandType.GetPowerEventProfile => 101,
-        CustomCommandType.GetTransactionEventProfile => 151,
-        CustomCommandType.GetOtherEventProfile => 201,
-        CustomCommandType.GetNonRollOverEventProfile => 251,
-        CustomCommandType.GetControlEventProfile => 301,
-        CustomCommandType.GetDiData => 889,
-        _ => 0,
-    };
-
     public static IReadOnlyList<DateTimeOffset> SelectTimestamps(CommandIntent intent, DateTimeOffset now, CustomPullOptions options)
     {
         if (intent.Command == CustomCommandType.GetInstantaneousProfile) return [now];

@@ -5,6 +5,7 @@ using Gurux.DLMS.Objects.Enums;
 using MeterSimulator.Diagnostics;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 
 namespace MeterSimulator.DLMS
@@ -49,9 +50,9 @@ namespace MeterSimulator.DLMS
             RewireCaptureObjects(objects);
             FixProfileBufferTypes(objects);
 
-            // Step 3.5 ── Roll the snapshot forward to "now"
-            // The XML is a frozen snapshot from some past date, so its profile buffer
-            // timestamps are stale.  Per profile, shift every concrete row timestamp
+            // Step 3.5 ── Align the snapshot to "now"
+            // The XML is a frozen snapshot whose timestamps can be past or future.
+            // Per profile, shift every concrete row timestamp
             // by one delta so the NEWEST row lands exactly on now (UTC) and all older
             // rows keep their original spacing.  Runs after FixProfileBufferTypes so
             // the cells are already GXDateTime, before hand-off ("before loading").
@@ -124,6 +125,7 @@ namespace MeterSimulator.DLMS
 
         private static void FixProfileBufferTypes(GXDLMSObjectCollection objects)
         {
+            var captureTypes = new Dictionary<(GXDLMSObject Object, int Attribute), DataType>();
             foreach (var profile in objects.OfType<GXDLMSProfileGeneric>())
             {
                 if (profile.Buffer.Count == 0 || profile.CaptureObjects.Count == 0) continue;
@@ -149,15 +151,9 @@ namespace MeterSimulator.DLMS
                             };
                             continue;
                         }
-                        // DateTime.TryParse gives Kind=Unspecified for a plain string with no
-                        // offset/zone suffix — GXDateTime's constructor then computes the offset
-                        // from TimeZoneInfo.Local (whatever machine happens to run this), silently
-                        // baking in that machine's UTC offset (e.g. +5:30 on an IST dev box) even
-                        // though these digits are meant to BE UTC already. Force Kind=Utc so the
-                        // same digits are taken as-is, with offset 0, regardless of the host's
-                        // timezone — a meter's clock is UTC, never machine-local.
-                        if (row[i] is string s && DateTime.TryParse(s, out DateTime dt))
-                            row[i] = new GXDateTime(DateTime.SpecifyKind(dt, DateTimeKind.Utc));
+                        if (row[i] is string s && DateTime.TryParse(s, CultureInfo.InvariantCulture,
+                            DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out DateTime dt))
+                            row[i] = new GXDateTime(dt);
 
                         // Most profile rows arrive from Gurux's own XML reader already as
                         // GXDateTime, never touching the string branch above — but Gurux's reader
@@ -174,18 +170,20 @@ namespace MeterSimulator.DLMS
                     }
                 }
 
-                // Pass 2 — set the winning DataType once per column
+                // Captured objects are shared across profiles; retain the widest type from every buffer.
                 for (int i = 0; i < cols; i++)
                 {
                     if (columnTypes[i] != DataType.None)
                     {
                         var co = profile.CaptureObjects[i];
-                        co.Key.SetDataType(co.Value.AttributeIndex, columnTypes[i]);
-                        CoreLog.Debug($"[Fix] {profile.LogicalName} col[{i}] " +
-                            $"{co.Key.LogicalName} → DataType={columnTypes[i]}");
+                        var key = (co.Key, co.Value.AttributeIndex);
+                        captureTypes.TryGetValue(key, out var previous);
+                        captureTypes[key] = WiderType(previous, columnTypes[i]);
                     }
                 }
             }
+            foreach (var capture in captureTypes)
+                capture.Key.Object.SetDataType(capture.Key.Attribute, capture.Value);
         }
 
         // ════════════════════════════════════════════════════════════════════════
@@ -221,16 +219,9 @@ namespace MeterSimulator.DLMS
                 }
 
                 TimeSpan delta = nowUtc - latest.Value;
-                if (delta <= TimeSpan.Zero)
-                {
-                    CoreLog.Debug(
-                        $"[Shift] {profile.LogicalName}: latest {latest:u} already >= now — no shift");
-                    continue;
-                }
-
                 int shifted = ShiftProfileTimestamps(profile, delta);
                 CoreLog.Debug(
-                    $"[Shift] {profile.LogicalName}: {shifted} timestamps +{delta.TotalDays:F2}d " +
+                    $"[Shift] {profile.LogicalName}: {shifted} timestamps delta {delta.TotalDays:F2}d " +
                     $"(latest {latest:u} → now {nowUtc:u})");
             }
         }
