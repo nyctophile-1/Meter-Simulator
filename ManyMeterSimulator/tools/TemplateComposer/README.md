@@ -14,4 +14,3 @@ The command rejects category incompatibility and checks class/version, ordered c
 The current D1 composition and validation limits are recorded in [d1-master.md](../../docs/scenario-verification/d1-master.md).
 
 To replace a known incorrect buffer from an authoritative capture, pass `--replace-profile <logical-name>` for each explicitly selected profile. Each replacement must have exactly one populated compatible donor; missing or ambiguous donors are rejected before writing. All other populated base buffers retain precedence. Use the capture tool's `meter-profile-wire.xml` for freshly captured profile values: ordinary Gurux client exports can contain already-scaled values and must not be assumed to be wire values. The report records explicit replacements separately and still verifies the entire object model unchanged.
-

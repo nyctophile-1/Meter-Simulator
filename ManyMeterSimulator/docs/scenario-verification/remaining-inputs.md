@@ -17,5 +17,3 @@ The subsequent [time-alignment release](d1-time-alignment-20260914.md), `time-d1
 - The local master now retains 100 Block rows using fresh wire values, plus fresh Daily, Instant and four populated event buffers. Billing remains the original compatible 13-row donor: its physical capture references class 4 at 1.0.84.6.0.255, while the association declares class 3 and a direct class-4 read returns undefined object. The base has no standalone definition there. Importing it without resolving that mismatch would weaken the model checks.
 
 The latest work made progress; the earlier 16:16 UTC blocked audit is historical. The master deployment is verified; no full-matrix success is claimed.
-
-
