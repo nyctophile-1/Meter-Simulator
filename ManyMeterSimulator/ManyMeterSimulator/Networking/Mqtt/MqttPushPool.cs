@@ -1,4 +1,5 @@
 using System.Threading.Channels;
+using ManyMeterSimulator.Networking.Push;
 using MQTTnet;
 using MQTTnet.Protocol;
 
@@ -26,6 +27,7 @@ public interface IMqttPushConnection : IAsyncDisposable
 /// </summary>
 public sealed class MqttPushPool : IMqttPushPool
 {
+    public const int MaximumPublisherCount = 256;
     private readonly IMqttPushConnection[] _connections;
     private readonly Channel<IMqttPushConnection> _available;
     private readonly int _qos;
@@ -73,8 +75,8 @@ public sealed class MqttPushPool : IMqttPushPool
         }
     }
 
-    private static int ValidateCount(int count) => count is >= 1 and <= 64
-        ? count : throw new ArgumentOutOfRangeException(nameof(count), "Use 1 to 64 publishing connections per broker binding.");
+    private static int ValidateCount(int count) => count is >= 1 and <= MaximumPublisherCount
+        ? count : throw new ArgumentOutOfRangeException(nameof(count), $"Use 1 to {MaximumPublisherCount} publishing connections per broker binding.");
 
     public async Task<MqttPushDelivery> PublishMeterAsync(IReadOnlyList<NicPublish> messages, CancellationToken cancellationToken)
     {
@@ -108,6 +110,10 @@ public sealed class MqttPushPool : IMqttPushPool
                 }
             }
             return new MqttPushDelivery(sent, failed, error);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw new PushCanceledException(sent, messages.Count - sent, cancellationToken);
         }
         finally { _available.Writer.TryWrite(connection); }
     }

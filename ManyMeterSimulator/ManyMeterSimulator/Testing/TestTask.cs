@@ -8,6 +8,7 @@ namespace ManyMeterSimulator.Testing;
 [JsonDerivedType(typeof(BurstPushTask), "burst_push")]
 [JsonDerivedType(typeof(PartialPushTask), "partial_push")]
 [JsonDerivedType(typeof(MqttStressLoopTask), "mqtt_stress_loop")]
+[JsonDerivedType(typeof(TcpStressLoopTask), "tcp_stress_loop")]
 public abstract class TestTask
 {
     public string TaskId { get; init; } = Guid.NewGuid().ToString("N")[..8];
@@ -26,14 +27,29 @@ public abstract class TestTask
         TestTaskType.BurstPush => "All Push",
         TestTaskType.PartialPush => "Partial Push",
         TestTaskType.MqttStressLoop => "MQTT Stress Loop",
+        TestTaskType.TcpStressLoop => "TCP Stress Loop",
         _ => Type.ToString(),
     } : Label;
     public int EndsAtMinute => OffsetMinutes + DurationMinutes;
-    public bool RunsUntilStopped => this is MqttStressLoopTask && DurationMinutes == 0;
+    public bool RunsUntilStopped => this is MqttStressLoopTask or TcpStressLoopTask && DurationMinutes == 0;
     public string DurationLabel => RunsUntilStopped ? "until stopped" : $"{DurationMinutes} min";
 }
 
-public enum TestTaskType { PushLoop, PullListener, BurstPush, PartialPush, MqttStressLoop }
+public enum TestTaskType { PushLoop, PullListener, BurstPush, PartialPush, MqttStressLoop, TcpStressLoop }
+
+public sealed class TcpStressLoopTask : TestTask
+{
+    public override TestTaskType Type => TestTaskType.TcpStressLoop;
+    public Brain.TcpPushRequest Request { get; set; } = new();
+    public int CyclePauseSeconds { get; set; }
+    public Brain.TcpLoopOptions LoopOptions => new() { DurationMinutes = DurationMinutes, CyclePauseSeconds = CyclePauseSeconds };
+    public void Validate()
+    {
+        Request.Validate();
+        LoopOptions.Validate();
+        if (OffsetMinutes is < 0 or > 240) throw new ArgumentException("Offset must be 0 to 240 minutes.");
+    }
+}
 
 /// <summary>High-throughput live MQTT passes sharing publishers across the whole task.</summary>
 public sealed class MqttStressLoopTask : TestTask

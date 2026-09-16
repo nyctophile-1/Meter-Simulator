@@ -17,6 +17,21 @@ namespace ManyMeterSimulator.Tests;
 
 public partial class MqttPushRunTests
 {
+    [Theory]
+    [InlineData(128)]
+    [InlineData(256)]
+    public void RequestAcceptsIncreasedPublisherCount(int publishers)
+    {
+        new MqttPushRequest { BatchIds = [1], PublisherCount = publishers, MaxConcurrency = publishers }.Validate();
+    }
+
+    [Fact]
+    public void RequestRejectsPublishersAboveLimit()
+    {
+        Assert.Throws<ArgumentException>(() =>
+            new MqttPushRequest { BatchIds = [1], PublisherCount = 257, MaxConcurrency = 257 }.Validate());
+    }
+
     [Fact]
     public async Task StressServiceArmsWithoutPublishing_ThenFiresAndReleasesThePool()
     {
@@ -199,6 +214,7 @@ public partial class MqttPushRunTests
 
     private sealed class Fixture
     {
+        public SimulatorMetrics Metrics { get; } = new();
         public MeterRegistry Batches { get; } = new();
         public NetworkRegistry Network { get; } = new();
         public RecordingPublisher Publisher { get; } = new();
@@ -220,7 +236,7 @@ public partial class MqttPushRunTests
             var options = Options.Create(new PushOptions { UseCiphering = ciphering });
             Push = new PushCoordinator(Batches, Sessions, Network, new TcpPushSender(NullLogger<TcpPushSender>.Instance, options),
                 Publisher, new NicCodecFactory(), options, Options.Create(new CustomPushOptions()),
-                new SimulatorMetrics(), NullLogger<PushCoordinator>.Instance);
+                Metrics, NullLogger<PushCoordinator>.Instance);
         }
     }
 

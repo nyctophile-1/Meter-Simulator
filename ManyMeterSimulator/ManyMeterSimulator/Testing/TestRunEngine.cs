@@ -72,6 +72,7 @@ public sealed class TestRunEngine : IAsyncDisposable
     public void ScheduleRun(TestPlan plan, string runLabel, DateTimeOffset startAt)
     {
         foreach (var loop in plan.Tasks.OfType<MqttStressLoopTask>()) loop.Validate();
+        foreach (var loop in plan.Tasks.OfType<TcpStressLoopTask>()) loop.Validate();
         string? configurationError = GetBaseConfigurationError(plan);
         if (configurationError is not null)
             throw new InvalidOperationException(configurationError);
@@ -226,6 +227,7 @@ public sealed class TestRunEngine : IAsyncDisposable
             BurstPushTask burst => await RunBurstPushAsync(burst, end, state, ct),
             PartialPushTask partial => await RunPartialPushAsync(partial, end, state, ct),
             MqttStressLoopTask mqtt => await RunMqttStressLoopAsync(mqtt, state, ct),
+            TcpStressLoopTask tcp => await RunTcpStressLoopAsync(tcp, state, ct),
             _ => new TaskRunResult(task),
         };
     }
@@ -261,6 +263,37 @@ public sealed class TestRunEngine : IAsyncDisposable
         }
         finally { if (run is not null) await run.DisposeAsync(); }
         return new TaskRunResult(task, mqttLoop: run?.LoopResult, error: error);
+    }
+
+    private async Task<TaskRunResult> RunTcpStressLoopAsync(TcpStressLoopTask task, TestRunState state, CancellationToken ct)
+    {
+        TcpPushRun? run = null;
+        string? error = null;
+        try
+        {
+            lock (_lock) state.LastSummary = $"[{task.DisplayLabel}] checking TCP targets";
+            Changed?.Invoke();
+            if (task.Request.BatchIds.Any(id => !_meters.Batches.Any(b => b.Id == id && b.Status == BatchStatus.Running
+                && string.Equals(b.EnvironmentKey, task.EnvironmentKey, StringComparison.OrdinalIgnoreCase))))
+                throw new InvalidOperationException("Every selected TCP batch must be running and belong to the task environment.");
+            run = await _push.OpenTcpRunAsync(task.Request, ct);
+            lock (_lock) state.LastSummary = $"[{task.DisplayLabel}] repeating fresh payloads {task.DurationLabel}; measure received traffic at the TCP listener";
+            Changed?.Invoke();
+            await run.SendLoopAsync(task.LoopOptions);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+        catch (Exception ex)
+        {
+            error = run?.InvalidReason ?? ex.Message;
+            lock (_lock)
+            {
+                if (state.Status == TestRunStatus.Running) state.Status = TestRunStatus.Failed;
+                state.LastSummary = $"[{task.DisplayLabel}] {error}";
+                _cts?.Cancel(); // Do not leave sibling infinite tasks running after a failed test.
+            }
+        }
+        finally { if (run is not null) await run.DisposeAsync(); }
+        return new TaskRunResult(task, tcpLoop: run?.LoopResult, error: error);
     }
 
     private async Task<TaskRunResult> RunPushLoopAsync(PushLoopTask task, DateTimeOffset end, TestRunState state, CancellationToken ct)
@@ -746,6 +779,7 @@ public sealed class TestRunEngine : IAsyncDisposable
         {
             TaskId = r.Task.TaskId,
             MqttLoop = r.MqttLoop,
+            TcpLoop = r.TcpLoop,
             Error = r.Error,
             TaskType = r.Task.Type,
             TaskLabel = r.Task.DisplayLabel,
@@ -929,15 +963,17 @@ public sealed class TestRunEngine : IAsyncDisposable
         public double SessionRatePerMin { get; }
         public List<MinuteScoreRecord> MinuteScores { get; }
         public MqttLoopSummary? MqttLoop { get; }
+        public TcpLoopSummary? TcpLoop { get; }
         public string? Error { get; }
 
         public TaskRunResult(TestTask task, List<TickRecord>? ticks = null, int burstCount = 0,
             int pullsReceived = 0, int pullsAnswered = 0, double pullP95Ms = 0,
             int peakConcurrent = 0, double avgConcurrent = 0, double sessionRatePerMin = 0,
-            List<MinuteScoreRecord>? minuteScores = null, MqttLoopSummary? mqttLoop = null, string? error = null)
+            List<MinuteScoreRecord>? minuteScores = null, MqttLoopSummary? mqttLoop = null, string? error = null, TcpLoopSummary? tcpLoop = null)
         {
             Task = task;
             MqttLoop = mqttLoop;
+            TcpLoop = tcpLoop;
             Error = error;
             Ticks = ticks ?? new List<TickRecord>();
             BurstCount = burstCount;

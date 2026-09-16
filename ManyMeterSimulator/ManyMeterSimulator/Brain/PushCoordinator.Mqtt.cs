@@ -22,13 +22,7 @@ public sealed partial class PushCoordinator
                 ChunkSize = _options.ChunkSize == int.MaxValue ? 0 : Math.Clamp(_options.ChunkSize, 0, 1_000_000),
                 ChunkIntervalSeconds = _options.ChunkIntervalSeconds,
             }, cancellationToken);
-            run.MeterCompleted = (ok, latency) =>
-            {
-                if (ok is null) _metrics.RecordPushSkipped(batch.NicType);
-                else _metrics.RecordPushMeter(batch.NicType, ok.Value, latency);
-            };
             var result = await run.SendLiveAsync();
-            _metrics.RecordPushPayloads(batch.NicType, (int)result.MessagesSent, (int)result.MessagesFailed);
             _logger.LogInformation("MQTT push batch {BatchId}: {Sent} meters sent, {Failed} failed, {Skipped} skipped; " +
                 "{Messages} publishes completed, {Rejected} failed/unconfirmed. {Error}", batch.Id,
                 result.MetersSent, result.MetersFailed, result.MetersSkipped, result.MessagesSent, result.MessagesFailed, result.Error);
@@ -53,7 +47,7 @@ public sealed partial class PushCoordinator
                     _options.PublishTimeoutSeconds, stop.Token));
             return new MqttPushRun(sources, pools, request, _options.UseCiphering, stop,
                 handler => { _registry.Changed += handler; _network.Changed += handler; },
-                handler => { _registry.Changed -= handler; _network.Changed -= handler; });
+                handler => { _registry.Changed -= handler; _network.Changed -= handler; }, _metrics);
         }
         catch
         {

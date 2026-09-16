@@ -41,17 +41,18 @@ public class MqttPushSocketTests
     }
 
     [Theory]
-    [InlineData(0)]
-    [InlineData(1)]
-    [InlineData(2)]
-    public async Task PoolUsesRealConnectionsAndQosHandshakesWithoutSubscribing(int qos)
+    [InlineData(0, 4)]
+    [InlineData(1, 4)]
+    [InlineData(2, 4)]
+    [InlineData(0, 256)]
+    public async Task PoolUsesRealConnectionsAndQosHandshakesWithoutSubscribing(int qos, int publishers)
     {
         await using var broker = new LoopbackBroker();
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         await using var pool = await MqttPushPool.ConnectAsync(new MqttBrokerOptions
-        { Host = "127.0.0.1", Port = broker.Port, ConnectTimeoutSeconds = 2 }, 4, qos, 3, timeout.Token);
+        { Host = "127.0.0.1", Port = broker.Port, ConnectTimeoutSeconds = 2 }, publishers, qos, 3, timeout.Token);
         Assert.True(pool.IsConnected);
-        Assert.Equal(4, broker.Connections);
+        Assert.Equal(publishers, broker.Connections);
         Assert.Empty(broker.Received);
         var results = await Task.WhenAll(Enumerable.Range(0, 20).Select(i => pool.PublishMeterAsync(
             [new NicPublish($"bench/{i}", [1, 2, 3]), new NicPublish($"bench/{i}", [4, 5, 6])], timeout.Token)));

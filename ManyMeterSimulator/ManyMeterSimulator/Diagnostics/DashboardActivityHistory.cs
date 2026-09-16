@@ -29,6 +29,17 @@ public sealed class DashboardActivityHistory : BackgroundService
         lock (_gate) return _samples.ToArray();
     }
 
+    public static double PushesPerSecond(IReadOnlyList<DashboardActivitySample> samples, NicType nic)
+    {
+        if (samples.Count < 2) return 0;
+        var last = samples[^1];
+        var first = samples[^2];
+        double seconds = (last.TimestampUtc - first.TimestampUtc).TotalSeconds;
+        if (seconds <= 0 || !last.ByNic.TryGetValue(nic, out var end)
+            || !first.ByNic.TryGetValue(nic, out var start)) return 0;
+        return Math.Max(0, (end.TotalPushPayloadsSent - start.TotalPushPayloadsSent) / seconds);
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         Capture();
@@ -40,13 +51,13 @@ public sealed class DashboardActivityHistory : BackgroundService
         catch (OperationCanceledException) { }
     }
 
-    private void Capture()
+    internal void Capture()
     {
         var byNic = new Dictionary<NicType, NicActivityTotals>();
         foreach (NicType nic in AllNics)
         {
             SimulatorMetricsSnapshot snapshot = _metrics.Snapshot(nic, _connections.ActiveCountFor(nic));
-            byNic[nic] = new NicActivityTotals(snapshot.TotalExchanges, snapshot.TotalAccepted);
+            byNic[nic] = new NicActivityTotals(snapshot.TotalExchanges, snapshot.TotalAccepted, snapshot.TotalPushPayloadsSent);
         }
 
         SimulatorMetricsSnapshot total = _metrics.Snapshot(_connections.ActiveCount);
@@ -63,4 +74,4 @@ public sealed class DashboardActivityHistory : BackgroundService
 public sealed record DashboardActivitySample(DateTimeOffset TimestampUtc, int ActiveConnections,
     long TotalExchanges, long TotalAccepted, IReadOnlyDictionary<NicType, NicActivityTotals> ByNic);
 
-public readonly record struct NicActivityTotals(long TotalExchanges, long TotalAccepted);
+public readonly record struct NicActivityTotals(long TotalExchanges, long TotalAccepted, long TotalPushPayloadsSent = 0);

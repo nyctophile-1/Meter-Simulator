@@ -125,18 +125,11 @@ public sealed partial class PushCoordinator
             long startedTicks = Stopwatch.GetTimestamp();
             try
             {
-                // Two stages, cleanly split: the session ENCODES the push (transport-agnostic), and
-                // the NIC sender puts it on the wire. Encoding stays on Task.Run — it is CPU work
-                // under the same monitor the inbound bridge takes, so it can block on a meter that
-                // is mid-pull. The send does NOT: it is async all the way down now, so thousands of
-                // pushes can be in flight without a thread each.
-                byte[][] payloads = await Task.Run(() =>
+                byte[][] payloads;
+                lock (pair.Session)
                 {
-                    lock (pair.Session)
-                    {
-                        return pair.Session.BuildPushPayloads(_options.UseCiphering, pushSetupLogicalName).ToArray();
-                    }
-                }, cancellationToken);
+                    payloads = pair.Session.BuildPushPayloads(_options.UseCiphering, pushSetupLogicalName).ToArray();
+                }
 
                 if (payloads.Length == 0)
                 {
@@ -164,6 +157,13 @@ public sealed partial class PushCoordinator
                     _metrics.RecordPushMeter(batch.NicType, ok: false, Stopwatch.GetElapsedTime(startedTicks));
                 }
             }
+            catch (PushCanceledException ex)
+            {
+                _metrics.RecordPushPayloads(batch.NicType, ex.Sent, ex.Failed);
+                _metrics.RecordPushMeter(batch.NicType, false, Stopwatch.GetElapsedTime(startedTicks));
+                throw;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Push failed for meter {Meter}", pair.Meter);
@@ -194,20 +194,16 @@ public sealed partial class PushCoordinator
         CancellationToken cancellationToken)
     {
         int chunkSize = _options.ChunkSize > 0 ? _options.ChunkSize : int.MaxValue;
-        int waveCount = (meters.Count + chunkSize - 1) / Math.Max(1, chunkSize);
-        using var gate = new SemaphoreSlim(Math.Max(1, _options.MaxConcurrency));
+        long waveCount = ((long)meters.Count + chunkSize - 1) / chunkSize;
 
         for (int offset = 0, wave = 1; offset < meters.Count; offset += chunkSize, wave++)
         {
             int count = Math.Min(chunkSize, meters.Count - offset);
-            var tasks = new List<Task>(count);
-            for (int i = offset; i < offset + count; i++)
+            await Parallel.ForEachAsync(Enumerable.Range(offset, count), new ParallelOptions
             {
-                var pair = meters[i];
-                tasks.Add(Run(pair));
-            }
-
-            await Task.WhenAll(tasks);
+                MaxDegreeOfParallelism = Math.Max(1, _options.MaxConcurrency),
+                CancellationToken = cancellationToken,
+            }, async (index, ct) => await perMeter(meters[index]));
 
             bool isLastWave = offset + count >= meters.Count;
             if (waveCount > 1)
@@ -223,18 +219,6 @@ public sealed partial class PushCoordinator
             }
         }
 
-        async Task Run((MeterRef Meter, DLMSServerSession Session) pair)
-        {
-            await gate.WaitAsync(cancellationToken);
-            try
-            {
-                await perMeter(pair);
-            }
-            finally
-            {
-                gate.Release();
-            }
-        }
     }
 
     /// <summary>

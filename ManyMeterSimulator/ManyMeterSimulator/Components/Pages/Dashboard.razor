@@ -22,10 +22,10 @@
 
 
 @* ---------- KPI stat cards ---------- *@
-<div class="d-flex flex-row gap-2 mb-2" style="flex-wrap:nowrap;">
+<div class="dashboard-kpis mb-2">
     @foreach (var kpi in Kpis)
     {
-        <MudPaper Elevation="1" Class="pa-4 kpi-card" Style="flex:1 1 0;min-width:0;">
+        <MudPaper Elevation="1" Class="pa-4 kpi-card">
             <div class="d-flex align-center justify-space-between">
                 <MudText Typo="Typo.caption" Class="mud-text-secondary">@kpi.Label</MudText>
                 <MudIcon Icon="@kpi.Icon" Color="@kpi.Color" Size="Size.Small" />
@@ -36,18 +36,18 @@
 </div>
 
 <MudGrid>
-    @* ---------- Live activity area chart ---------- *@
-    <MudItem xs="12" md="8">
+    @* ---------- Live pull activity area chart ---------- *@
+    <MudItem xs="12" md="6">
         <MudPaper Elevation="1" Class="pa-4" Style="height:100%;">
             <div class="d-flex align-center justify-space-between flex-wrap">
                 <div>
-                    <MudText Typo="Typo.subtitle1">Live activity</MudText>
+                    <MudText Typo="Typo.subtitle1">Live pull activity</MudText>
                     <MudText Typo="Typo.caption" Class="mud-text-secondary">
                         Last @WindowSeconds seconds &middot; captured every 2s
                     </MudText>
                 </div>
                 <div class="d-flex align-center gap-4 activity-legend">
-                    <span class="legend-item"><span class="legend-dot" style="background:#4ec9b0;"></span>Active connections</span>
+                    <span class="legend-item"><span class="legend-dot" style="background:#4ec9b0;"></span>Active DLMS sessions</span>
                     <span class="legend-item"><span class="legend-dot" style="background:#8b7cf6;"></span>Exchanges/sec</span>
                 </div>
             </div>
@@ -71,7 +71,7 @@
 
                     <div class="plot" @onmouseleave="() => _hover = -1">
                         <svg viewBox="0 0 1000 300" preserveAspectRatio="none" class="activity-svg" role="img"
-                             aria-label="Active connections and exchanges per second over time">
+                             aria-label="Active DLMS sessions and exchanges per second over time">
                             <defs>
                                 <linearGradient id="grad-conn" x1="0" y1="0" x2="0" y2="1">
                                     <stop offset="0%" stop-color="#4ec9b0" stop-opacity="0.45" />
@@ -118,7 +118,7 @@
                                 <div class="tip-time">@HoverLabel</div>
                                 <div class="tip-row">
                                     <span class="legend-dot" style="background:#4ec9b0;"></span>
-                                    <span class="tip-label">Active conns</span>
+                                    <span class="tip-label">Active DLMS sessions</span>
                                     <span class="tip-val">@_activeHistory[_hover].ToString("N0")</span>
                                 </div>
                                 <div class="tip-row">
@@ -167,76 +167,18 @@
         </MudPaper>
     </MudItem>
 
-    @* ---------- Batch breakdown ---------- *@
-    <MudItem xs="12" md="4">
-        <MudPaper Elevation="1" Class="pa-4 d-flex flex-column" Style="height:100%;">
-            <div class="d-flex align-center justify-space-between">
-                <MudText Typo="Typo.subtitle1">Batches</MudText>
-                <MudText Typo="Typo.caption" Class="mud-text-secondary">
-                    @_totalBatches total &middot; @_provisionedMeters.ToString("N0") meters
-                </MudText>
-            </div>
-
-            @if (_totalBatches == 0)
-            {
-                <div class="batch-empty">
-                    <MudIcon Icon="@Icons.Material.Filled.Dns" Size="Size.Large" Class="mud-text-secondary" />
-                    <MudText Typo="Typo.body2" Class="mud-text-secondary mt-2">No batches yet.</MudText>
-                    <MudButton Href="batches" Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small"
-                               StartIcon="@Icons.Material.Filled.Add" Class="mt-3">Create a batch</MudButton>
-                </div>
-            }
-            else
-            {
-                @* Meter-weighted split: a 1-meter batch shouldn't look like a 300-meter one. *@
-                <div class="batch-bar mt-3">
-                    @foreach (var seg in BatchSegments.Where(s => s.Meters > 0))
-                    {
-                        <div class="batch-seg" style="width:@(F(seg.Meters * 100.0 / Math.Max(1, _provisionedMeters)))%;background:@seg.Color;"
-                             title="@seg.Label: @seg.Meters.ToString("N0") meters"></div>
-                    }
-                </div>
-
-                <div class="batch-legend mt-3">
-                    @foreach (var seg in BatchSegments)
-                    {
-                        <div class="batch-legend-row">
-                            <span class="legend-dot" style="background:@seg.Color;"></span>
-                            <span class="batch-legend-label">@seg.Label</span>
-                            <span class="batch-legend-count">@seg.Batches</span>
-                            <span class="batch-legend-meters">@seg.Meters.ToString("N0") m</span>
-                        </div>
-                    }
-                </div>
-
-                <div style="height: 1px; background: rgba(255, 255, 255, 0.08); margin: 0.75rem 0; flex-shrink: 0;"></div>
-
-                <div class="batch-list mt-1">
-                    @foreach (var b in _batches)
-                    {
-                        <div class="batch-row d-flex align-center py-2 px-1" style="gap: 8px; border-bottom: 1px solid rgba(255, 255, 255, 0.04);">
-                            <span class="legend-dot" style="background:@StatusColor(b.Status); flex-shrink: 0;"></span>
-                            <span class="batch-row-name" style="font-weight:600; font-size:0.85rem; color:#d4d4d4; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">@b.Name</span>
-                            <span class="nic-badge nic-badge-@b.NicType.ToString().ToLowerInvariant()" style="flex-shrink: 0;">@NicLabel(b.NicType)</span>
-                            <span class="batch-row-count ml-auto pl-2" style="font-weight:700; font-size:0.85rem; color:#d4d4d4; flex-shrink: 0;">@b.Count.ToString("N0")</span>
-                        </div>
-                    }
-                </div>
-            }
-        </MudPaper>
-    </MudItem>
-
     @* ---------- NIC-wide statistics ---------- *@
     <MudItem xs="12" md="6">
         <MudPaper Elevation="1" Class="pa-4" Style="height:100%;">
             <MudText Typo="Typo.subtitle1" GutterBottom="true">NIC statistics</MudText>
-            <MudSimpleTable Hover="true" Dense="true" Bordered="false" Class="batch-table">
+            <MudSimpleTable Hover="true" Dense="true" Bordered="false" Class="nic-statistics">
                 <thead>
                     <tr>
                         <th>NIC</th>
-                        <th style="text-align:right">Active</th>
-                        <th style="text-align:right">Exchanges/min</th>
-                        <th style="text-align:right">Exchanges/sec</th>
+                        <th style="text-align:right">Active DLMS sessions</th>
+                        <th style="text-align:right">Exchanges<br />/min</th>
+                        <th style="text-align:right">Pushes<br />/sec</th>
+                        <th style="text-align:right">Exchanges<br />/sec</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -247,6 +189,7 @@
                             <td><span class="nic-badge nic-badge-@nic.ToString().ToLowerInvariant()">@NicLabel(nic)</span></td>
                             <td style="text-align:right">@s.ActiveConnections.ToString("N0")</td>
                             <td style="text-align:right">@NicExchangesPerMinute(nic).ToString("N0")</td>
+                            <td style="text-align:right">@NicPushesPerSecond(nic).ToString("N1")</td>
                             <td style="text-align:right">@NicExchangesPerSecond(nic).ToString("N1")</td>
                         </tr>
                     }
@@ -318,6 +261,65 @@
         </MudPaper>
     </MudItem>
 
+    @* ---------- Batch breakdown ---------- *@
+    <MudItem xs="12" md="6">
+        <MudPaper Elevation="1" Class="pa-4 d-flex flex-column" Style="height:100%;">
+            <div class="d-flex align-center justify-space-between">
+                <MudText Typo="Typo.subtitle1">Batches</MudText>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                    @_totalBatches total &middot; @_provisionedMeters.ToString("N0") meters
+                </MudText>
+            </div>
+
+            @if (_totalBatches == 0)
+            {
+                <div class="batch-empty">
+                    <MudIcon Icon="@Icons.Material.Filled.Dns" Size="Size.Large" Class="mud-text-secondary" />
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary mt-2">No batches yet.</MudText>
+                    <MudButton Href="batches" Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small"
+                               StartIcon="@Icons.Material.Filled.Add" Class="mt-3">Create a batch</MudButton>
+                </div>
+            }
+            else
+            {
+                @* Meter-weighted split: a 1-meter batch shouldn't look like a 300-meter one. *@
+                <div class="batch-bar mt-3">
+                    @foreach (var seg in BatchSegments.Where(s => s.Meters > 0))
+                    {
+                        <div class="batch-seg" style="width:@(F(seg.Meters * 100.0 / Math.Max(1, _provisionedMeters)))%;background:@seg.Color;"
+                             title="@seg.Label: @seg.Meters.ToString("N0") meters"></div>
+                    }
+                </div>
+
+                <div class="batch-legend mt-3">
+                    @foreach (var seg in BatchSegments)
+                    {
+                        <div class="batch-legend-row">
+                            <span class="legend-dot" style="background:@seg.Color;"></span>
+                            <span class="batch-legend-label">@seg.Label</span>
+                            <span class="batch-legend-count">@seg.Batches</span>
+                            <span class="batch-legend-meters">@seg.Meters.ToString("N0") m</span>
+                        </div>
+                    }
+                </div>
+
+                <div style="height: 1px; background: rgba(255, 255, 255, 0.08); margin: 0.75rem 0; flex-shrink: 0;"></div>
+
+                <div class="batch-list mt-1">
+                    @foreach (var b in _batches)
+                    {
+                        <div class="batch-row d-flex align-center py-2 px-1" style="gap: 8px; border-bottom: 1px solid rgba(255, 255, 255, 0.04);">
+                            <span class="legend-dot" style="background:@StatusColor(b.Status); flex-shrink: 0;"></span>
+                            <span class="batch-row-name" style="font-weight:600; font-size:0.85rem; color:#d4d4d4; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">@b.Name</span>
+                            <span class="nic-badge nic-badge-@b.NicType.ToString().ToLowerInvariant()" style="flex-shrink: 0;">@NicLabel(b.NicType)</span>
+                            <span class="batch-row-count ml-auto pl-2" style="font-weight:700; font-size:0.85rem; color:#d4d4d4; flex-shrink: 0;">@b.Count.ToString("N0")</span>
+                        </div>
+                    }
+                </div>
+            }
+        </MudPaper>
+    </MudItem>
+
     @* ---------- Push activity ---------- *@
     <MudItem xs="12">
         <MudPaper Elevation="1" Class="pa-4">
@@ -351,7 +353,7 @@
 
                 <MudGrid Class="mt-4">
                     <MudItem xs="6" sm="4" md="2">
-                        <MudText Typo="Typo.caption" Class="mud-text-secondary">Meters pushed</MudText>
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">Successful meter pushes</MudText>
                         <MudText Typo="Typo.h5" Style="font-weight:600;">@_snap.TotalPushMetersSent.ToString("N0")</MudText>
                     </MudItem>
                     <MudItem xs="6" sm="4" md="2">
@@ -379,10 +381,11 @@
                 </MudGrid>
 
                 <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mt-3">
-                    @_snap.TotalPushPayloadsSent.ToString("N0") payload(s) delivered,
+                    @_snap.TotalPushPayloadsSent.ToString("N0") payload(s) sent,
                     @_snap.TotalPushPayloadsFailed.ToString("N0") failed &middot;
                     @_snap.TotalPushMetersSkipped.ToString("N0") meter(s) had no sendable PushSetup.
-                    A meter can carry several push objects, so payloads run ahead of meters.
+                    Pushes/sec counts successful payload sends over the latest sample interval. MQTT counts publishes, including fragments; TCP counts payload writes.
+                    Totals count repeated meter attempts since startup. Sends do not confirm HES ingestion.
                 </MudText>
             }
         </MudPaper>
@@ -472,12 +475,9 @@
     private readonly List<double> _exchangesPerSecHistory = new();
     private IReadOnlyList<DashboardActivitySample> _activitySamples = Array.Empty<DashboardActivitySample>();
 
-    // Push throughput, derived the same way as exchanges/sec: a delta over the sample interval
-    // rather than a running total, so a finished burst decays to zero instead of sitting there.
-    private long _lastPushAttempts;
-    private double _pushPerSec;
+    private double _pushPerSec => AllNicTypes.Sum(NicPushesPerSecond);
 
-    // Pre-rendered SVG path data for the Live activity area chart (recomputed each 2s sample).
+    // Pre-rendered SVG path data for the Live pull activity area chart (recomputed each 2s sample).
     private string _connLine = "", _connArea = "", _exchLine = "", _exchArea = "";
 
     // Per-point vertical position as a 0..1 fraction of plot height (0 = top). Used to place the
@@ -529,9 +529,6 @@
 
         _comms = Composition.Current();
 
-        long pushAttempts = _snap.TotalPushMetersAttempted;
-        _pushPerSec = Math.Max(0, (pushAttempts - _lastPushAttempts) / SampleIntervalSeconds);
-        _lastPushAttempts = pushAttempts;
 
         // Per-NIC breakdown for the "NIC statistics" table — same delta-over-interval approach as
         // the fleet-wide exchanges/sec above, just tracked once per NIC instead of once overall.
@@ -628,14 +625,12 @@
 
     private IEnumerable<(string Label, string Value, string Icon, Color Color)> Kpis => new (string, string, string, Color)[]
     {
-        ("Active connections", _snap.ActiveConnections.ToString("N0"), Icons.Material.Filled.Cable, Color.Success),
-        ("Live meters", _liveMeters.ToString("N0"), Icons.Material.Filled.Bolt, Color.Primary),
-        ("Running batches", $"{_runningBatches}/{_totalBatches}", Icons.Material.Filled.PlayArrow, Color.Success),
+        ("Active DLMS sessions", _snap.ActiveConnections.ToString("N0"), Icons.Material.Filled.Cable, Color.Success),
         ("Provisioned meters", _provisionedMeters.ToString("N0"), Icons.Material.Filled.Dns, Color.Info),
         ("Exchanges/min", ExchangesPerMinute().ToString("N0"), Icons.Material.Filled.SwapHoriz, Color.Primary),
         ("Accepted/min", AcceptedPerMinute().ToString("N0"), Icons.Material.Filled.CheckCircle, Color.Success),
-        ("Meters pushed", _snap.TotalPushMetersSent.ToString("N0"), Icons.Material.Filled.Send,
-            _snap.TotalPushMetersFailed > 0 ? Color.Warning : Color.Secondary),
+        ("MQTT pushes/sec", AllNicTypes.Where(NicTypes.IsMqtt).Sum(NicPushesPerSecond).ToString("N1"), Icons.Material.Filled.Send, Color.Secondary),
+        ("TCP pushes/sec", NicPushesPerSecond(NicType.Tcp4G).ToString("N1"), Icons.Material.Filled.Send, Color.Info),
     };
 
     // Three gridlines/ticks — full scale, half, zero — as 0..1 fractions of plot height matching
@@ -665,6 +660,8 @@
 
     private double NicExchangesPerMinute(NicType nic) => PerMinute(s =>
         s.ByNic.TryGetValue(nic, out NicActivityTotals totals) ? totals.TotalExchanges : 0);
+
+    private double NicPushesPerSecond(NicType nic) => DashboardActivityHistory.PushesPerSecond(_activitySamples, nic);
 
     private double NicExchangesPerSecond(NicType nic) => NicExchangesPerMinute(nic) / 60;
 
