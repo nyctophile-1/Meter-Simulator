@@ -41,8 +41,7 @@ namespace MeterSimulator.DLMS
         /// </summary>
         public static readonly TemplateModelCache Shared = new();
 
-        private readonly ConcurrentDictionary<string, Lazy<GXDLMSObjectCollection>> _models =
-            new(StringComparer.OrdinalIgnoreCase);
+        private readonly ConcurrentDictionary<TemplateCacheKey, Lazy<GXDLMSObjectCollection>> _models = new();
 
         /// <summary>Number of distinct templates parsed so far. Diagnostics only.</summary>
         public int Count => _models.Count;
@@ -52,7 +51,7 @@ namespace MeterSimulator.DLMS
         /// builds it exactly once (<see cref="LazyThreadSafetyMode.ExecutionAndPublication"/>), which
         /// also gives the memory barrier that guarantees no caller observes a half-built model.
         /// </summary>
-        public GXDLMSObjectCollection Get(string templatePath)
+        public GXDLMSObjectCollection Get(string templatePath, bool shiftProfileTimestamps = true)
         {
             if (string.IsNullOrWhiteSpace(templatePath))
             {
@@ -60,11 +59,13 @@ namespace MeterSimulator.DLMS
             }
 
             // Normalised so "Templates/x.xml" and an absolute path to the same file share one entry.
-            string key = Path.GetFullPath(templatePath);
+            var key = new TemplateCacheKey(Path.GetFullPath(templatePath), shiftProfileTimestamps);
 
             Lazy<GXDLMSObjectCollection> lazy = _models.GetOrAdd(
                 key,
-                p => new Lazy<GXDLMSObjectCollection>(() => Build(p), LazyThreadSafetyMode.ExecutionAndPublication));
+                p => new Lazy<GXDLMSObjectCollection>(
+                    () => Build(p.Path, p.ShiftProfileTimestamps),
+                    LazyThreadSafetyMode.ExecutionAndPublication));
 
             try
             {
@@ -78,15 +79,17 @@ namespace MeterSimulator.DLMS
             }
         }
 
-        private static GXDLMSObjectCollection Build(string templatePath)
+        private static GXDLMSObjectCollection Build(string templatePath, bool shiftProfileTimestamps)
         {
             var objects = new GXDLMSObjectCollection();
-            new MeterObjectLoader(templatePath).Load(objects);
+            new MeterObjectLoader(templatePath).Load(objects, shiftProfileTimestamps);
 
             CoreLog.Debug($"[TemplateCache] Parsed '{Path.GetFileName(templatePath)}' once — " +
                           $"{objects.Count} objects, now shared by every meter using it");
 
             return objects;
         }
+
+        private readonly record struct TemplateCacheKey(string Path, bool ShiftProfileTimestamps);
     }
 }

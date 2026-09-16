@@ -156,8 +156,3 @@ The initial HES log also contained `Int32` overflow in `IsCompletePacketNewHeade
 6. Re-run affected tests and live scenarios after fixes. No row becomes a complete pass until emitted bytes, receiver parsing, expected values/timestamps and persistence are correlated.
 
 Durable evidence: `C:\Users\ayush\Documents\MAYA-release-receipts\scenario-verification-20260913-1447`. It contains the test TRX, generated payloads and hashes, normal/replay broker results, SQL outputs, exact HES error text and payload correlation records. Credentials are not stored in these artifacts.
-
-
-
-
-

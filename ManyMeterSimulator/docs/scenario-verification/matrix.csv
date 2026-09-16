@@ -27,12 +27,12 @@ D1-custom-pull-bill,D1,6,custom-pull,bill,not-run,"Current full source suite pas
 D1-custom-pull-events,D1,6,custom-pull,events,not-run,581-test full suite passes. Generated family IDs now explicitly configured per template; bytes and missing/invalid configuration tested. No HES command lifecycle or persistence verification.
 D1-custom-pull-esw,D1,6,custom-pull,esw,live-read-and-persistence-pass,"HES GetESWF66 maps to ESW-1. Command98932984/frame10002 status4 one try, persistedESW3908521 RTC19:32:45UTC. All128bits match deployedPKG9ESW-1 and differ from filter. Isolated DRISHTI response before EQA RF recovery; other categories/legacyheaders unproven."
 D1-custom-pull-getrtc,D1,6,custom-pull,getrtc,live-command-success,"Direct DB command 98932775, MY00100001: status 4, successful true, one try; completed 2026-09-13T17:41:36.987755Z, response 2026-09-13T17:41:36Z. Existing runtime; current-time result. See d1-master.md."
-D2-dlms-push-instant,D2,7,dlms-push,instant,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence: 
-D2-dlms-push-block,D2,7,dlms-push,block,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence: 
-D2-dlms-push-daily,D2,7,dlms-push,daily,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence: 
-D2-dlms-push-bill,D2,7,dlms-push,bill,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence: 
-D2-dlms-push-events,D2,7,dlms-push,events,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence: 
-D2-dlms-push-esw,D2,7,dlms-push,esw,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence: 
+D2-dlms-push-instant,D2,7,dlms-push,instant,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence:
+D2-dlms-push-block,D2,7,dlms-push,block,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence:
+D2-dlms-push-daily,D2,7,dlms-push,daily,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence:
+D2-dlms-push-bill,D2,7,dlms-push,bill,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence:
+D2-dlms-push-events,D2,7,dlms-push,events,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence:
+D2-dlms-push-esw,D2,7,dlms-push,esw,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence:
 D2-dlms-push-getrtc,D2,7,dlms-push,getrtc,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence: User clarified RTC push is custom Wirepas only; GetRTC pull remains required.
 D2-custom-push-instant,D2,7,custom-push,instant,deferred-future-wave,"Deferred to a future wave by user instruction. Prior evidence: Metadata encoder passes arbitrary 3P/CT fixture tests. User XMLs, HES mappings and category-specific runtime evidence still required; legacy custom headers unsupported by new encoder."
 D2-custom-push-block,D2,7,custom-push,block,deferred-future-wave,"Deferred to a future wave by user instruction. Prior evidence: Metadata encoder passes arbitrary 3P/CT fixture tests. User XMLs, HES mappings and category-specific runtime evidence still required; legacy custom headers unsupported by new encoder."
@@ -41,26 +41,26 @@ D2-custom-push-bill,D2,7,custom-push,bill,deferred-future-wave,"Deferred to a fu
 D2-custom-push-events,D2,7,custom-push,events,deferred-future-wave,"Deferred to a future wave by user instruction. Prior evidence: Metadata encoder passes arbitrary 3P/CT fixture tests. User XMLs, HES mappings and category-specific runtime evidence still required; legacy custom headers unsupported by new encoder."
 D2-custom-push-esw,D2,7,custom-push,esw,deferred-future-wave,"Deferred to a future wave by user instruction. Prior evidence: Metadata encoder passes arbitrary 3P/CT fixture tests. User XMLs, HES mappings and category-specific runtime evidence still required; legacy custom headers unsupported by new encoder."
 D2-custom-push-getrtc,D2,7,custom-push,getrtc,deferred-future-wave,"Deferred to a future wave by user instruction. Prior evidence: Metadata encoder passes arbitrary 3P/CT fixture tests. User XMLs, HES mappings and category-specific runtime evidence still required; legacy custom headers unsupported by new encoder."
-D2-dlms-pull-instant,D2,7,dlms-pull,instant,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence: 
-D2-dlms-pull-block,D2,7,dlms-pull,block,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence: 
-D2-dlms-pull-daily,D2,7,dlms-pull,daily,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence: 
-D2-dlms-pull-bill,D2,7,dlms-pull,bill,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence: 
-D2-dlms-pull-events,D2,7,dlms-pull,events,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence: 
-D2-dlms-pull-esw,D2,7,dlms-pull,esw,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence: 
-D2-dlms-pull-getrtc,D2,7,dlms-pull,getrtc,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence: 
-D2-custom-pull-instant,D2,7,custom-pull,instant,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence: 
-D2-custom-pull-block,D2,7,custom-pull,block,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence: 
-D2-custom-pull-daily,D2,7,custom-pull,daily,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence: 
-D2-custom-pull-bill,D2,7,custom-pull,bill,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence: 
-D2-custom-pull-events,D2,7,custom-pull,events,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence: 
-D2-custom-pull-esw,D2,7,custom-pull,esw,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence: 
-D2-custom-pull-getrtc,D2,7,custom-pull,getrtc,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence: 
-D3-dlms-push-instant,D3,8;10,dlms-push,instant,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence: 
-D3-dlms-push-block,D3,8;10,dlms-push,block,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence: 
-D3-dlms-push-daily,D3,8;10,dlms-push,daily,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence: 
-D3-dlms-push-bill,D3,8;10,dlms-push,bill,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence: 
-D3-dlms-push-events,D3,8;10,dlms-push,events,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence: 
-D3-dlms-push-esw,D3,8;10,dlms-push,esw,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence: 
+D2-dlms-pull-instant,D2,7,dlms-pull,instant,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence:
+D2-dlms-pull-block,D2,7,dlms-pull,block,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence:
+D2-dlms-pull-daily,D2,7,dlms-pull,daily,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence:
+D2-dlms-pull-bill,D2,7,dlms-pull,bill,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence:
+D2-dlms-pull-events,D2,7,dlms-pull,events,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence:
+D2-dlms-pull-esw,D2,7,dlms-pull,esw,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence:
+D2-dlms-pull-getrtc,D2,7,dlms-pull,getrtc,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence:
+D2-custom-pull-instant,D2,7,custom-pull,instant,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence:
+D2-custom-pull-block,D2,7,custom-pull,block,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence:
+D2-custom-pull-daily,D2,7,custom-pull,daily,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence:
+D2-custom-pull-bill,D2,7,custom-pull,bill,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence:
+D2-custom-pull-events,D2,7,custom-pull,events,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence:
+D2-custom-pull-esw,D2,7,custom-pull,esw,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence:
+D2-custom-pull-getrtc,D2,7,custom-pull,getrtc,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence:
+D3-dlms-push-instant,D3,8;10,dlms-push,instant,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence:
+D3-dlms-push-block,D3,8;10,dlms-push,block,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence:
+D3-dlms-push-daily,D3,8;10,dlms-push,daily,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence:
+D3-dlms-push-bill,D3,8;10,dlms-push,bill,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence:
+D3-dlms-push-events,D3,8;10,dlms-push,events,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence:
+D3-dlms-push-esw,D3,8;10,dlms-push,esw,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence:
 D3-dlms-push-getrtc,D3,8;10,dlms-push,getrtc,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence: User clarified RTC push is custom Wirepas only; GetRTC pull remains required.
 D3-custom-push-instant,D3,8;10,custom-push,instant,deferred-future-wave,"Deferred to a future wave by user instruction. Prior evidence: Metadata encoder passes arbitrary 3P/CT fixture tests. User XMLs, HES mappings and category-specific runtime evidence still required; legacy custom headers unsupported by new encoder."
 D3-custom-push-block,D3,8;10,custom-push,block,deferred-future-wave,"Deferred to a future wave by user instruction. Prior evidence: Metadata encoder passes arbitrary 3P/CT fixture tests. User XMLs, HES mappings and category-specific runtime evidence still required; legacy custom headers unsupported by new encoder."
@@ -69,19 +69,19 @@ D3-custom-push-bill,D3,8;10,custom-push,bill,deferred-future-wave,"Deferred to a
 D3-custom-push-events,D3,8;10,custom-push,events,deferred-future-wave,"Deferred to a future wave by user instruction. Prior evidence: Metadata encoder passes arbitrary 3P/CT fixture tests. User XMLs, HES mappings and category-specific runtime evidence still required; legacy custom headers unsupported by new encoder."
 D3-custom-push-esw,D3,8;10,custom-push,esw,deferred-future-wave,"Deferred to a future wave by user instruction. Prior evidence: Metadata encoder passes arbitrary 3P/CT fixture tests. User XMLs, HES mappings and category-specific runtime evidence still required; legacy custom headers unsupported by new encoder."
 D3-custom-push-getrtc,D3,8;10,custom-push,getrtc,deferred-future-wave,"Deferred to a future wave by user instruction. Prior evidence: Metadata encoder passes arbitrary 3P/CT fixture tests. User XMLs, HES mappings and category-specific runtime evidence still required; legacy custom headers unsupported by new encoder."
-D3-dlms-pull-instant,D3,8;10,dlms-pull,instant,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence: 
-D3-dlms-pull-block,D3,8;10,dlms-pull,block,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence: 
-D3-dlms-pull-daily,D3,8;10,dlms-pull,daily,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence: 
-D3-dlms-pull-bill,D3,8;10,dlms-pull,bill,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence: 
-D3-dlms-pull-events,D3,8;10,dlms-pull,events,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence: 
-D3-dlms-pull-esw,D3,8;10,dlms-pull,esw,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence: 
-D3-dlms-pull-getrtc,D3,8;10,dlms-pull,getrtc,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence: 
-D3-custom-pull-instant,D3,8;10,custom-pull,instant,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence: 
-D3-custom-pull-block,D3,8;10,custom-pull,block,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence: 
-D3-custom-pull-daily,D3,8;10,custom-pull,daily,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence: 
-D3-custom-pull-bill,D3,8;10,custom-pull,bill,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence: 
-D3-custom-pull-events,D3,8;10,custom-pull,events,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence: 
-D3-custom-pull-esw,D3,8;10,custom-pull,esw,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence: 
-D3-custom-pull-getrtc,D3,8;10,custom-pull,getrtc,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence: 
+D3-dlms-pull-instant,D3,8;10,dlms-pull,instant,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence:
+D3-dlms-pull-block,D3,8;10,dlms-pull,block,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence:
+D3-dlms-pull-daily,D3,8;10,dlms-pull,daily,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence:
+D3-dlms-pull-bill,D3,8;10,dlms-pull,bill,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence:
+D3-dlms-pull-events,D3,8;10,dlms-pull,events,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence:
+D3-dlms-pull-esw,D3,8;10,dlms-pull,esw,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence:
+D3-dlms-pull-getrtc,D3,8;10,dlms-pull,getrtc,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence:
+D3-custom-pull-instant,D3,8;10,custom-pull,instant,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence:
+D3-custom-pull-block,D3,8;10,custom-pull,block,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence:
+D3-custom-pull-daily,D3,8;10,custom-pull,daily,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence:
+D3-custom-pull-bill,D3,8;10,custom-pull,bill,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence:
+D3-custom-pull-events,D3,8;10,custom-pull,events,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence:
+D3-custom-pull-esw,D3,8;10,custom-pull,esw,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence:
+D3-custom-pull-getrtc,D3,8;10,custom-pull,getrtc,deferred-future-wave,Deferred to a future wave by user instruction. Prior evidence:
 extra-custom-pull-grblockload,all,6;7;8;10,custom-pull,grblockload,not-run-end-to-end,Existing GapBlockCommandTests pass; per-category live response and persistence remain required.
 extra-fakerouting,all,6;7;8;10,routing,fakerouting,partial-live-pass-D1-wirepas-and-direct4g,Normal-route keepalives advanced only lastcommunicatedon for nodes 1000100001 and 1000400001 at 15:47:22.516551 and 15:47:43.330267 UTC. Gateway/sink preserved; PUBACK/observer and sequential DB checks correlated. Other category/NIC and initialization cases remain open.
