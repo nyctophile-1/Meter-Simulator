@@ -48,17 +48,20 @@ public sealed partial class PushCoordinator
         }).ToArray();
         var pools = new Dictionary<BrokerBinding, IMqttPushPool>();
         var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        IDisposable? lease = null;
         try
         {
+            lease = _registry.AcquirePushLease(request.BatchIds);
             foreach (BrokerBinding binding in sources.Select(s => s.Binding).Distinct())
                 pools.Add(binding, await _mqtt.OpenPoolAsync(binding, request.PublisherCount, request.Qos,
                     _options.PublishTimeoutSeconds, stop.Token));
             return new MqttPushRun(sources, pools, request, _options.UseCiphering, stop,
                 handler => { _registry.Changed += handler; _network.Changed += handler; },
-                handler => { _registry.Changed -= handler; _network.Changed -= handler; }, _metrics);
+                handler => { _registry.Changed -= handler; _network.Changed -= handler; }, _metrics, lease);
         }
         catch
         {
+            lease?.Dispose();
             stop.Cancel();
             await Task.WhenAll(pools.Values.Select(async p => await p.DisposeAsync()));
             stop.Dispose();

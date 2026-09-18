@@ -25,6 +25,72 @@ public sealed class MeterRegistry
 
     private readonly List<MeterBatch> _batches = new();
     private readonly object _lock = new();
+    private readonly HashSet<int> _registrationLeases = new();
+    private readonly Dictionary<int, int> _pushLeases = new();
+
+    public bool TryAdmitSession(long index, Func<bool> register)
+    {
+        lock (_lock)
+        {
+            var batch = _batches.FirstOrDefault(b => index >= b.StartIndex && index <= b.EndIndex);
+            return batch is not null && !_registrationLeases.Contains(batch.Id) && register();
+        }
+    }
+
+    public IDisposable AcquirePushLease(IEnumerable<int> batchIds)
+    {
+        int[] ids = batchIds.Distinct().ToArray();
+        lock (_lock)
+        {
+            if (ids.Any(id => _registrationLeases.Contains(id)))
+                throw new InvalidOperationException("A selected batch is being provisioned in HES.");
+            foreach (int id in ids) _pushLeases[id] = _pushLeases.GetValueOrDefault(id) + 1;
+            return new PushLease(this, ids);
+        }
+    }
+
+    private sealed class PushLease(MeterRegistry owner, int[] ids) : IDisposable
+    {
+        private bool _disposed;
+        public void Dispose()
+        {
+            lock (owner._lock)
+            {
+                if (_disposed) return;
+                _disposed = true;
+                foreach (int id in ids)
+                    if (--owner._pushLeases[id] == 0) owner._pushLeases.Remove(id);
+            }
+        }
+    }
+
+    public IDisposable AcquireRegistrationLease(MeterBatch batch)
+    {
+        lock (_lock)
+        {
+            if (!_batches.Contains(batch) || batch.Status is BatchStatus.Running or BatchStatus.Starting)
+                throw new InvalidOperationException("Stop the selected batch before provisioning its HES registration.");
+            if (_pushLeases.ContainsKey(batch.Id))
+                throw new InvalidOperationException("Stop and release all push/stress runs for this batch before provisioning.");
+            if (!_registrationLeases.Add(batch.Id))
+                throw new InvalidOperationException("This batch is already being provisioned.");
+            return new RegistrationLease(this, batch.Id);
+        }
+    }
+
+    private sealed class RegistrationLease(MeterRegistry owner, int id) : IDisposable
+    {
+        private bool _disposed;
+        public void Dispose()
+        {
+            lock (owner._lock)
+            {
+                if (_disposed) return;
+                _disposed = true;
+                owner._registrationLeases.Remove(id);
+            }
+        }
+    }
     private readonly IBatchStore _store;
     private long _nextIndex = 1;
     private int _nextBatchId = 1;
@@ -178,6 +244,7 @@ public sealed class MeterRegistry
     {
         lock (_lock)
         {
+            if (_registrationLeases.Contains(batchId)) return false;
             MeterBatch? batch = _batches.FirstOrDefault(b => b.Id == batchId);
             if (batch is null) return false;
 
@@ -265,7 +332,7 @@ public sealed class MeterRegistry
     {
         lock (_lock)
         {
-            if (!_batches.Contains(expected)) return false;
+            if (!_batches.Contains(expected) || _registrationLeases.Contains(expected.Id)) return false;
             expected.Status = BatchStatus.Starting;
             Persist();
         }
@@ -293,6 +360,7 @@ public sealed class MeterRegistry
         bool removed;
         lock (_lock)
         {
+            if (_registrationLeases.Contains(batchId)) return false;
             removed = _batches.RemoveAll(b => b.Id == batchId) > 0;
             if (removed)
             {
@@ -319,6 +387,8 @@ public sealed class MeterRegistry
     {
         lock (_lock)
         {
+            if (_registrationLeases.Count != 0)
+                throw new InvalidOperationException("Wait for HES provisioning to finish before resetting batches.");
             _batches.Clear();
             _nextIndex = 1;
             _nextBatchId = 1;
@@ -390,6 +460,7 @@ public sealed class MeterRegistry
     {
         lock (_lock)
         {
+            if (_registrationLeases.Contains(batchId)) return false;
             var batch = _batches.FirstOrDefault(b => b.Id == batchId);
             if (batch is null) return false;
             batch.Traffic = batch.Traffic.With(kind, enabled);
@@ -403,6 +474,7 @@ public sealed class MeterRegistry
     {
         lock (_lock)
         {
+            if (_registrationLeases.Contains(batchId)) return false;
             MeterBatch? batch = _batches.FirstOrDefault(b => b.Id == batchId);
             if (batch is null)
             {
@@ -476,6 +548,8 @@ public sealed class MeterRegistry
     {
         lock (_lock)
         {
+            if (_registrationLeases.Count != 0)
+                throw new InvalidOperationException("Wait for HES provisioning to finish before importing batches.");
             _batches.Clear();
             foreach (PersistedBatch pb in snapshot.Batches)
             {

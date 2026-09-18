@@ -13,9 +13,11 @@ public sealed partial class PushCoordinator
         cancellationToken.ThrowIfCancellationRequested();
         bool ciphering = _options.UseCiphering;
         var sources = request.BatchIds.Select(id => ResolveTcpSource(id, request, ciphering)).ToArray();
-        return Task.FromResult(new TcpPushRun(sources, request, ciphering, cancellationToken,
+        var lease = _registry.AcquirePushLease(request.BatchIds);
+        try { return Task.FromResult(new TcpPushRun(sources, request, ciphering, cancellationToken,
             handler => { _registry.Changed += handler; _network.Changed += handler; },
-            handler => { _registry.Changed -= handler; _network.Changed -= handler; }, _metrics));
+            handler => { _registry.Changed -= handler; _network.Changed -= handler; }, _metrics, lease)); }
+        catch { lease.Dispose(); throw; }
     }
 
     private TcpPushSource ResolveTcpSource(int batchId, TcpPushRequest request, bool ciphering)

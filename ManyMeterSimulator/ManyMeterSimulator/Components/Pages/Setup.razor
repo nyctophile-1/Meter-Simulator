@@ -812,7 +812,11 @@ else
             return;
         }
 
-        MeterRegistry.Reset();
-        Sessions.Clear();
+        try
+        {
+            MeterRegistry.Reset();
+            Sessions.Clear();
+        }
+        catch (InvalidOperationException ex) { Snackbar.Add(ex.Message, Severity.Warning); }
     }
 }

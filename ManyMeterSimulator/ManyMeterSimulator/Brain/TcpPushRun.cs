@@ -59,6 +59,7 @@ public sealed class TcpPushRun : IAsyncDisposable
     private readonly CancellationTokenSource _stop;
     private readonly Action<Action> _unsubscribe;
     private readonly SimulatorMetrics? _metrics;
+    private readonly IDisposable? _batchLease;
     private readonly object _sync = new();
     private PreparedMeter[]? _prepared;
     private int _state;
@@ -67,7 +68,7 @@ public sealed class TcpPushRun : IAsyncDisposable
     private string? _invalidReason;
 
     internal TcpPushRun(TcpPushSource[] sources, TcpPushRequest request, bool ciphering,
-        CancellationToken token, Action<Action> subscribe, Action<Action> unsubscribe, SimulatorMetrics? metrics = null)
+        CancellationToken token, Action<Action> subscribe, Action<Action> unsubscribe, SimulatorMetrics? metrics = null, IDisposable? batchLease = null)
     {
         _sources = sources;
         _request = request;
@@ -75,6 +76,7 @@ public sealed class TcpPushRun : IAsyncDisposable
         _stop = CancellationTokenSource.CreateLinkedTokenSource(token);
         _unsubscribe = unsubscribe;
         _metrics = metrics;
+        _batchLease = batchLease;
         subscribe(CheckConfiguration);
         CheckConfiguration();
     }
@@ -274,6 +276,7 @@ public sealed class TcpPushRun : IAsyncDisposable
             _stop.Cancel();
             _stop.Dispose();
             _prepared = null;
+            _batchLease?.Dispose();
         }
         return ValueTask.CompletedTask;
     }

@@ -1,0 +1,123 @@
+@using ManyMeterSimulator.Provisioning
+@using ManyMeterSimulator.Networking.Registry
+@using Microsoft.AspNetCore.Components.Authorization
+@using Npgsql
+@implements IDisposable
+@inject MeterRegistry Meters
+@inject NetworkRegistry Network
+@inject HesBatchRegistrationService Registration
+@inject IDialogService Dialog
+
+@if (IsAdmin)
+{
+    <MudPaper Class="pa-4 mt-6" Outlined="true">
+        <MudText Typo="Typo.h6">HES batch provisioning</MudText>
+        <MudText Typo="Typo.body2" Class="mb-3">Replace nameplate, meter security and latest routing for one stopped MAYA batch. Historical data is preserved.</MudText>
+        <MudStack Row="true" Wrap="Wrap.Wrap" Class="mb-3">
+            <MudSelect T="int" Label="Batch" Value="_batchId" ValueChanged="SelectBatch" Disabled="_busy" Style="min-width:220px">
+                @foreach (var batch in Meters.Batches)
+                {
+                    <MudSelectItem Value="batch.Id">@batch.Name (@batch.Count.ToString("N0") meters; @batch.Status)</MudSelectItem>
+                }
+            </MudSelect>
+            <MudSelect T="string" Label="PostgreSQL database" @bind-Value="_databaseKey" Disabled="_busy" Style="min-width:220px">
+                @foreach (var db in Network.Databases.Where(d => d.Provider == DatabaseProvider.PostgreSql))
+                {
+                    <MudSelectItem Value="@db.Key">@db.Key</MudSelectItem>
+                }
+            </MudSelect>
+            <MudNumericField T="int" Label="HES template ID" @bind-Value="_templateId" Min="1" Disabled="@(_busy || Meters.Batches.FirstOrDefault(b => b.Id == _batchId)?.HesTemplateId is > 0)" />
+        </MudStack>
+        <MudButton OnClick="Preview" Disabled="@(_busy || _batchId == 0 || string.IsNullOrWhiteSpace(_databaseKey) || _templateId <= 0)" Variant="Variant.Outlined">Preview registration</MudButton>
+        @if (_busy)
+        {
+            <MudProgressLinear Indeterminate="true" Class="mt-3" />
+            <MudButton OnClick="Cancel">Cancel operation</MudButton>
+        }
+        @if (_error is not null) { <MudAlert Severity="Severity.Error" Class="mt-3">@_error</MudAlert> }
+        @if (_preview is { } p && _previewBatch == _batchId && _previewDatabase == _databaseKey && p.TemplateId == _templateId)
+        {
+            <MudSimpleTable Dense="true" Class="mt-3">
+                <tbody>
+                    <tr><td>Verified target</td><td>@p.Inspection.Target</td></tr>
+                    <tr><td>Batch / nodes</td><td>@p.BatchName: @p.FirstNode – @p.LastNode (@p.Count.ToString("N0"))</td></tr>
+                    <tr><td>Meter / template</td><td>@p.Category / type @p.MeterType / HES template @p.TemplateId</td></tr>
+                    <tr><td>Route</td><td>@p.Route</td></tr>
+                    <tr><td>First meter address</td><td>@p.FirstAddress : @p.Port</td></tr>
+                    <tr><td>Model SHA-256</td><td style="overflow-wrap:anywhere">@p.ModelHash</td></tr>
+                    <tr><td>Remove existing rows</td><td>Nameplate @p.Inspection.Existing.Nameplates; security @p.Inspection.Existing.Security; routing @p.Inspection.Existing.Routes</td></tr>
+                    <tr><td>Insert rows</td><td>@p.Count.ToString("N0") in each table</td></tr>
+                    <tr><td>Security</td><td>Simulator demo profile • values hidden</td></tr>
+                </tbody>
+            </MudSimpleTable>
+            <MudText Typo="Typo.body2" Class="mt-2">Replacement briefly locks the three registration tables. Run during a test maintenance window. Routes start with iscommunicating=false; HES parsing and persistence still need verification.</MudText>
+            @foreach (var issue in p.Inspection.Issues) { <MudAlert Severity="Severity.Error">@issue</MudAlert> }
+            @if (p.Inspection.LegacyMeters > 0)
+            {
+                <MudCheckBox T="bool" @bind-Value="_adoptLegacy" Disabled="_busy" Label="@($"I confirm these {p.Inspection.LegacyMeters:N0} matching legacy registrations belong to MAYA and may be replaced.")" />
+            }
+            <MudButton OnClick="Replace" Color="Color.Error" Variant="Variant.Filled" Class="mt-3"
+                Disabled="@(_busy || p.Inspection.Conflicts > 0 || p.Inspection.LegacyMeters > 0 && !_adoptLegacy)">Replace batch registration</MudButton>
+        }
+        @if (_receipt is { } receipt)
+        {
+            <MudAlert Severity="Severity.Success" Class="mt-3">@receipt.State. Inserted @receipt.Count.ToString("N0") rows per table. Receipt: @receipt.OperationId.</MudAlert>
+            @if (receipt.Warning is not null) { <MudAlert Severity="Severity.Warning">@receipt.Warning</MudAlert> }
+        }
+    </MudPaper>
+}
+
+@code {
+    [Parameter] public bool IsAdmin { get; set; }
+    [CascadingParameter] private Task<AuthenticationState> AuthenticationStateTask { get; set; } = default!;
+    private int _batchId, _templateId, _previewBatch;
+    private string _databaseKey = "", _previewDatabase = "";
+    private bool _busy, _adoptLegacy;
+    private string? _error;
+    private HesRegistrationPreview? _preview;
+    private HesRegistrationReceipt? _receipt;
+    private CancellationTokenSource? _cancel;
+    private void SelectBatch(int id)
+    {
+        _batchId = id;
+        _templateId = Meters.Batches.FirstOrDefault(b => b.Id == id)?.HesTemplateId ?? 0;
+        _preview = null;
+    }
+    private async Task Preview() => await Run(async ct =>
+    {
+        _preview = null; _receipt = null; _adoptLegacy = false;
+        _preview = await Registration.PreviewAsync((await AuthenticationStateTask).User, _batchId, _databaseKey, _templateId, ct);
+        _previewBatch = _batchId; _previewDatabase = _databaseKey;
+    });
+    private async Task Replace()
+    {
+        var preview = _preview;
+        if (preview is null || _busy) return;
+        bool? yes = await Dialog.ShowMessageBoxAsync("Replace HES registration?",
+            $"Replace {preview.Count:N0} MAYA meters ({preview.FirstNode}–{preview.LastNode}) in {preview.Inspection.Target}? All three tables are replaced atomically. Other meter registrations and historical data are preserved.",
+            yesText: "Replace registration", cancelText: "Cancel");
+        if (yes != true) return;
+        await Run(async ct =>
+        {
+            _preview = null;
+            _receipt = await Registration.ReplaceAsync((await AuthenticationStateTask).User, preview, _adoptLegacy, ct);
+        });
+    }
+    private async Task Run(Func<CancellationToken, Task> action)
+    {
+        if (_busy || !IsAdmin) return;
+        _busy = true; _error = null;
+        _cancel = new();
+        try { await action(_cancel.Token); }
+        catch (RegistrationCommitUncertainException ex) { _error = ex.Message; }
+        catch (OperationCanceledException) { _error = "Operation cancelled or timed out. No replacement was committed."; }
+        catch (PostgresException ex) { _error = $"PostgreSQL rejected the operation (SQLSTATE {ex.SqlState}). Check target permissions/schema or concurrent activity, then preview again."; }
+        catch (NpgsqlException) { _error = "Database connection failed. Check the saved connection, TLS settings and network, then preview again."; }
+        catch (InvalidOperationException ex) { _error = ex.Message; }
+        catch (UnauthorizedAccessException) { _error = "Administrator access is required, and the receipt folder must be writable."; }
+        catch { _error = "Could not prepare the batch registration. Check the model and server configuration."; }
+        finally { _busy = false; _cancel.Dispose(); _cancel = null; }
+    }
+    private void Cancel() => _cancel?.Cancel();
+    public void Dispose() => _cancel?.Cancel();
+}

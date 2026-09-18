@@ -152,6 +152,9 @@ builder.Services.AddSingleton<ISecretProtector, DataProtectionSecretProtector>()
 builder.Services.AddSingleton<INetworkRegistryStore, JsonNetworkRegistryStore>();
 builder.Services.AddSingleton<EndpointProber>();
 builder.Services.AddSingleton<DatabaseConnectionProber>();
+builder.Services.AddSingleton<HesRegistrationDefinitionFactory>();
+builder.Services.AddSingleton<HesRegistrationDatabase>();
+builder.Services.AddSingleton<HesBatchRegistrationService>();
 builder.Services.AddSingleton<NetworkRegistry>();
 // Registered after MeterRegistry: it is the one place that sees both registries, which is what
 // lets neither of them depend on the other.
