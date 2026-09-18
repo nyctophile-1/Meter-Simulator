@@ -17,6 +17,7 @@
     {
         <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">Finish the active test or push loop before starting a stress run.</MudAlert>
     }
+    <MudText Typo="Typo.caption" Class="mb-3">Load testing bypasses simulated network delays and BadComm/NonComm rules.</MudText>
     <MudGrid>
         <MudItem xs="12">
             <MudSelect T="bool" Label="Run mode" @bind-Value="_continuous" Disabled="@Locked" Variant="Variant.Outlined">

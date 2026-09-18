@@ -38,7 +38,7 @@ public sealed partial class PushCoordinator
         }
         string? environment = batch.EnvironmentKey;
         long count = Math.Min(batch.Count, request.MaximumMetersPerBatch ?? int.MaxValue);
-        return new(count, Meters, Build, Send, IsCurrent, AllowPushAsync, BuildAt);
+        return new(count, Meters, Build, Send, IsCurrent, BuildAt);
 
         IEnumerable<MeterRef> Meters()
         {

@@ -27,7 +27,8 @@ public partial class TcpStressIntegrationTests
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
         using var listener = new TcpListener(IPAddress.IPv6Loopback, 0);
         listener.Start();
-        var f = new Fixture(((IPEndPoint)listener.LocalEndpoint).Port);
+        var f = new Fixture(((IPEndPoint)listener.LocalEndpoint).Port,
+            badComm: HistoricalPushTests.Impaired(CommClass.NonComm), networkDelay: StressDelay());
         string directory = Path.Combine(Path.GetTempPath(), "maya-tcp-plan-" + Guid.NewGuid().ToString("N"));
         var persistence = Options.Create(new PersistenceOptions { Folder = directory });
         var host = new Host();
@@ -63,7 +64,8 @@ public partial class TcpStressIntegrationTests
     {
         using var listener = new TcpListener(IPAddress.IPv6Loopback, 0);
         listener.Start();
-        var f = new Fixture(((IPEndPoint)listener.LocalEndpoint).Port);
+        var f = new Fixture(((IPEndPoint)listener.LocalEndpoint).Port,
+            badComm: HistoricalPushTests.Impaired(CommClass.NonComm), networkDelay: StressDelay());
         await using var service = new TcpStressService(f.Push, new Lifetime());
         service.Start(f.Request, prepare: true);
         await WaitFor(service, "Ready");
@@ -116,6 +118,31 @@ public partial class TcpStressIntegrationTests
         await Assert.ThrowsAsync<InvalidOperationException>(() => f.Push.OpenTcpRunAsync(f.Request));
     }
 
+    private static NetworkDelaySettings StressDelay() => new(Options.Create(new NetworkDelayOptions()),
+        new RuntimeStore { Current = { NetworkDelay = new DelayRange { LowerMs = 10000, UpperMs = 10000 } } });
+
+    [Theory]
+    [InlineData(CommClass.Healthy)]
+    [InlineData(CommClass.BadComm)]
+    [InlineData(CommClass.NonComm)]
+    public async Task LiveTcpStressBypassesSimulatedFailuresAndDelay(CommClass classification)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        using var listener = new TcpListener(IPAddress.IPv6Loopback, 0);
+        listener.Start();
+        var f = new Fixture(((IPEndPoint)listener.LocalEndpoint).Port,
+            badComm: HistoricalPushTests.Impaired(classification), networkDelay: StressDelay());
+        await using var run = await f.Push.OpenTcpRunAsync(f.Request, timeout.Token);
+        var sending = run.SendLiveAsync();
+        using var client = await listener.AcceptTcpClientAsync(timeout.Token);
+        using var received = new MemoryStream();
+        await client.GetStream().CopyToAsync(received, timeout.Token);
+        var result = await sending;
+        Assert.NotEmpty(received.ToArray());
+        Assert.Equal(1, result.MetersSent);
+        Assert.Equal(0, result.MetersSkipped);
+        Assert.Equal(0, result.MessagesFailed);
+    }
     private static async Task WaitFor(TcpStressService service, string phase)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
@@ -134,7 +161,7 @@ public partial class TcpStressIntegrationTests
         public PushCoordinator Push { get; }
         public MeterSessionManager Sessions { get; }
         public TcpPushRequest Request => new() { BatchIds = [Batch.Id] };
-        public Fixture(int port, string template = "SA1231166HP_values.xml", BadCommSettings? badComm = null)
+        public Fixture(int port, string template = "SA1231166HP_values.xml", BadCommSettings? badComm = null, NetworkDelaySettings? networkDelay = null)
         {
             Network.AddPushTarget(new() { Key = "tcp", Address = "::1", Port = port }, true);
             Batch = Batches.AddBatch("TCP", template, 1, NicType.Tcp4G, null, "tcp");
@@ -146,7 +173,7 @@ public partial class TcpStressIntegrationTests
             var options = Options.Create(new PushOptions());
             Push = new(Batches, Sessions, Network, new TcpPushSender(NullLogger<TcpPushSender>.Instance, options),
                 new NoMqtt(), new NicCodecFactory(), options, Options.Create(new CustomPushOptions()),
-                new SimulatorMetrics(), NullLogger<PushCoordinator>.Instance, badComm: badComm);
+                new SimulatorMetrics(), NullLogger<PushCoordinator>.Instance, badComm: badComm, networkDelay: networkDelay);
         }
     }
 

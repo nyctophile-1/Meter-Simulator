@@ -17,7 +17,8 @@ public partial class MqttPushRunTests
     [Fact]
     public async Task ContinuousLoopReusesConnections_RegeneratesPayloads_AndKeepsPartialPassTotals()
     {
-        var fixture = new Fixture(3);
+        var fixture = new Fixture(3, badComm: HistoricalPushTests.Impaired(CommClass.NonComm),
+            networkDelay: HistoricalDelay(10000));
         using var stop = new CancellationTokenSource();
         fixture.Publisher.AfterPublish = () => { if (fixture.Publisher.Messages.Count == 7) stop.Cancel(); };
         await using var run = await fixture.Push.OpenMqttRunAsync(fixture.Request with { PublisherCount = 1, MaxConcurrency = 1 }, stop.Token);
@@ -65,7 +66,8 @@ public partial class MqttPushRunTests
     [Fact]
     public async Task AllRejectedLoopStopsAfterOnePass()
     {
-        var fixture = new Fixture(3);
+        var fixture = new Fixture(3, badComm: HistoricalPushTests.Impaired(CommClass.NonComm),
+            networkDelay: HistoricalDelay(10000));
         fixture.Publisher.Reject = true;
         await using var run = await fixture.Push.OpenMqttRunAsync(fixture.Request);
         await Assert.ThrowsAsync<InvalidOperationException>(() => run.SendLoopAsync(new()));
@@ -77,7 +79,8 @@ public partial class MqttPushRunTests
     [Fact]
     public async Task ServiceStopInterruptsCyclePauseAndRetainsTotals()
     {
-        var fixture = new Fixture(3);
+        var fixture = new Fixture(3, badComm: HistoricalPushTests.Impaired(CommClass.NonComm),
+            networkDelay: HistoricalDelay(10000));
         var sent = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         fixture.Publisher.AfterPublish = () => { if (fixture.Publisher.Messages.Count >= 3) sent.TrySetResult(); };
         await using var service = new MqttStressService(fixture.Push, new TestLifetime());
@@ -96,7 +99,8 @@ public partial class MqttPushRunTests
     [Fact]
     public async Task BatchChangeStopsContinuousServiceAndReleasesConnections()
     {
-        var fixture = new Fixture(3);
+        var fixture = new Fixture(3, badComm: HistoricalPushTests.Impaired(CommClass.NonComm),
+            networkDelay: HistoricalDelay(10000));
         fixture.Publisher.AfterPublish = () => fixture.Batches.TryStop(fixture.Batch.Id);
         await using var service = new MqttStressService(fixture.Push, new TestLifetime());
         service.Start(fixture.Request, false, new());
@@ -122,7 +126,8 @@ public partial class MqttPushRunTests
     [Fact]
     public async Task SavedLoopPlanReloadsAndStopPersistsReportTotals()
     {
-        var fixture = new Fixture(3);
+        var fixture = new Fixture(3, badComm: HistoricalPushTests.Impaired(CommClass.NonComm),
+            networkDelay: HistoricalDelay(10000));
         string directory = Path.Combine(Path.GetTempPath(), "maya-loop-test-" + Guid.NewGuid().ToString("N"));
         var persistence = Options.Create(new PersistenceOptions { Folder = directory });
         var env = new TestEnvironment();

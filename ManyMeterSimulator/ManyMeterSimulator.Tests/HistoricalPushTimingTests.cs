@@ -19,7 +19,7 @@ public partial class MqttPushRunTests
     [InlineData(CommClass.Healthy)]
     [InlineData(CommClass.BadComm)]
     [InlineData(CommClass.NonComm)]
-    public async Task AcceleratedHistoricalReplayRetainsLossWithoutInheritingWallClockDelay(CommClass classification)
+    public async Task HistoricalReplayKeepsLossButBypassesNetworkDelay(CommClass classification)
     {
         var delay = HistoricalDelay(5000);
         var f = new Fixture(1, badComm: HistoricalPushTests.Impaired(classification), networkDelay: delay);
@@ -40,34 +40,34 @@ public partial class MqttPushRunTests
         Assert.Equal(5000, delay.GetCurrent(CommunicationDirection.Pull).LowerMs);
     }
 
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task ExplicitHistoricalDelayAndOrdinaryLivePushStillWaitAndCancel(bool historical)
+    [Fact]
+    public async Task OrdinaryPushStillWaitsForSimulatedDelayAndCancels()
     {
         var f = new Fixture(1, networkDelay: HistoricalDelay(5000));
-        var batch = f.Batches.AddBatch("history", "D1_Master.xml", 1, NicType.Mqtt4G, null, "local");
-        f.Batches.TryStart(batch.Id);
         using var timeout = new CancellationTokenSource(TimeSpan.FromMilliseconds(150));
-        if (historical)
-        {
-            await using var run = await f.Push.OpenHistoricalRunAsync(new()
-            {
-                BatchIds = [batch.Id], SimulateNetworkDelay = true
-            }, timeout.Token);
-            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run.SendAsync(_ => { }, timeout.Token));
-        }
-        else
-        {
-            await using var run = await f.Push.OpenMqttRunAsync(f.Request, timeout.Token);
-            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run.SendLiveAsync());
-        }
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => f.Push.PushBatchAsync(f.Batch.Id,
+            cancellationToken: timeout.Token, pushSetupLogicalName: MqttPushProfiles.CustomDaily));
         Assert.Empty(f.Publisher.Messages);
         Assert.All(f.Publisher.Pools, pool => Assert.True(pool.Disposed));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task MqttStressLiveAndPreparedBypassNetworkDelay(bool prepared)
+    {
+        var f = new Fixture(2, networkDelay: HistoricalDelay(10000));
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await using var run = await f.Push.OpenMqttRunAsync(f.Request, timeout.Token);
+        if (prepared) await run.PrepareAsync();
+        var result = prepared ? await run.FireAsync() : await run.SendLiveAsync();
+        Assert.Equal(2, result.MetersSent);
+        Assert.Equal(0, result.MetersSkipped);
+        Assert.Equal(TimeSpan.Zero, f.Metrics.Snapshot(0).MaxNetworkLatency);
+    }
+
     [Fact]
-    public async Task AcceleratedReplayReadsBadCommChangesDuringTheRun()
+    public async Task HistoricalReplayReadsBadCommChangesDuringTheRun()
     {
         var badComm = HistoricalPushTests.Impaired(CommClass.Healthy);
         var f = new Fixture(1, badComm: badComm, networkDelay: HistoricalDelay(5000));

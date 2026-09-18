@@ -14,7 +14,7 @@ public partial class MqttPushRunTests
     [Theory]
     [InlineData(true, false)]
     [InlineData(false, true)]
-    public async Task PushUsesOnlyPushImpairmentAndDelay(bool pullOffline, bool pushOffline)
+    public async Task OrdinaryPushUsesOnlyPushImpairmentAndDelay(bool pullOffline, bool pushOffline)
     {
         var fixture = new Fixture(1);
         var store = new DirectionalStore();
@@ -36,10 +36,10 @@ public partial class MqttPushRunTests
             badComm: badComm, networkDelay: delay);
 
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        await using var run = await push.OpenMqttRunAsync(fixture.Request, timeout.Token);
-        var result = await run.SendLiveAsync();
-        Assert.Equal(pushOffline ? 0 : 1, result.MetersSent);
-        Assert.Equal(pushOffline ? 1 : 0, result.MetersSkipped);
+        var result = await push.PushBatchAsync(fixture.Batch.Id, cancellationToken: timeout.Token,
+            pushSetupLogicalName: MqttPushProfiles.CustomDaily);
+        Assert.Equal(pushOffline ? 0 : 1, result.Sent);
+        Assert.Equal(pushOffline ? 1 : 0, result.Skipped);
         Assert.Equal(pushOffline ? 0 : 1, fixture.Publisher.Messages.Count);
     }
 
