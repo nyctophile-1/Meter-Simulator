@@ -1,0 +1,68 @@
+@using ManyMeterSimulator.Brain
+@using ManyMeterSimulator.Networking.Nic
+@inject HistoricalPushService History
+@inject MeterRegistry Meters
+@inject ISnackbar Snackbar
+@implements IDisposable
+
+<MudPaper Outlined="true" Class="pa-5">
+    <MudText Typo="Typo.h6">N-day historical push</MudText>
+    <MudText Class="mb-4">Continuously send instantaneous and block-load records for selected batches from N days ago to the start time of this run, then stop. BadComm and non-comm meters leave gaps. Block load follows each batch's capture interval.</MudText>
+    <MudGrid>
+        <MudItem xs="12">
+            <MudSelect T="int" Label="Running batches" MultiSelection="true" @bind-SelectedValues="_batches" Disabled="@Locked" Variant="Variant.Outlined">
+                @foreach (var batch in Meters.Batches.Where(b => b.Status == BatchStatus.Running))
+                {
+                    <MudSelectItem T="int" Value="@batch.Id">@batch.Name (@batch.Count.ToString("N0") meters · @batch.NicType)</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="4"><MudNumericField T="int" Label="Last N days" @bind-Value="_days" Min="1" Max="3650" Disabled="@Locked" Variant="Variant.Outlined" /></MudItem>
+        <MudItem xs="12" sm="4"><MudNumericField T="int" Label="Instantaneous interval (minutes)" @bind-Value="_interval" Min="1" Max="1440" Disabled="@Locked" Variant="Variant.Outlined" /></MudItem>
+        <MudItem xs="12" sm="4"><MudNumericField T="int" Label="Concurrent meters" @bind-Value="_concurrency" Min="1" Max="1024" Disabled="@Locked" Variant="Variant.Outlined" /></MudItem>
+        <MudItem xs="12" sm="4"><MudNumericField T="int" Label="Record attempts per second" @bind-Value="_rate" Min="100" Max="300000" Disabled="@Locked" Variant="Variant.Outlined" /></MudItem>
+        <MudItem xs="12" sm="4"><MudNumericField T="int" Label="MQTT publishers per broker/transport" @bind-Value="_publishers" Min="1" Max="256" Disabled="@Locked" Variant="Variant.Outlined" /></MudItem>
+        <MudItem xs="12" sm="4"><MudSelect T="int" Label="MQTT QoS" @bind-Value="_qos" Disabled="@Locked" Variant="Variant.Outlined">
+            <MudSelectItem T="int" Value="0">0</MudSelectItem><MudSelectItem T="int" Value="1">1</MudSelectItem><MudSelectItem T="int" Value="2">2</MudSelectItem>
+        </MudSelect></MudItem>
+    </MudGrid>
+    <MudText Typo="Typo.caption" Class="my-3">Rate limits record attempts across both profiles and all batches, including BadComm skips. DLMS replays template samples; custom Wirepas uses its timestamp-based readings. This run is not resumed after an app restart.</MudText>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(Locked || !_batches.Any())" OnClick="Start">Start historical push</MudButton>
+    <MudButton Class="ml-2" Variant="Variant.Outlined" Disabled="@(!History.State.IsActive)" OnClick="History.StopAsync">Stop</MudButton>
+    <MudText Class="mt-4">@History.State.Phase</MudText>
+    @if (History.State.Progress is { } p)
+    {
+        <MudText>UTC: @p.From.ToString("yyyy-MM-dd HH:mm:ss") → @p.To.ToString("yyyy-MM-dd HH:mm:ss")</MudText>
+        <MudProgressLinear Class="my-3" Value="@(p.Total > 0 ? 100.0 * p.Processed / p.Total : 0)" />
+        <MudSimpleTable Dense="true"><thead><tr><th>Processed / total</th><th>Records sent</th><th>BadComm skipped</th><th>Failed</th><th>Messages sent</th><th>Records/sec</th></tr></thead>
+            <tbody><tr><td>@p.Processed.ToString("N0") / @p.Total.ToString("N0")</td><td>@p.Sent.ToString("N0")</td><td>@p.Skipped.ToString("N0")</td><td>@p.Failed.ToString("N0")</td><td>@p.MessagesSent.ToString("N0")</td><td>@p.RecordsPerSecond.ToString("N1")</td></tr></tbody></MudSimpleTable>
+        <MudText Typo="Typo.caption">Reading time (UTC): @p.ReadingTime?.ToString("yyyy-MM-dd HH:mm:ss") · elapsed @p.Elapsed.ToString(@"hh\:mm\:ss"). Sent means transport completion; verify ingestion in HES.</MudText>
+        @if (p.Error is { } deliveryError) { <MudAlert Severity="Severity.Warning">@deliveryError</MudAlert> }
+    }
+    @if (History.State.Error is { } error) { <MudAlert Severity="Severity.Error">@error</MudAlert> }
+</MudPaper>
+
+@code {
+    [Parameter] public bool Disabled { get; set; }
+    private bool Locked => Disabled || History.State.IsActive;
+    private IReadOnlyCollection<int> _batches = [];
+    private int _days = 7, _interval = 30, _concurrency = 64, _rate = 1000, _publishers = 8, _qos = 1;
+    private System.Threading.Timer? _timer;
+    protected override void OnInitialized()
+    {
+        if (History.State.Request is { } r)
+        {
+            _batches = r.BatchIds.ToArray(); _days = r.Days; _interval = r.InstantaneousIntervalMinutes;
+            _concurrency = r.MaxConcurrency; _rate = r.RecordsPerSecond; _publishers = r.PublisherCount; _qos = r.Qos;
+        }
+        _timer = new(_ => _ = InvokeAsync(StateHasChanged), null, 500, 500);
+    }
+    private void Start()
+    {
+        if (Locked) return;
+        try { History.Start(new() { BatchIds = _batches.ToArray(), Days = _days, InstantaneousIntervalMinutes = _interval,
+            MaxConcurrency = _concurrency, RecordsPerSecond = _rate, PublisherCount = _publishers, Qos = _qos }); }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+    }
+    public void Dispose() => _timer?.Dispose();
+}

@@ -103,26 +103,35 @@ public sealed partial class CustomProfileCommand(MeterSessionManager sessions, H
         if (!fields.Any(f => f.DataType == "DateTime"))
             throw new NotSupportedException("A gap-reading layout must contain a timestamp to identify each selected block.");
         var selected = new List<byte[]>();
-        // Generate the complete logical window, then retain only the slots whose bits are set.
-        // No DLMS association is opened: these are synthetic, metadata-defined rows.
         for (int bit = 0; bit < 32; bit++)
         {
             token.ThrowIfCancellationRequested();
+            if (!selection.Includes(bit)) continue;
             var timestamp = selection.Timestamp(bit);
             var values = fields.Select(field => CustomProfileDataGenerator.Value(field, inbound.Meter.Index,
                 timestamp, "BLOCK", 0, selection.PeriodMinutes)).ToArray();
-            if (!selection.Includes(bit)) continue;
             using var row = new MemoryStream();
             for (int column = 0; column < fields.Count; column++)
                 row.Write(EncodeField(fields[column], values[column], new GXDLMSData(), _options.ResponseTimestampOffsetMinutes));
             selected.Add(row.ToArray());
         }
-        using var body = new MemoryStream();
-        body.Write(Header(inbound, 19, checked((byte)selected.Count)));
-        // Generic HES ParseBlock counts frames down, so reverse wire rows for chronological consumption.
-        foreach (byte[] row in selected.AsEnumerable().Reverse()) body.Write(row);
-        var packets = Frame(inbound, body.ToArray());
-        if (packets.Sum(p => p.Length) > _options.MaxResponseBytes) throw new InvalidOperationException("GR response byte limit exceeded.");
+        int rowsPerResponse = inbound.Protocol.WireProfile == CustomPullWireProfile.NewHeader ? 15 : 255;
+        var packets = new List<byte[]>();
+        int bytes = 0;
+        foreach (var rows in selected.Chunk(rowsPerResponse))
+        {
+            token.ThrowIfCancellationRequested();
+            using var body = new MemoryStream();
+            body.Write(Header(inbound, 19, checked((byte)rows.Length)));
+            // Each complete response has its own row count; HES ParseBlock visits its last row first.
+            foreach (byte[] row in rows.Reverse()) body.Write(row);
+            foreach (var packet in Frame(inbound, body.ToArray()))
+            {
+                bytes = checked(bytes + packet.Length);
+                if (bytes > _options.MaxResponseBytes) throw new InvalidOperationException("GR response byte limit exceeded.");
+                packets.Add(packet);
+            }
+        }
         return packets;
     }
 

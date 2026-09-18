@@ -18,6 +18,7 @@ public class GapBlockCommandTests
     [Theory]
     [InlineData(15, 83)]
     [InlineData(30, 167)]
+    [InlineData(60, 333)]
     public void Template93_TwoSelectedRowsDecodeInHesOrder(int period, int energy)
     {
         var (command, inbound, sessions, _) = Setup(3, period);
@@ -43,23 +44,129 @@ public class GapBlockCommandTests
     [Fact]
     public void SparseBitmapIncludesBit31WithoutFillingGaps()
     {
-        var (command, inbound, _, _) = Setup(0x80000001, 30);
+        var (command, inbound, _, _) = Setup(0x80000001, 15);
         var packet = Assert.Single(command.Execute(inbound, CancellationToken.None));
         Assert.Equal(59, packet.Length);
-        Assert.Equal(From.AddMinutes(31 * 30), DateTimeOffset.FromUnixTimeSeconds(BinaryPrimitives.ReadUInt32LittleEndian(packet.AsSpan(23))).AddMinutes(-330));
+        Assert.Equal(From.AddMinutes(31 * 15), DateTimeOffset.FromUnixTimeSeconds(BinaryPrimitives.ReadUInt32LittleEndian(packet.AsSpan(23))).AddMinutes(-330));
         Assert.Equal(From, DateTimeOffset.FromUnixTimeSeconds(BinaryPrimitives.ReadUInt32LittleEndian(packet.AsSpan(41))).AddMinutes(-330));
     }
 
     [Fact]
-    public void EmptyMaskReturnsNoDataAndOversizedMaskFailsBeforePublishing()
+    public void EmptyMaskReturnsNoData()
     {
         var (command, inbound, _, _) = Setup(0);
         var packet = Assert.Single(command.Execute(inbound, CancellationToken.None));
         Assert.Equal(23, packet.Length);
         Assert.Equal(100, packet[12]);
         Assert.Equal(0, packet[13]);
-        Assert.Throws<NotSupportedException>(() => command.Execute(inbound with { Intent = inbound.Intent with { ValueTo = 0xffff } }, CancellationToken.None));
-        Assert.Equal(23 + 15 * 18, Assert.Single(command.Execute(inbound with { Intent = inbound.Intent with { ValueTo = 0x7fff } }, CancellationToken.None)).Length);
+    }
+
+    [Theory]
+    [InlineData(15, 32, 3)]
+    [InlineData(30, 16, 2)]
+    [InlineData(60, 8, 1)]
+    public void AllOnesOnlyReturnsSlotsWithinEightHours(int period, int expectedRows, int expectedPackets)
+    {
+        var (command, inbound, _, options) = Setup(uint.MaxValue, period);
+        options.MaxProfileRows = expectedRows;
+        options.MaxResponseBytes = expectedRows * 18 + expectedPackets * 23;
+        var packets = command.Execute(inbound, CancellationToken.None);
+        Assert.Equal(expectedPackets, packets.Count);
+        var decoded = DecodeUtcRows(packets);
+        Assert.Equal(expectedRows, decoded.Length);
+        Assert.Equal(Enumerable.Range(0, expectedRows).Select(bit => From.AddMinutes(bit * period)), decoded);
+        Assert.All(decoded, timestamp => Assert.True(timestamp < From.AddHours(8)));
+    }
+
+    [Theory]
+    [InlineData(30, 0xffff0000U)]
+    [InlineData(60, 0xffffff00U)]
+    public void OnlyTrailingBitsSetReturnsNoData(int period, uint mask)
+    {
+        var (command, inbound, _, options) = Setup(mask, period);
+        options.MaxProfileRows = 0;
+        var packet = Assert.Single(command.Execute(inbound, CancellationToken.None));
+        Assert.Equal(23, packet.Length);
+        Assert.Equal(100, packet[12]);
+        Assert.Equal(0, packet[13]);
+    }
+
+    [Theory]
+    [InlineData(30, 0xffff8005U, 15)]
+    [InlineData(60, 0xffffff85U, 7)]
+    public void TrailingBitsDoNotShiftSparseSelections(int period, uint mask, int lastBit)
+    {
+        var (command, inbound, _, options) = Setup(mask, period);
+        options.MaxProfileRows = 3;
+        var decoded = DecodeUtcRows(command.Execute(inbound, CancellationToken.None));
+        Assert.Equal(new[] { From, From.AddMinutes(2 * period), From.AddMinutes(lastBit * period) }, decoded);
+    }
+
+    private static DateTimeOffset[] DecodeUtcRows(IReadOnlyList<byte[]> packets) => packets.SelectMany(packet =>
+        Enumerable.Range(0, packet[13] & 0x0f).Reverse().Select(row =>
+            DateTimeOffset.FromUnixTimeSeconds(BinaryPrimitives.ReadUInt32LittleEndian(packet.AsSpan(23 + row * 18))).AddMinutes(-330))).ToArray();
+
+    [Theory]
+    [InlineData(0x7fffU, 15, 1)]
+    [InlineData(0xffffU, 16, 2)]
+    [InlineData(0x7fffffffU, 31, 3)]
+    [InlineData(0xffffffffU, 32, 3)]
+    [InlineData(0xaaaaaaaaU, 16, 2)]
+    public void LargeMasksUseCompleteResponsesWithAllSelectedTimestamps(uint mask, int count, int responseCount)
+    {
+        var (command, inbound, _, _) = Setup(mask);
+        var requestedFrom = new DateTimeOffset(2026, 9, 15, 18, 45, 0, TimeSpan.Zero);
+        inbound = inbound with { Intent = inbound.Intent with { ValueFrom = checked((uint)requestedFrom.AddMinutes(330).ToUnixTimeSeconds()) } };
+        var packets = command.Execute(inbound, CancellationToken.None);
+        Assert.Equal(responseCount, packets.Count);
+        var decoded = new List<DateTimeOffset>();
+        foreach (var packet in packets)
+        {
+            Assert.Equal(packet.Length, BinaryPrimitives.ReadUInt16LittleEndian(packet.AsSpan(4)));
+            Assert.Equal(1, packet[6]);
+            Assert.Equal(1, packet[7]);
+            Assert.Equal(inbound.Request.FrameId, BinaryPrimitives.ReadUInt32LittleEndian(packet.AsSpan(8)));
+            Assert.Equal(19, packet[12]);
+            int rows = packet[13] & 0x0f;
+            Assert.InRange(rows, 1, 15);
+            Assert.Equal(0, packet[13] >> 4);
+            Assert.Equal(23 + rows * 18, packet.Length);
+            for (int row = rows - 1; row >= 0; row--)
+                decoded.Add(DateTimeOffset.FromUnixTimeSeconds(BinaryPrimitives.ReadUInt32LittleEndian(packet.AsSpan(23 + row * 18))).AddMinutes(-330));
+        }
+        var expected = Enumerable.Range(0, 32).Where(bit => (mask & (1U << bit)) != 0)
+            .Select(bit => requestedFrom.AddMinutes(bit * 15)).ToArray();
+        Assert.Equal(count, decoded.Count);
+        Assert.Equal(expected, decoded);
+    }
+
+    [Fact]
+    public void ResponseByteLimitIncludesEveryHeader()
+    {
+        var (command, inbound, _, options) = Setup(uint.MaxValue);
+        options.MaxResponseBytes = 32 * 18 + 3 * 23;
+        Assert.Equal(3, command.Execute(inbound, CancellationToken.None).Count);
+        options.MaxResponseBytes--;
+        Assert.Throws<InvalidOperationException>(() => command.Execute(inbound, CancellationToken.None));
+    }
+
+    [Theory]
+    [InlineData("11111111111111111111111111111111", "10:45 11:00 11:15 11:30 11:45 12:00 12:15 12:30 12:45 13:00 13:15 13:30 13:45 14:00 14:15 14:30 14:45 15:00 15:15 15:30 15:45 16:00 16:15 16:30 16:45 17:00 17:15 17:30 17:45 18:00 18:15 18:30")]
+    [InlineData("11111110001111111111111111111111", "10:45 11:00 11:15 11:30 11:45 12:00 12:15 13:15 13:30 13:45 14:00 14:15 14:30 14:45 15:00 15:15 15:30 15:45 16:00 16:15 16:30 16:45 17:00 17:15 17:30 17:45 18:00 18:15 18:30")]
+    [InlineData("00111111111111001111111111011111", "11:15 11:30 11:45 12:00 12:15 12:30 12:45 13:00 13:15 13:30 13:45 14:00 14:45 15:00 15:15 15:30 15:45 16:00 16:15 16:30 16:45 17:00 17:30 17:45 18:00 18:15 18:30")]
+    public void ReportedRfCommandsReturnExactUtcSlots(string bits, string expectedTimes)
+    {
+        uint mask = 0;
+        for (int bit = 0; bit < bits.Length; bit++)
+            if (bits[bit] == '1') mask |= 1U << bit;
+        var (command, inbound, _, _) = Setup(mask);
+        var requestedFrom = new DateTimeOffset(2026, 9, 16, 10, 45, 0, TimeSpan.Zero);
+        inbound = inbound with { Intent = inbound.Intent with { ValueFrom = checked((uint)requestedFrom.AddMinutes(330).ToUnixTimeSeconds()) } };
+        var decoded = command.Execute(inbound, CancellationToken.None).SelectMany(packet =>
+            Enumerable.Range(0, packet[13] & 0x0f).Reverse().Select(row =>
+                DateTimeOffset.FromUnixTimeSeconds(BinaryPrimitives.ReadUInt32LittleEndian(packet.AsSpan(23 + row * 18))).AddMinutes(-330))).ToArray();
+        Assert.All(decoded, rtc => Assert.Equal(requestedFrom.Date, rtc.Date));
+        Assert.Equal(expectedTimes.Split(' '), decoded.Select(rtc => rtc.ToString("HH:mm")));
     }
 
     [Fact]

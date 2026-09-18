@@ -14,6 +14,7 @@
 @inject TemplateRegistry Templates
 @inject NetworkRegistry Network
 @inject PushCoordinator Push
+@inject HistoricalPushService History
 @inject PushScheduleService Schedule
 @inject ConfigBundleService ConfigBundles
 @inject TestPlanRegistry TestPlans
@@ -608,10 +609,13 @@
             <MqttPublishRateControl Value="active.Rate" ValueChanged="@(rate => SetTaskMqttRate(active.TaskId, rate))" />
         </MudPaper>
     }
-    <MqttStressPanel Disabled="@(_testRunActive || _scheduleState.IsRunning || _pushingBatchIds.Count > 0 || TcpStress.State.IsActive)" />
+    <MqttStressPanel Disabled="@(_testRunActive || _scheduleState.IsRunning || _pushingBatchIds.Count > 0 || TcpStress.State.IsActive || History.State.IsActive)" />
 </MudTabPanel>
 <MudTabPanel Text="TCP stress">
-    <TcpStressPanel Disabled="@(_testRunActive || _scheduleState.IsRunning || _pushingBatchIds.Count > 0 || MqttStress.State.IsActive)" />
+    <TcpStressPanel Disabled="@(_testRunActive || _scheduleState.IsRunning || _pushingBatchIds.Count > 0 || MqttStress.State.IsActive || History.State.IsActive)" />
+</MudTabPanel>
+<MudTabPanel Text="Historical push">
+    <HistoricalPushPanel Disabled="@(_testRunActive || _scheduleState.IsRunning || _pushingBatchIds.Count > 0 || MqttStress.State.IsActive || TcpStress.State.IsActive)" />
 </MudTabPanel>
 </MudTabs>
 
@@ -1167,7 +1171,7 @@
         _taskBatches = request.BatchIds.ToArray();
         _taskMetersPerBatch = request.MaximumMetersPerBatch;
     }
-    private bool AnyStressActive => MqttStress.State.IsActive || TcpStress.State.IsActive;
+    private bool AnyStressActive => MqttStress.State.IsActive || TcpStress.State.IsActive || History.State.IsActive;
     private IReadOnlyList<MeterBatch> _batches = Array.Empty<MeterBatch>();
     private IReadOnlyList<TestPlan> _plans = Array.Empty<TestPlan>();
     private IReadOnlyList<TestRunReport> _reports = Array.Empty<TestRunReport>();
@@ -1407,8 +1411,8 @@
             }
             PushBatchResult r = await Push.PushBatchAsync(batchId, pushSetupLogicalName: _pushProfileFilter);
             if (!r.Ok) Snackbar.Add(r.Error ?? "Push failed.", Severity.Error);
-            else if (r.Failed == 0) Snackbar.Add($"Pushed {r.Sent}/{r.Total}.", Severity.Success);
-            else Snackbar.Add($"Pushed {r.Sent}/{r.Total}; {r.Failed} failed.", Severity.Warning);
+            else if (r.Failed == 0 && r.Skipped == 0) Snackbar.Add($"Pushed {r.Sent}/{r.Total}.", Severity.Success);
+            else Snackbar.Add($"Pushed {r.Sent}/{r.Total}; {r.Skipped} skipped by BadComm; {r.Failed} failed.", Severity.Warning);
         }
         catch (Exception ex) { Snackbar.Add($"Error: {ex.Message}", Severity.Error); }
         finally { _pushingBatchIds.Remove(batchId); }

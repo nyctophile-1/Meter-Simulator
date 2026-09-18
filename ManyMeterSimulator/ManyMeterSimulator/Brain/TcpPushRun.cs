@@ -48,7 +48,9 @@ public sealed record TcpLoopSummary(long CompletedCycles, TcpPushSummary Totals)
 internal sealed record TcpPushSource(long Count, Func<IEnumerable<MeterRef>> Meters,
     Func<MeterRef, byte[][]> Build,
     Func<MeterRef, byte[][], CancellationToken, Task<PushDeliveryResult>> Send,
-    Func<bool> IsCurrent);
+    Func<bool> IsCurrent,
+    Func<MeterRef, CancellationToken, Task<bool>>? Allow = null,
+    Func<MeterRef, DateTimeOffset?, byte[][]>? BuildAt = null);
 
 public sealed class TcpPushRun : IAsyncDisposable
 {
@@ -177,7 +179,9 @@ public sealed class TcpPushRun : IAsyncDisposable
                             totals.MessagesFailed + done.MessagesFailed, clock.Elapsed, totals.Error ?? done.Error);
                     LoopResult = new(cycles, totals with { SendTime = clock.Elapsed });
                 }
-                if (pass.MessagesSent == 0) throw new InvalidOperationException(pass.Error ?? "No successful TCP writes. Loop stopped.");
+                if (pass.MessagesSent == 0 && (pass.MetersFailed > 0 || pass.MetersSkipped == 0))
+                    throw new InvalidOperationException(pass.Error ?? "No successful TCP writes. Loop stopped.");
+                if (pass.MessagesSent == 0 && options.CyclePauseSeconds == 0) await Task.Delay(100, duration.Token);
                 if (options.CyclePauseSeconds > 0) await Task.Delay(TimeSpan.FromSeconds(options.CyclePauseSeconds), duration.Token);
             }
         }
@@ -209,6 +213,8 @@ public sealed class TcpPushRun : IAsyncDisposable
                     try
                     {
                         ct.ThrowIfCancellationRequested();
+                        if (item.Source.Allow is { } allow && !await allow(item.Meter, ct))
+                        { Interlocked.Increment(ref skipped); _metrics?.RecordPushSkipped(NicType.Tcp4G); return; }
                         byte[][] payloads = item.Payloads ?? item.Source.Build(item.Meter);
                         if (payloads.Length == 0) { Interlocked.Increment(ref skipped); _metrics?.RecordPushSkipped(NicType.Tcp4G); return; }
                         var result = await item.Source.Send(item.Meter, payloads, ct);
@@ -217,7 +223,7 @@ public sealed class TcpPushRun : IAsyncDisposable
                         _metrics?.RecordPushPayloads(NicType.Tcp4G, result.Sent, result.Failed);
                         _metrics?.RecordPushMeter(NicType.Tcp4G, result.Failed == 0, Stopwatch.GetElapsedTime(started));
                         if (result.Failed == 0) Interlocked.Increment(ref sent);
-                        else { Interlocked.Increment(ref failed); Interlocked.CompareExchange(ref error, "TCP connect/write failed; check target connectivity and source routing.", null); }
+                        else { Interlocked.Increment(ref failed); Interlocked.CompareExchange(ref error, result.Error ?? "TCP connect/write failed.", null); }
                     }
                     catch (PushCanceledException ex)
                     {

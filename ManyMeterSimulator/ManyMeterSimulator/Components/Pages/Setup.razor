@@ -92,7 +92,7 @@
                            Label="Custom push header" Disabled="@(!NeedsHesTemplateId(SelectedNic))"
                            HelperText="Old = HES ten-byte header; New = HES twelve-byte magic header"
                            Variant="Variant.Outlined" Margin="Margin.Dense">
-                    <MudSelectItem T="CustomPushHeaderKind?" Value="@(null)">(DLMS only / decide later)</MudSelectItem>
+                    <MudSelectItem T="CustomPushHeaderKind?" Value="@(null)">(Use HES template header)</MudSelectItem>
                     <MudSelectItem T="CustomPushHeaderKind?" Value="@CustomPushHeaderKind.Old">Old custom header</MudSelectItem>
                     <MudSelectItem T="CustomPushHeaderKind?" Value="@CustomPushHeaderKind.New">New custom header</MudSelectItem>
                 </MudSelect>

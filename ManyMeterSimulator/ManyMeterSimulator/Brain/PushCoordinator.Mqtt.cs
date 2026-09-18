@@ -27,7 +27,7 @@ public sealed partial class PushCoordinator
             _logger.LogInformation("MQTT push batch {BatchId}: {Sent} meters sent, {Failed} failed, {Skipped} skipped; " +
                 "{Messages} publishes completed, {Rejected} failed/unconfirmed. {Error}", batch.Id,
                 result.MetersSent, result.MetersFailed, result.MetersSkipped, result.MessagesSent, result.MessagesFailed, result.Error);
-            return new PushBatchResult(true, (int)run.TotalMeters, (int)result.MetersSent, (int)result.MetersFailed, result.Error);
+            return new PushBatchResult(true, (int)run.TotalMeters, (int)result.MetersSent, (int)result.MetersFailed, result.Error, (int)result.MetersSkipped);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (Exception ex) { return PushBatchResult.ForError(ex.Message); }
@@ -73,19 +73,16 @@ public sealed partial class PushCoordinator
         if (!_mqtt.HasClient(binding))
             throw new InvalidOperationException($"Broker '{endpoint.Key}' has no live client for {binding.Transport}. Start the batch first.");
 
-        string? selection = request.PushSetupLogicalName == "custom:93:daily" ? MqttPushProfiles.CustomDaily : request.PushSetupLogicalName;
-        if (selection is null && batch.NicType == NicType.MqttWirepas && batch.HesTemplateId is int declaredTemplate
-            && !_customEncoder.HasTemplate(declaredTemplate))
-            throw new InvalidOperationException($"HES template {declaredTemplate} is missing; select DLMS explicitly or configure its push metadata.");
-        bool custom = selection?.StartsWith("custom:", StringComparison.Ordinal) == true ||
-            selection is null && batch.NicType == NicType.MqttWirepas && _customEncoder.IsCustomTemplate(batch.HesTemplateId);
+        string? selection = MqttPushProfiles.ForNic(request.PushSetupLogicalName, batch.NicType);
+        bool custom = batch.NicType == NicType.MqttWirepas;
         IReadOnlyList<CustomPushProfile> customProfiles = [];
         INicCodec? codec = null;
         if (custom)
         {
-            if (batch.NicType != NicType.MqttWirepas || batch.CustomPushHeaderKind != CustomPushHeaderKind.New)
-                throw new InvalidOperationException("Custom push requires Wirepas with the configured new header.");
-            customProfiles = _customEncoder.GetProfiles(batch.HesTemplateId ?? throw new InvalidOperationException("Custom push requires a HES template mapping."));
+            int templateId = batch.HesTemplateId ?? throw new InvalidOperationException($"Batch '{batch.Name}': Wirepas custom push requires a HES template mapping.");
+            if (batch.CustomPushHeaderKind is not (null or CustomPushHeaderKind.New))
+                throw new InvalidOperationException($"Batch '{batch.Name}' selects an unsupported custom header; the push encoder supports the 12-byte HES header.");
+            customProfiles = _customEncoder.GetProfiles(templateId);
             if (selection is not null)
                 customProfiles = [customProfiles.SingleOrDefault(p => p.Key == selection)
                     ?? throw new InvalidOperationException($"Batch '{batch.Name}' does not support {selection}.")];
@@ -104,8 +101,8 @@ public sealed partial class PushCoordinator
             var session = _sessions.GetOrCreate(new MeterRef(batch.StartIndex, batch.NicType));
             IReadOnlyList<string> profiles;
             lock (session) profiles = session.GetPushSetupLogicalNames();
-            if (profiles.Count == 0 || request.PushSetupLogicalName is { } selected && !profiles.Contains(selected))
-                throw new InvalidOperationException($"Batch '{batch.Name}' has no non-empty push setup for {MqttPushProfiles.Label(request.PushSetupLogicalName)}.");
+            if (profiles.Count == 0 || selection is { } selected && !profiles.Contains(selected))
+                throw new InvalidOperationException($"Batch '{batch.Name}' cannot build {MqttPushProfiles.Label(selection)} from template '{batch.TemplateName}': the push setup or required profile data is missing.");
         }
 
         long count = Math.Min(batch.Count, request.MaximumMetersPerBatch ?? int.MaxValue);
@@ -115,7 +112,7 @@ public sealed partial class PushCoordinator
         long startIndex = batch.StartIndex;
         int? hesTemplate = batch.HesTemplateId;
         var header = batch.CustomPushHeaderKind;
-        return new MqttPushSource(batch.Id, count, binding, Meters, Build, IsCurrent);
+        return new MqttPushSource(batch.Id, count, binding, Meters, Build, IsCurrent, AllowPushAsync, BuildAt);
 
         IEnumerable<MeterRef> Meters()
         {
@@ -136,6 +133,9 @@ public sealed partial class PushCoordinator
         }
 
         IReadOnlyList<NicPublish> Build(MeterRef meter)
+            => BuildAt(meter, null);
+
+        IReadOnlyList<NicPublish> BuildAt(MeterRef meter, DateTimeOffset? readingTime)
         {
             if (custom)
             {
@@ -146,19 +146,23 @@ public sealed partial class PushCoordinator
                     var eswSession = _sessions.GetOrCreate(meter);
                     lock (eswSession) esw = eswSession.GetEventStatusWord();
                 }
-                var timestamp = DateTimeOffset.UtcNow;
+                var now = readingTime ?? _clock.GetUtcNow();
                 foreach (var profile in customProfiles)
+                {
+                    int period = profile.Kind == "BLOCK" ? _customPullOptions.GetBlockPeriodMinutes(batch.HesTemplateId!.Value) : 15;
+                    var timestamp = profile.Kind == "BLOCK"
+                        ? DateTimeOffset.FromUnixTimeSeconds(now.ToUnixTimeSeconds() / (period * 60) * (period * 60))
+                        : now;
                     packets.Add(_customEncoder.Encode(batch.HesTemplateId!.Value, profile.Key, meter.Index,
                         unchecked((uint)Random.Shared.NextInt64()), timestamp,
-                        field => CustomProfileDataGenerator.Value(field, meter.Index, timestamp, profile.Kind, profile.EventId), esw));
+                        field => CustomProfileDataGenerator.Value(field, meter.Index, timestamp, profile.Kind, profile.EventId, period), esw));
+                }
                 return packets.Select(packet => WirepasCustomPushEnvelope.Create(_customPushOptions.WirepasGatewayId,
                     _customPushOptions.WirepasSinkId, meter.NodeId, _customPushOptions.WirepasEndpoint,
                     packet)).ToArray();
             }
 
-            var session = _sessions.GetOrCreate(meter);
-            byte[][] payloads;
-            lock (session) payloads = session.BuildPushPayloads(_options.UseCiphering, request.PushSetupLogicalName).ToArray();
+            byte[][] payloads = BuildDlms(meter, _options.UseCiphering, selection, readingTime);
             // Codec instances can carry frame state. Only encoding is serialized, never network I/O.
             lock (codec!) return payloads.SelectMany(p => codec.EncodePush(meter.NodeId, p)).ToArray();
         }
@@ -167,7 +171,7 @@ public sealed partial class PushCoordinator
         {
             var current = _registry.Batches.FirstOrDefault(b => b.Id == batchId);
             var broker = _network.Broker(endpoint.Key);
-            return current is not null && current.EnvironmentKey == environment && current.Status == status
+            return ReferenceEquals(current, batch) && current!.EnvironmentKey == environment && current.Status == status
                 && current.TemplateName == template && current.StartIndex == startIndex && current.Count == batch.Count
                 && current.HesTemplateId == hesTemplate && current.CustomPushHeaderKind == header
                 && broker is { Enabled: true } && broker.Host == endpoint.Host && broker.Port == endpoint.Port

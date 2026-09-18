@@ -5,6 +5,7 @@ using ManyMeterSimulator.Networking.CustomPush;
 using ManyMeterSimulator.Networking.Nic;
 using ManyMeterSimulator.Networking.Push;
 using ManyMeterSimulator.Networking.Registry;
+using ManyMeterSimulator.Networking.SmartNic;
 using ManyMeterSimulator.Provisioning;
 using MeterSimulator.DLMS;
 using Microsoft.Extensions.Options;
@@ -41,7 +42,11 @@ public sealed partial class PushCoordinator
         IOptions<CustomPushOptions> customPushOptions,
         SimulatorMetrics metrics,
         ILogger<PushCoordinator> logger,
-        ManyMeterSimulator.Networking.CustomPush.CustomPushEncoder? customEncoder = null)
+        ManyMeterSimulator.Networking.CustomPush.CustomPushEncoder? customEncoder = null,
+        IOptions<CustomPullOptions>? customPullOptions = null,
+        TimeProvider? clock = null,
+        ManyMeterSimulator.BadComm.BadCommSettings? badComm = null,
+        ManyMeterSimulator.Networking.NetworkDelaySettings? networkDelay = null)
     {
         _registry = registry;
         _sessions = sessions;
@@ -54,9 +59,15 @@ public sealed partial class PushCoordinator
         _metrics = metrics;
         _logger = logger;
         _customEncoder = customEncoder ?? new(new ManyMeterSimulator.Networking.SmartNic.HesDataModel(), customPushOptions);
+        _customPullOptions = customPullOptions?.Value ?? new();
+        _clock = clock ?? TimeProvider.System;
+        _badComm = badComm;
+        _networkDelay = networkDelay;
     }
 
     private readonly ManyMeterSimulator.Networking.CustomPush.CustomPushEncoder _customEncoder;
+    private readonly CustomPullOptions _customPullOptions;
+    private readonly TimeProvider _clock;
 
     /// <summary>The port applied to a bare-IP destination, and the ciphering/default the UI shows.</summary>
     public PushOptions Options => _options;
@@ -122,23 +133,26 @@ public sealed partial class PushCoordinator
 
         IReadOnlyList<(MeterRef Meter, DLMSServerSession Session)> meters = await _sessions.MaterializeBatchAsync(batch, cancellationToken: cancellationToken, maximumMeters: maximumMeters, selectRandomly: selectRandomly);
 
-        int metersSent = 0, metersFailed = 0, payloadsSent = 0, payloadsFailed = 0;
+        int metersSent = 0, metersFailed = 0, metersSkipped = 0, payloadsSent = 0, payloadsFailed = 0;
+        string? pushError = null;
+        string? selection = MqttPushProfiles.ForNic(pushSetupLogicalName, batch.NicType);
 
         await ProcessInWavesAsync(meters, batch, async pair =>
         {
             long startedTicks = Stopwatch.GetTimestamp();
             try
             {
-                byte[][] payloads;
-                lock (pair.Session)
+                if (!await AllowPushAsync(pair.Meter, cancellationToken))
                 {
-                    payloads = pair.Session.BuildPushPayloads(_options.UseCiphering, pushSetupLogicalName).ToArray();
+                    Interlocked.Increment(ref metersSkipped);
+                    _metrics.RecordPushSkipped(batch.NicType);
+                    return;
                 }
+                byte[][] payloads = BuildDlms(pair.Meter, _options.UseCiphering, selection);
 
                 if (payloads.Length == 0)
                 {
-                    _metrics.RecordPushSkipped(batch.NicType);
-                    return;   // meter has no sendable PushSetup — not counted either way
+                    throw new InvalidOperationException($"Batch '{batch.Name}' cannot build {MqttPushProfiles.Label(selection)} from template '{batch.TemplateName}'.");
                 }
 
                 PushDeliveryResult result = await _tcpPush.SendAsync(
@@ -157,6 +171,7 @@ public sealed partial class PushCoordinator
                 else if (result.Sent > 0 || result.Failed > 0)
                 {
                     // Fully or partially failed — count the meter as failed.
+                    Interlocked.CompareExchange(ref pushError, result.Error, null);
                     Interlocked.Increment(ref metersFailed);
                     _metrics.RecordPushMeter(batch.NicType, ok: false, Stopwatch.GetElapsedTime(startedTicks));
                 }
@@ -171,6 +186,7 @@ public sealed partial class PushCoordinator
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Push failed for meter {Meter}", pair.Meter);
+                Interlocked.CompareExchange(ref pushError, ex.Message, null);
                 Interlocked.Increment(ref metersFailed);
                 _metrics.RecordPushMeter(batch.NicType, ok: false, Stopwatch.GetElapsedTime(startedTicks));
             }
@@ -181,7 +197,7 @@ public sealed partial class PushCoordinator
             "— {RecordsSent} record(s) pushed, {RecordsFailed} failed",
             batch.Id, batch.Name, destination, metersSent, metersFailed, meters.Count, payloadsSent, payloadsFailed);
 
-        return new PushBatchResult(true, meters.Count, metersSent, metersFailed, null);
+        return new PushBatchResult(true, meters.Count, metersSent, metersFailed, pushError, metersSkipped);
     }
 
     /// <summary>
@@ -289,7 +305,7 @@ public interface IPushScheduler
 }
 
 /// <summary>Outcome of a "Send Push" click over a whole batch.</summary>
-public readonly record struct PushBatchResult(bool Ok, int Total, int Sent, int Failed, string? Error)
+public readonly record struct PushBatchResult(bool Ok, int Total, int Sent, int Failed, string? Error, int Skipped = 0)
 {
     public static PushBatchResult ForError(string error) => new(false, 0, 0, 0, error);
 }

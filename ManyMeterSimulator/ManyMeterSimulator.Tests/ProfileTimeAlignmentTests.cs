@@ -67,7 +67,15 @@ public class ProfileTimeAlignmentTests
     private static void AssertAligned(GXDLMSProfileGeneric profile, DateTimeOffset before)
     {
         var times = profile.Buffer.Select(row => Assert.IsType<GXDateTime>(row[0]).Value).ToArray();
-        Assert.InRange(times.Max(), before, DateTimeOffset.UtcNow.AddSeconds(2));
+        var after = DateTimeOffset.UtcNow.AddSeconds(2);
+        if (profile.LogicalName == "1.0.99.1.0.255")
+        {
+            long ticks = profile.CapturePeriod * TimeSpan.TicksPerSecond;
+            before = new DateTimeOffset(before.Ticks - before.Ticks % ticks, before.Offset);
+            after = new DateTimeOffset(after.Ticks - after.Ticks % ticks, after.Offset);
+            Assert.All(times, time => Assert.Equal(0, time.Ticks % ticks));
+        }
+        Assert.InRange(times.Max(), before, after);
         for (int i = 1; i < times.Length; i++)
             Assert.Equal(TimeSpan.FromMinutes(30), times[i - 1] - times[i]);
     }

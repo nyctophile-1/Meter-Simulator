@@ -153,7 +153,7 @@ public class CustomPushEncoderTests
         _ => throw new InvalidOperationException("Encoder must supply the event ID from its selected profile.")
     };
 
-    private static (HesDataModel Model, CustomPushOptions Options) Fixture(int id, string category)
+    internal static (HesDataModel Model, CustomPushOptions Options) Fixture(int id, string category)
     {
         var model = new HesDataModel();
         int profileId = 10000 + id;

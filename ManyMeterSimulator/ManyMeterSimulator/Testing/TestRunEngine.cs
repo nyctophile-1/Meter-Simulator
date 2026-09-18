@@ -7,6 +7,7 @@ using ManyMeterSimulator.Networking;
 using ManyMeterSimulator.Networking.Nic;
 using ManyMeterSimulator.Networking.Registry;
 using ManyMeterSimulator.Provisioning;
+using ManyMeterSimulator.Settings;
 
 namespace ManyMeterSimulator.Testing;
 
@@ -860,11 +861,15 @@ public sealed class TestRunEngine : IAsyncDisposable
 
     private OfficialBenchmarkProfile ApplyOfficialProfile()
     {
-        var profile = new OfficialBenchmarkProfile(_badComm.Snapshot(), _networkDelay.Current);
-        if (!_badComm.TryUpdate(new BadCommConfig { Enabled = false }, out string? error))
-            throw new InvalidOperationException($"Could not apply official benchmark profile: {error}");
-        if (!_networkDelay.TryUpdate(300, 500))
-            throw new InvalidOperationException("Could not apply the official 300-500 ms network delay.");
+        var profile = new OfficialBenchmarkProfile(_badComm.Snapshot(), _networkDelay.Current,
+            _badComm.Snapshot(CommunicationDirection.Push), _networkDelay.GetCurrent(CommunicationDirection.Push));
+        foreach (CommunicationDirection direction in Enum.GetValues<CommunicationDirection>())
+        {
+            if (!_badComm.TryUpdate(new BadCommConfig { Enabled = false }, out string? error, direction))
+                throw new InvalidOperationException($"Could not apply official benchmark profile: {error}");
+            if (!_networkDelay.TryUpdate(300, 500, direction))
+                throw new InvalidOperationException("Could not apply the official 300-500 ms network delay.");
+        }
         return profile;
     }
 
@@ -1013,12 +1018,15 @@ public sealed class TestRunEngine : IAsyncDisposable
         }
     }
 
-    private sealed record OfficialBenchmarkProfile(BadCommConfig BadComm, NetworkDelaySettings.Bounds Delay)
+    private sealed record OfficialBenchmarkProfile(BadCommConfig BadComm, NetworkDelaySettings.Bounds Delay,
+        BadCommConfig PushBadComm, NetworkDelaySettings.Bounds PushDelay)
     {
         public void Restore(BadCommSettings badComm, NetworkDelaySettings networkDelay)
         {
             badComm.TryUpdate(BadComm, out _);
             networkDelay.TryUpdate(Delay.LowerMs, Delay.UpperMs);
+            badComm.TryUpdate(PushBadComm, out _, CommunicationDirection.Push);
+            networkDelay.TryUpdate(PushDelay.LowerMs, PushDelay.UpperMs, CommunicationDirection.Push);
         }
     }
 

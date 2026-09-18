@@ -9,6 +9,7 @@
 @using ManyMeterSimulator.Brain
 @using ManyMeterSimulator.Networking.Nic
 @using ManyMeterSimulator.BadComm
+@using ManyMeterSimulator.Settings
 @inject FleetCompositionCache Composition
 @inject SimulatorMetrics Metrics
 @inject DashboardActivityHistory ActivityHistory
@@ -416,6 +417,11 @@
                     }
                     else
                     {
+                        <MudSelect T="CommunicationDirection" Value="_commsDirection" ValueChanged="ChangeCommsDirection"
+                                   Label="Fleet composition" Margin="Margin.Dense" Class="mb-3">
+                            <MudSelectItem Value="CommunicationDirection.Pull">Pull</MudSelectItem>
+                            <MudSelectItem Value="CommunicationDirection.Push">Push</MudSelectItem>
+                        </MudSelect>
                         <div class="batch-bar">
                             <div class="batch-seg" style="width:@F(_comms.PercentOf(_comms.Healthy))%;background:#4ec9b0;"></div>
                             <div class="batch-seg" style="width:@F(_comms.PercentOf(_comms.BadComm))%;background:#e0a458;"></div>
@@ -453,7 +459,7 @@
                         </MudItem>
                     </MudGrid>
                     <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mt-3">
-                        Drops are exchanges the NIC swallowed. A command needs several exchanges, so
+                        Counters include both push and pull. Drops are exchanges the NIC swallowed. A command needs several exchanges, so
                         one drop fails the whole command and the HES must retry.
                     </MudText>
                 </MudItem>
@@ -498,6 +504,13 @@
     // Cached by FleetCompositionCache: recomputing this walks every provisioned index, so it must
     // not be recalculated on the 2s sample. The cache returns instantly unless config changed.
     private FleetComposition _comms;
+    private CommunicationDirection _commsDirection;
+
+    private void ChangeCommsDirection(CommunicationDirection direction)
+    {
+        _commsDirection = direction;
+        _comms = Composition.Current(direction);
+    }
     private int _maxConns;
 
     private static readonly NicType[] AllNicTypes = Enum.GetValues<NicType>();
@@ -527,7 +540,7 @@
         _notStartedBatches = batches.Count(b => b.Status == BatchStatus.NotStarted);
         _provisionedMeters = batches.Sum(b => b.Count);
 
-        _comms = Composition.Current();
+        _comms = Composition.Current(_commsDirection);
 
 
         // Per-NIC breakdown for the "NIC statistics" table — same delta-over-interval approach as

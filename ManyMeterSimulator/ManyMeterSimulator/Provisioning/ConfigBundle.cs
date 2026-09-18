@@ -119,11 +119,13 @@ public sealed class ConfigBundleService
     public string ExportBadComm(string? from = null) =>
         Serialize(BadCommKind, from, new BadCommFile
         {
-            BadComm = _badComm.Snapshot(),
-            NetworkDelay = new DelayRange { LowerMs = _networkDelay.Current.LowerMs, UpperMs = _networkDelay.Current.UpperMs },
+            PullBadComm = _badComm.Snapshot(CommunicationDirection.Pull),
+            PushBadComm = _badComm.Snapshot(CommunicationDirection.Push),
+            PullNetworkDelay = new DelayRange { LowerMs = _networkDelay.Current.LowerMs, UpperMs = _networkDelay.Current.UpperMs },
+            PushNetworkDelay = new DelayRange { LowerMs = _networkDelay.GetCurrent(CommunicationDirection.Push).LowerMs, UpperMs = _networkDelay.GetCurrent(CommunicationDirection.Push).UpperMs },
         });
 
-    public void PreviewBadComm(string json) => Parse<BadCommFile>(json, BadCommKind);
+    public void PreviewBadComm(string json) => ValidateBadCommFile(Parse<BadCommFile>(json, BadCommKind));
 
     /// <summary>
     /// Applies both knobs the BadComm page owns. The bad-comm section is validated by
@@ -133,15 +135,27 @@ public sealed class ConfigBundleService
     public void ImportBadComm(string json)
     {
         BadCommFile file = Parse<BadCommFile>(json, BadCommKind);
-
-        if (file.BadComm is not null && !_badComm.TryUpdate(file.BadComm, out string? error))
+        ValidateBadCommFile(file);
+        foreach (CommunicationDirection direction in Enum.GetValues<CommunicationDirection>())
         {
-            throw new ArgumentException($"The bad-comm settings in the file are invalid: {error}");
+            BadCommConfig? config = (direction == CommunicationDirection.Push ? file.PushBadComm : file.PullBadComm) ?? file.BadComm;
+            DelayRange? delay = (direction == CommunicationDirection.Push ? file.PushNetworkDelay : file.PullNetworkDelay) ?? file.NetworkDelay;
+            if (config is not null) _badComm.TryUpdate(config, out _, direction);
+            if (delay is not null) _networkDelay.TryUpdate(delay.LowerMs, delay.UpperMs, direction);
         }
+    }
 
-        if (file.NetworkDelay is not null)
+    private static void ValidateBadCommFile(BadCommFile file)
+    {
+        foreach (BadCommConfig? config in new[] { file.PullBadComm ?? file.BadComm, file.PushBadComm ?? file.BadComm })
         {
-            _networkDelay.TryUpdate(file.NetworkDelay.LowerMs, file.NetworkDelay.UpperMs);
+            if (config is not null && BadCommSettings.Validate(config) is { } error)
+                throw new ArgumentException($"The bad-comm settings in the file are invalid: {error}");
+        }
+        foreach (DelayRange? delay in new[] { file.PullNetworkDelay ?? file.NetworkDelay, file.PushNetworkDelay ?? file.NetworkDelay })
+        {
+            if (delay is not null && (delay.LowerMs < 0 || delay.UpperMs < delay.LowerMs || delay.UpperMs > DelayLimits.MaxNetworkDelayMs))
+                throw new ArgumentException("The network delay in the file is invalid.");
         }
     }
 
@@ -394,6 +408,11 @@ public sealed record ConfigFile<T>
 /// <summary>The two field-impairment knobs the BadComm page owns, travelling together.</summary>
 public sealed record BadCommFile
 {
+    public BadCommConfig? PullBadComm { get; init; }
+    public BadCommConfig? PushBadComm { get; init; }
+    public DelayRange? PullNetworkDelay { get; init; }
+    public DelayRange? PushNetworkDelay { get; init; }
+
     public BadCommConfig? BadComm { get; init; }
 
     public DelayRange? NetworkDelay { get; init; }

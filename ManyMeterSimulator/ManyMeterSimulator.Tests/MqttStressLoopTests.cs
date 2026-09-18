@@ -180,7 +180,7 @@ public partial class MqttPushRunTests
         string path = Path.Combine(Path.GetTempPath(), "maya-profiles-" + Guid.NewGuid().ToString("N") + ".xml");
         try
         {
-            File.WriteAllText(path, "<Objects><GXDLMSPushSetup><LN>0.42.25.9.0.255</LN><ObjectList><Item /></ObjectList></GXDLMSPushSetup><GXDLMSPushSetup><LN>0.43.25.9.0.255</LN></GXDLMSPushSetup></Objects>");
+            File.WriteAllText(path, "<Objects><GXDLMSPushSetup><LN>0.42.25.9.0.255</LN><ObjectList><Item><ObjectType>40</ObjectType><LN>0.42.25.9.0.255</LN><AI>1</AI><DI>0</DI></Item></ObjectList></GXDLMSPushSetup><GXDLMSPushSetup><LN>0.43.25.9.0.255</LN><ObjectList><Item /></ObjectList></GXDLMSPushSetup></Objects>");
             Assert.Equal("0.42.25.9.0.255", Assert.Single(MqttPushProfiles.ReadTemplate(path)).LogicalName);
         }
         finally { File.Delete(path); }

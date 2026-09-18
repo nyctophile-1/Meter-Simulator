@@ -18,29 +18,41 @@ public sealed class BadCommSettings
 
     private volatile MeterClassifier _classifier;
     private BadCommConfig _config;
+    private volatile MeterClassifier _pushClassifier;
+    private BadCommConfig _pushConfig;
     private int _generation;
 
     public BadCommSettings(IRuntimeConfigStore store)
     {
         _store = store;
 
-        // Missing section (an older config file) deserializes to null and means "defaults".
-        _config = store.Current.BadComm ?? new BadCommConfig();
+        // Seed both directions from the legacy shared profile until they have their own settings.
+        _config = Clone(store.Current.PullBadComm ?? store.Current.BadComm ?? new BadCommConfig());
+        _pushConfig = Clone(store.Current.PushBadComm ?? store.Current.BadComm ?? new BadCommConfig());
         _generation = 1;
         _classifier = new MeterClassifier(_config, _generation);
+        _pushClassifier = new MeterClassifier(_pushConfig, _generation);
     }
 
-    /// <summary>The current compiled classifier. Cheap to read; capture once per exchange.</summary>
+    /// <summary>The pull classifier. Cheap to read; capture once per exchange.</summary>
     public MeterClassifier Classifier => _classifier;
 
+    public MeterClassifier GetClassifier(CommunicationDirection direction) =>
+        direction == CommunicationDirection.Push ? _pushClassifier : _classifier;
+
     /// <summary>A copy of the live config, for the UI to edit without touching the running one.</summary>
-    public BadCommConfig Snapshot() => Clone(_config);
+    public BadCommConfig Snapshot(CommunicationDirection direction = CommunicationDirection.Pull)
+    {
+        lock (_writeLock)
+            return Clone(direction == CommunicationDirection.Push ? _pushConfig : _config);
+    }
 
     /// <summary>
     /// Replaces the whole section, rebuilds the classifier and persists. Returns false with a
     /// reason if the config is invalid.
     /// </summary>
-    public bool TryUpdate(BadCommConfig updated, out string? error)
+    public bool TryUpdate(BadCommConfig updated, out string? error,
+        CommunicationDirection direction = CommunicationDirection.Pull)
     {
         error = Validate(updated);
         if (error is not null)
@@ -51,17 +63,30 @@ public sealed class BadCommSettings
         lock (_writeLock)
         {
             BadCommConfig copy = Clone(updated);
-            _config = copy;
             // New generation forces open connections to re-resolve on their next exchange, which
             // is what makes a change retroactive rather than applying only to new sessions.
-            _classifier = new MeterClassifier(copy, ++_generation);
-            _store.Update(doc => doc.BadComm = copy);
+            var classifier = new MeterClassifier(copy, ++_generation);
+            if (direction == CommunicationDirection.Push)
+            {
+                _pushConfig = copy;
+                _pushClassifier = classifier;
+            }
+            else
+            {
+                _config = copy;
+                _classifier = classifier;
+            }
+            _store.Update(doc =>
+            {
+                doc.PullBadComm = Clone(_config);
+                doc.PushBadComm = Clone(_pushConfig);
+            });
         }
 
         return true;
     }
 
-    private static string? Validate(BadCommConfig c)
+    internal static string? Validate(BadCommConfig c)
     {
         if (c.Auto.NonCommPercent < 0 || c.Auto.BadCommPercent < 0)
         {

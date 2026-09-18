@@ -53,9 +53,26 @@ public class TcpPushSenderTests
         listener.Start();
         int port = ((IPEndPoint)listener.LocalEndpoint).Port;
         var sender = new TcpPushSender(NullLogger<TcpPushSender>.Instance, Options.Create(new PushOptions()));
-        Assert.Equal(new PushDeliveryResult(0, 1), await sender.SendAsync("one", IPAddress.Loopback,
-            $"[::1]:{port}", port, [new byte[] { 1 }]));
+        var result = await sender.SendAsync("one", IPAddress.Loopback, $"[::1]:{port}", port, [new byte[] { 1 }]);
+        Assert.Equal(0, result.Sent);
+        Assert.Equal(1, result.Failed);
+        Assert.Contains("address family mismatch", result.Error);
         Assert.False(listener.Pending());
+    }
+
+    [Fact]
+    public async Task RefusedConnectionReportsStageSourceAndDestination()
+    {
+        using var listener = new TcpListener(IPAddress.IPv6Loopback, 0);
+        listener.Start();
+        int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        listener.Stop();
+        var sender = new TcpPushSender(NullLogger<TcpPushSender>.Instance, Options.Create(new PushOptions()));
+        var result = await sender.SendAsync("one", IPAddress.IPv6Loopback, $"[::1]:{port}", port, [new byte[] { 1 }]);
+        Assert.Equal(1, result.Failed);
+        Assert.Contains("TCP connect failed", result.Error);
+        Assert.Contains($"to ::1:{port}", result.Error);
+        Assert.Contains("from ::1", result.Error);
     }
 
     [Fact]

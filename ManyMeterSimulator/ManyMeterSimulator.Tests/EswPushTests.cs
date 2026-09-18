@@ -109,7 +109,7 @@ public class EswPushTests
 public partial class MqttPushRunTests
 {
     [Fact]
-    public async Task ExplicitDlmsAndCustomEswKeepTheirOwnEnvelopesOnTheSameWirepasBatch()
+    public async Task BothEswSelectionAliasesUseCustomWirepasEnvelope()
     {
         var fixture = new Fixture(1, template: "SA1231166HP_values.xml", customTemplateId: 702);
         foreach (string profile in new[] { MqttPushProfiles.Esw, MqttPushProfiles.CustomEsw })
@@ -118,11 +118,11 @@ public partial class MqttPushRunTests
             Assert.Equal(1, (await run.SendLiveAsync()).MessagesSent);
         }
         var messages = fixture.Publisher.Messages.ToArray();
-        Assert.EndsWith("/1/1", messages[0].Topic);
+        Assert.EndsWith("/10/10", messages[0].Topic);
         Assert.EndsWith("/10/10", messages[1].Topic);
-        var dlms = Serializer.Deserialize<GenericMessage>(new MemoryStream(messages[0].Payload)).wirepas.packet_received_event.payload;
+        var first = Serializer.Deserialize<GenericMessage>(new MemoryStream(messages[0].Payload)).wirepas.packet_received_event.payload;
         var custom = Serializer.Deserialize<GenericMessage>(new MemoryStream(messages[1].Payload)).wirepas.packet_received_event.payload;
-        Assert.Equal(new byte[] { 0, 4, 25, 9, 0, 255 }, Assert.IsType<byte[]>(DailyPushTests.Decode(dlms[5..])[1]));
+        Assert.Equal(5, first[12]);
         Assert.Equal(5, custom[12]);
     }
 

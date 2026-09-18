@@ -64,7 +64,9 @@ public class PushEphemeralFallbackTests
     public void Fixture_HasNoDeclaredBlockLoadPushSetup()
     {
         DLMSServerSession session = BuildSession();
-        Assert.DoesNotContain(BlockLoadDispatchLN, session.GetPushSetupLogicalNames());
+        var model = TemplateModelCache.Shared.Get(Path.Combine(AppContext.BaseDirectory, "Templates", "HP_Template_111.xml"));
+        Assert.DoesNotContain(model.OfType<GXDLMSPushSetup>(), p => p.LogicalName == BlockLoadDispatchLN && p.PushObjectList.Count > 0);
+        Assert.Contains(BlockLoadDispatchLN, session.GetPushSetupLogicalNames());
     }
 
     [Fact]
@@ -121,16 +123,14 @@ public class PushEphemeralFallbackTests
     }
 
     [Fact]
-    public void BuildPushPayloads_Unfiltered_IncludesSupportedDailyButNotEphemeralBlockLoad()
+    public void BuildPushPayloads_Unfiltered_IncludesSupportedDailyAndEphemeralBlockLoad()
     {
-        // All sends include the supported Daily path. Generic ephemeral Block Load
-        // still requires an explicitly requested dispatch LN.
         DLMSServerSession session = BuildSession();
 
         IReadOnlyList<byte[]> payloads = session.BuildPushPayloads(useCiphering: true);
 
         Assert.True(session.CanBuildDailyPush);
-        Assert.Equal(3, payloads.Count); // Instant + Alert + supported Daily.
+        Assert.Equal(4, payloads.Count); // Instant + Alert + Daily + Block Load.
         Assert.Contains(payloads.Select(DecodePush), fields =>
             fields[1] is byte[] dispatch && dispatch.AsSpan().SequenceEqual(new byte[] { 0, 6, 25, 9, 0, 255 }));
         byte[] blockLoadSelfLn = { 0, 5, 25, 9, 0, 255 };
@@ -138,6 +138,6 @@ public class PushEphemeralFallbackTests
             .SelectMany(DecodePush)
             .OfType<byte[]>()
             .Any(value => value.AsSpan().SequenceEqual(blockLoadSelfLn));
-        Assert.False(anyContainsBlockLoadSelfLn, "Unfiltered push must never include the Block Load ephemeral fallback.");
+        Assert.True(anyContainsBlockLoadSelfLn);
     }
 }

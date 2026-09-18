@@ -47,14 +47,6 @@ public sealed partial class PushCoordinator
             BatchTrafficKind.Daily => "0.6.25.9.0.255",
             _ => throw new ArgumentOutOfRangeException(nameof(kind)),
         };
-        if (batch.NicType == NicType.MqttWirepas && _customEncoder.IsCustomTemplate(batch.HesTemplateId))
-            profile = kind switch
-            {
-                BatchTrafficKind.Instantaneous => "custom:instant",
-                BatchTrafficKind.BlockLoad => "custom:block",
-                BatchTrafficKind.Daily => MqttPushProfiles.CustomDaily,
-                _ => throw new ArgumentOutOfRangeException(nameof(kind))
-            };
         if (batch.NicType == NicType.Tcp4G)
         {
             var source = ResolveTcpSource(batch.Id, new TcpPushRequest { BatchIds = [batch.Id], PushSetupLogicalName = profile }, _options.UseCiphering);
@@ -64,6 +56,8 @@ public sealed partial class PushCoordinator
                 if (!source.IsCurrent()) throw new InvalidOperationException("TCP batch or target changed; reconnecting.");
                 long started = Stopwatch.GetTimestamp();
                 var meter = new MeterRef(index, batch.NicType);
+                if (!await AllowPushAsync(meter, ct))
+                { _metrics.RecordPushSkipped(batch.NicType); throw new PushSkippedException(); }
                 PushDeliveryResult result;
                 try { result = await source.Send(meter, source.Build(meter), ct); }
                 catch (PushCanceledException ex)
@@ -73,7 +67,7 @@ public sealed partial class PushCoordinator
                 }
                 _metrics.RecordPushPayloads(batch.NicType, result.Sent, result.Failed);
                 _metrics.RecordPushMeter(batch.NicType, result.Sent > 0 && result.Failed == 0, Stopwatch.GetElapsedTime(started));
-                if (result.Failed > 0 || result.Sent == 0) throw new IOException("TCP push failed or produced no payloads.");
+                if (result.Failed > 0 || result.Sent == 0) throw new IOException(result.Error ?? "TCP push produced no payloads.");
             }, () => ValueTask.CompletedTask);
         }
         var mqtt = ResolveMqttSource(batch.Id, new MqttPushRequest { BatchIds = [batch.Id], PushSetupLogicalName = profile });
@@ -83,6 +77,8 @@ public sealed partial class PushCoordinator
             ct.ThrowIfCancellationRequested();
             if (!mqtt.IsCurrent()) throw new InvalidOperationException("MQTT batch or broker changed; reconnecting.");
             long started = Stopwatch.GetTimestamp();
+            if (!await AllowPushAsync(new MeterRef(index, batch.NicType), ct))
+            { _metrics.RecordPushSkipped(batch.NicType); throw new PushSkippedException(); }
             MqttPushDelivery result;
             try { result = await pool.PublishMeterAsync(mqtt.Build(new MeterRef(index, batch.NicType)), ct); }
             catch (PushCanceledException ex)

@@ -58,7 +58,9 @@ public sealed record MqttLoopSummary(long CompletedCycles, MqttPushSummary Total
 
 internal sealed record MqttPushSource(int BatchId, long Count, BrokerBinding Binding,
     Func<IEnumerable<MeterRef>> Meters, Func<MeterRef, IReadOnlyList<NicPublish>> Build,
-    Func<bool> IsCurrent);
+    Func<bool> IsCurrent,
+    Func<MeterRef, CancellationToken, Task<bool>>? Allow = null,
+    Func<MeterRef, DateTimeOffset?, IReadOnlyList<NicPublish>>? BuildAt = null);
 
 /// <summary>
 /// A run with preconnected publishers. Prepared bytes are consumed once; live loops rebuild each cycle. Dispose after
@@ -161,7 +163,7 @@ public sealed class MqttPushRun : IAsyncDisposable
                 long bytes = 128 + messages.Sum(m => m.Payload.LongLength + 2L * m.Topic.Length + 160);
                 if (Interlocked.Add(ref _preparedBytes, bytes) > _request.PreparedMemoryMiB * 1024L * 1024L)
                     throw new InvalidOperationException("Prepared dataset exceeded its memory budget. Select fewer meters or increase Prepared memory.");
-                prepared.Add(new PreparedMeter(item.Source.Binding, item.Meter.Nic, messages));
+                prepared.Add(new PreparedMeter(item.Source.Binding, item.Meter.Nic, messages, item.Source, item.Meter));
                 Interlocked.Increment(ref _preparedMeters);
                 Interlocked.Add(ref _preparedMessages, messages.Count);
                 return ValueTask.CompletedTask;
@@ -226,8 +228,10 @@ public sealed class MqttPushRun : IAsyncDisposable
                             sw.Elapsed, totals.Error ?? done.Error);
                     LoopResult = new MqttLoopSummary(cycles, totals with { SendTime = sw.Elapsed });
                 }
-                if (pass.MessagesSent == 0)
+                if (pass.MessagesSent == 0 && (pass.MetersFailed > 0 || pass.MetersSkipped == 0))
                     throw new InvalidOperationException(pass.Error ?? "The selected meters/profiles produced no successful MQTT publishes. Loop stopped.");
+                if (pass.MessagesSent == 0 && options.CyclePauseSeconds == 0)
+                    await Task.Delay(100, duration.Token);
                 if (options.CyclePauseSeconds > 0)
                     await Task.Delay(TimeSpan.FromSeconds(options.CyclePauseSeconds), duration.Token);
             }
@@ -277,8 +281,16 @@ public sealed class MqttPushRun : IAsyncDisposable
                     NicType nic = workItem.Prepared?.Nic ?? workItem.Meter.Nic;
                     try
                     {
+                        var source = workItem.Prepared?.Source ?? workItem.Source!;
+                        var meter = workItem.Prepared?.Meter ?? workItem.Meter;
+                        if (source.Allow is { } allow && !await allow(meter, ct))
+                        {
+                            Interlocked.Increment(ref skipped);
+                            _metrics?.RecordPushSkipped(nic);
+                            return;
+                        }
                         PreparedMeter item = workItem.Prepared ?? new PreparedMeter(workItem.Source!.Binding, nic,
-                            workItem.Source.Build(workItem.Meter));
+                            workItem.Source.Build(workItem.Meter), workItem.Source, workItem.Meter);
                         if (item.Messages.Count == 0)
                         {
                             Interlocked.Increment(ref skipped);
@@ -355,6 +367,7 @@ public sealed class MqttPushRun : IAsyncDisposable
         finally { _stop.Dispose(); }
     }
 
-    private sealed record PreparedMeter(BrokerBinding Binding, NicType Nic, IReadOnlyList<NicPublish> Messages);
+    private sealed record PreparedMeter(BrokerBinding Binding, NicType Nic, IReadOnlyList<NicPublish> Messages,
+        MqttPushSource Source, MeterRef Meter);
     private readonly record struct Work(MqttPushSource? Source, MeterRef Meter, PreparedMeter? Prepared);
 }
