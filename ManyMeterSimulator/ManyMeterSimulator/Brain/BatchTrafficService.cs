@@ -157,7 +157,7 @@ public sealed class BatchTrafficService : BackgroundService
                         ct.ThrowIfCancellationRequested();
                         int second = (int)Math.Max(0, (_clock.GetUtcNow() - window.Start).TotalSeconds);
                         long first = BatchTrafficSchedule.FirstMeter(job.Batch.Count, second);
-                        skipped += Math.Max(0, first - cursor);
+                        Interlocked.Add(ref skipped, Math.Max(0, first - cursor));
                         cursor = Math.Max(cursor, first);
                         long end = BatchTrafficSchedule.FirstMeter(job.Batch.Count, second + 1);
                         while (cursor < end) yield return job.Batch.StartIndex + cursor++;

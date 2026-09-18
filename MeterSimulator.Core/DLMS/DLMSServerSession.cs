@@ -320,7 +320,7 @@ namespace MeterSimulator.DLMS
         /// </para>
         /// </param>
         /// <returns>One byte[] per PushSetup — each a complete DLMS wrapper DataNotification frame.</returns>
-        public IReadOnlyList<byte[]> BuildPushPayloads(bool useCiphering, string? pushSetupLogicalName = null)
+        public IReadOnlyList<byte[]> BuildPushPayloads(bool useCiphering, string? pushSetupLogicalName = null, DateTimeOffset? readingTime = null)
         {
             var pushObjects = _objects.OfType<GXDLMSPushSetup>()
                 .Where(p => p.PushObjectList.Count > 0)
@@ -358,10 +358,11 @@ namespace MeterSimulator.DLMS
                 {
                     var encodingPush = PrepareBasicPushIdentity(push);
                     if (push.LogicalName == EventStatusWord.PushLogicalName) encodingPush = PrepareEswPush(encodingPush);
-                    SyncProfileBackedPushValues(encodingPush);
+                    if (readingTime is null) SyncProfileBackedPushValues(encodingPush);
                     SyncPushValues(encodingPush);
+                    if (readingTime is { } timestamp) ProjectPushReading(encodingPush, timestamp);
                     ConfigureNotifyCiphering(useCiphering);
-                    frames = Notify.GeneratePushSetupMessages(DateTime.UtcNow, encodingPush);
+                    frames = Notify.GeneratePushSetupMessages(readingTime?.UtcDateTime ?? DateTime.UtcNow, encodingPush);
                 }
 
                 // GeneratePushSetupMessages returns the wrapper frames for this PushSetup — one for

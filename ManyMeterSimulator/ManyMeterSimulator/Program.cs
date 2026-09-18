@@ -166,6 +166,7 @@ builder.Services.AddSingleton<MeterSessionManager>();
 builder.Services.AddSingleton<ProfileSimulationService>();
 builder.Services.AddSingleton<TcpPushSender>();
 builder.Services.AddSingleton<PushCoordinator>();
+builder.Services.AddSingleton<HistoricalPushService>();
 builder.Services.AddSingleton<ManyMeterSimulator.Networking.CustomPush.CustomPushEncoder>();
 builder.Services.AddSingleton<PushScheduleService>();
 builder.Services.AddSingleton<ITestPlanStore, JsonTestPlanStore>();

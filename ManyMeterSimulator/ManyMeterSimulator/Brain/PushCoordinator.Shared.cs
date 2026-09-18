@@ -11,6 +11,12 @@ public sealed partial class PushCoordinator
     private readonly BadCommSettings? _badComm;
     private readonly NetworkDelaySettings? _networkDelay;
 
+    private byte[][] BuildDlms(MeterRef meter, bool ciphering, string? profile, DateTimeOffset? timestamp = null)
+    {
+        var session = _sessions.GetOrCreate(meter);
+        lock (session) return session.BuildPushPayloads(ciphering, profile, timestamp).ToArray();
+    }
+
     private async Task<bool> AllowPushAsync(MeterRef meter, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();

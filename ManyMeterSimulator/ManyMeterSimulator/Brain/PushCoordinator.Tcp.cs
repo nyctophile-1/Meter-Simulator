@@ -38,7 +38,7 @@ public sealed partial class PushCoordinator
         }
         string? environment = batch.EnvironmentKey;
         long count = Math.Min(batch.Count, request.MaximumMetersPerBatch ?? int.MaxValue);
-        return new(count, Meters, Build, Send, IsCurrent, AllowPushAsync);
+        return new(count, Meters, Build, Send, IsCurrent, AllowPushAsync, BuildAt);
 
         IEnumerable<MeterRef> Meters()
         {
@@ -58,10 +58,10 @@ public sealed partial class PushCoordinator
         }
 
         byte[][] Build(MeterRef meter)
-        {
-            var session = _sessions.GetOrCreate(meter);
-            lock (session) return session.BuildPushPayloads(ciphering, selection).ToArray();
-        }
+            => BuildAt(meter, null);
+
+        byte[][] BuildAt(MeterRef meter, DateTimeOffset? timestamp)
+            => BuildDlms(meter, ciphering, selection, timestamp);
 
         Task<PushDeliveryResult> Send(MeterRef meter, byte[][] payloads, CancellationToken token) =>
             _tcpPush.SendAsync(meter.Serial, _sessions.GetOrCreate(meter).SourceAddress,

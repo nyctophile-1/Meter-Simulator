@@ -133,7 +133,7 @@ public sealed partial class PushCoordinator
 
         IReadOnlyList<(MeterRef Meter, DLMSServerSession Session)> meters = await _sessions.MaterializeBatchAsync(batch, cancellationToken: cancellationToken, maximumMeters: maximumMeters, selectRandomly: selectRandomly);
 
-        int metersSent = 0, metersFailed = 0, payloadsSent = 0, payloadsFailed = 0;
+        int metersSent = 0, metersFailed = 0, metersSkipped = 0, payloadsSent = 0, payloadsFailed = 0;
         string? pushError = null;
         string? selection = MqttPushProfiles.ForNic(pushSetupLogicalName, batch.NicType);
 
@@ -144,14 +144,11 @@ public sealed partial class PushCoordinator
             {
                 if (!await AllowPushAsync(pair.Meter, cancellationToken))
                 {
+                    Interlocked.Increment(ref metersSkipped);
                     _metrics.RecordPushSkipped(batch.NicType);
                     return;
                 }
-                byte[][] payloads;
-                lock (pair.Session)
-                {
-                    payloads = pair.Session.BuildPushPayloads(_options.UseCiphering, selection).ToArray();
-                }
+                byte[][] payloads = BuildDlms(pair.Meter, _options.UseCiphering, selection);
 
                 if (payloads.Length == 0)
                 {
@@ -200,7 +197,7 @@ public sealed partial class PushCoordinator
             "— {RecordsSent} record(s) pushed, {RecordsFailed} failed",
             batch.Id, batch.Name, destination, metersSent, metersFailed, meters.Count, payloadsSent, payloadsFailed);
 
-        return new PushBatchResult(true, meters.Count, metersSent, metersFailed, pushError);
+        return new PushBatchResult(true, meters.Count, metersSent, metersFailed, pushError, metersSkipped);
     }
 
     /// <summary>
@@ -308,7 +305,7 @@ public interface IPushScheduler
 }
 
 /// <summary>Outcome of a "Send Push" click over a whole batch.</summary>
-public readonly record struct PushBatchResult(bool Ok, int Total, int Sent, int Failed, string? Error)
+public readonly record struct PushBatchResult(bool Ok, int Total, int Sent, int Failed, string? Error, int Skipped = 0)
 {
     public static PushBatchResult ForError(string error) => new(false, 0, 0, 0, error);
 }

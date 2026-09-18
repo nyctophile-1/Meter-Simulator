@@ -27,7 +27,7 @@ public sealed partial class PushCoordinator
             _logger.LogInformation("MQTT push batch {BatchId}: {Sent} meters sent, {Failed} failed, {Skipped} skipped; " +
                 "{Messages} publishes completed, {Rejected} failed/unconfirmed. {Error}", batch.Id,
                 result.MetersSent, result.MetersFailed, result.MetersSkipped, result.MessagesSent, result.MessagesFailed, result.Error);
-            return new PushBatchResult(true, (int)run.TotalMeters, (int)result.MetersSent, (int)result.MetersFailed, result.Error);
+            return new PushBatchResult(true, (int)run.TotalMeters, (int)result.MetersSent, (int)result.MetersFailed, result.Error, (int)result.MetersSkipped);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (Exception ex) { return PushBatchResult.ForError(ex.Message); }
@@ -112,7 +112,7 @@ public sealed partial class PushCoordinator
         long startIndex = batch.StartIndex;
         int? hesTemplate = batch.HesTemplateId;
         var header = batch.CustomPushHeaderKind;
-        return new MqttPushSource(batch.Id, count, binding, Meters, Build, IsCurrent, AllowPushAsync);
+        return new MqttPushSource(batch.Id, count, binding, Meters, Build, IsCurrent, AllowPushAsync, BuildAt);
 
         IEnumerable<MeterRef> Meters()
         {
@@ -133,6 +133,9 @@ public sealed partial class PushCoordinator
         }
 
         IReadOnlyList<NicPublish> Build(MeterRef meter)
+            => BuildAt(meter, null);
+
+        IReadOnlyList<NicPublish> BuildAt(MeterRef meter, DateTimeOffset? readingTime)
         {
             if (custom)
             {
@@ -143,7 +146,7 @@ public sealed partial class PushCoordinator
                     var eswSession = _sessions.GetOrCreate(meter);
                     lock (eswSession) esw = eswSession.GetEventStatusWord();
                 }
-                var now = _clock.GetUtcNow();
+                var now = readingTime ?? _clock.GetUtcNow();
                 foreach (var profile in customProfiles)
                 {
                     int period = profile.Kind == "BLOCK" ? _customPullOptions.GetBlockPeriodMinutes(batch.HesTemplateId!.Value) : 15;
@@ -159,9 +162,7 @@ public sealed partial class PushCoordinator
                     packet)).ToArray();
             }
 
-            var session = _sessions.GetOrCreate(meter);
-            byte[][] payloads;
-            lock (session) payloads = session.BuildPushPayloads(_options.UseCiphering, selection).ToArray();
+            byte[][] payloads = BuildDlms(meter, _options.UseCiphering, selection, readingTime);
             // Codec instances can carry frame state. Only encoding is serialized, never network I/O.
             lock (codec!) return payloads.SelectMany(p => codec.EncodePush(meter.NodeId, p)).ToArray();
         }
@@ -170,7 +171,7 @@ public sealed partial class PushCoordinator
         {
             var current = _registry.Batches.FirstOrDefault(b => b.Id == batchId);
             var broker = _network.Broker(endpoint.Key);
-            return current is not null && current.EnvironmentKey == environment && current.Status == status
+            return ReferenceEquals(current, batch) && current!.EnvironmentKey == environment && current.Status == status
                 && current.TemplateName == template && current.StartIndex == startIndex && current.Count == batch.Count
                 && current.HesTemplateId == hesTemplate && current.CustomPushHeaderKind == header
                 && broker is { Enabled: true } && broker.Host == endpoint.Host && broker.Port == endpoint.Port

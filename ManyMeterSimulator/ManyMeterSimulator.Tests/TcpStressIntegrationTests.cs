@@ -134,7 +134,7 @@ public partial class TcpStressIntegrationTests
         public PushCoordinator Push { get; }
         public MeterSessionManager Sessions { get; }
         public TcpPushRequest Request => new() { BatchIds = [Batch.Id] };
-        public Fixture(int port, string template = "SA1231166HP_values.xml")
+        public Fixture(int port, string template = "SA1231166HP_values.xml", BadCommSettings? badComm = null)
         {
             Network.AddPushTarget(new() { Key = "tcp", Address = "::1", Port = port }, true);
             Batch = Batches.AddBatch("TCP", template, 1, NicType.Tcp4G, null, "tcp");
@@ -146,7 +146,7 @@ public partial class TcpStressIntegrationTests
             var options = Options.Create(new PushOptions());
             Push = new(Batches, Sessions, Network, new TcpPushSender(NullLogger<TcpPushSender>.Instance, options),
                 new NoMqtt(), new NicCodecFactory(), options, Options.Create(new CustomPushOptions()),
-                new SimulatorMetrics(), NullLogger<PushCoordinator>.Instance);
+                new SimulatorMetrics(), NullLogger<PushCoordinator>.Instance, badComm: badComm);
         }
     }
 
