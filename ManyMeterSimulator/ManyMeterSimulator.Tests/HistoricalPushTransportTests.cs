@@ -81,7 +81,8 @@ public partial class TcpStressIntegrationTests
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
         using var listener = new TcpListener(IPAddress.IPv6Loopback, 0);
         listener.Start();
-        var f = new Fixture(((IPEndPoint)listener.LocalEndpoint).Port, "D1_Master.xml");
+        var f = new Fixture(((IPEndPoint)listener.LocalEndpoint).Port, "D1_Master.xml",
+            HistoricalPushTests.Impaired(CommClass.Healthy), StressDelay());
         int period = f.Sessions.GetOrCreate(new MeterRef(f.Batch.StartIndex, f.Batch.NicType)).BlockPushPeriodSeconds;
         int expected = 24 + 86400 / period;
         var received = ReceiveAsync();
@@ -110,18 +111,13 @@ public partial class TcpStressIntegrationTests
     }
 
     [Fact]
-    public async Task AllTcpModesShareBadCommGateBeforeOpeningSockets()
+    public async Task OrdinaryAndScheduledTcpStillApplyBadCommBeforeOpeningSockets()
     {
         using var listener = new TcpListener(IPAddress.IPv6Loopback, 0);
         listener.Start();
         var f = new Fixture(((IPEndPoint)listener.LocalEndpoint).Port, "D1_Master.xml",
             HistoricalPushTests.Impaired(CommClass.NonComm));
         Assert.Equal(0, (await f.Push.PushBatchAsync(f.Batch.Id)).Sent);
-        await using var live = await f.Push.OpenTcpRunAsync(f.Request);
-        Assert.Equal(1, (await live.SendLiveAsync()).MetersSkipped);
-        await using var prepared = await f.Push.OpenTcpRunAsync(f.Request);
-        await prepared.PrepareAsync();
-        Assert.Equal(1, (await prepared.FireAsync()).MetersSkipped);
         await using var scheduled = await f.Push.OpenBatchTrafficAsync(f.Batch, BatchTrafficKind.Instantaneous, default);
         await Assert.ThrowsAsync<PushSkippedException>(() => scheduled.SendAsync(f.Batch.StartIndex, default));
         await using var history = await f.Push.OpenHistoricalRunAsync(new() { BatchIds = [f.Batch.Id], Days = 1, RecordsPerSecond = 300000 }, default);

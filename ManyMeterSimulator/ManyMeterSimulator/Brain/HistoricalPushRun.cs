@@ -16,7 +16,6 @@ public sealed record HistoricalPushRequest
     public int RecordsPerSecond { get; init; }
     public int PublisherCount { get; init; } = MqttPushPool.MaximumPublisherCount;
     public int Qos { get; init; } = 1;
-    public bool SimulateNetworkDelay { get; init; }
 
     public void Validate()
     {
@@ -96,7 +95,7 @@ public sealed partial class PushCoordinator
                 pools[binding] = await _mqtt.OpenPoolAsync(binding, request.PublisherCount, request.Qos, _options.PublishTimeoutSeconds, token);
             token.ThrowIfCancellationRequested();
             return new HistoricalPushRun(sources.ToArray(), pools.Values.ToArray(), request, start, end,
-                (meter, ct) => AllowPushAsync(meter, ct, request.SimulateNetworkDelay), _metrics);
+                (meter, ct) => AllowPushAsync(meter, ct, simulateNetworkDelay: false), _metrics);
         }
         catch
         {
@@ -111,6 +110,26 @@ internal sealed class HistoricalPushRun(HistoricalPushSource[] sources, IMqttPus
     Func<MeterRef, CancellationToken, Task<bool>> allow, Diagnostics.SimulatorMetrics metrics) : IAsyncDisposable
 {
     private int _used;
+    private MqttPublishRateLimiter? _limiter = request.RecordsPerSecond == 0 ? null : new(request.RecordsPerSecond);
+
+    public int RecordsPerSecond => Volatile.Read(ref _limiter)?.Rate ?? 0;
+
+    public void SetRecordsPerSecond(int rate)
+    {
+        if (rate != 0) MqttPublishRateLimiter.Validate(rate);
+        Interlocked.Exchange(ref _limiter, rate == 0 ? null : new MqttPublishRateLimiter(rate));
+    }
+
+    private async ValueTask WaitForRateAsync(CancellationToken token)
+    {
+        while (true)
+        {
+            token.ThrowIfCancellationRequested();
+            var limiter = Volatile.Read(ref _limiter);
+            if (limiter is null || limiter.TryAcquire(out var delay)) return;
+            await Task.Delay(delay, token);
+        }
+    }
 
     internal static DateTimeOffset FirstSlot(DateTimeOffset from, int seconds)
     {
@@ -133,7 +152,6 @@ internal sealed class HistoricalPushRun(HistoricalPushSource[] sources, IMqttPus
         string? error = null;
         long readingTicks = 0;
         var watch = Stopwatch.StartNew();
-        var limiter = request.RecordsPerSecond == 0 ? null : new MqttPublishRateLimiter(request.RecordsPerSecond);
         var queue = new PriorityQueue<(HistoricalPushSource Source, DateTimeOffset Time), DateTimeOffset>();
         foreach (var source in sources)
         {
@@ -160,7 +178,7 @@ internal sealed class HistoricalPushRun(HistoricalPushSource[] sources, IMqttPus
                 Interlocked.Exchange(ref readingTicks, slot.Time.UtcTicks);
                 await Parallel.ForEachAsync(Meters(source), new ParallelOptions { MaxDegreeOfParallelism = request.MaxConcurrency, CancellationToken = token }, async (meter, ct) =>
                 {
-                    if (limiter is not null) await limiter.WaitAsync(ct);
+                    await WaitForRateAsync(ct);
                     if (!source.IsCurrent()) throw new InvalidOperationException($"Batch {source.BatchId} or its destination changed.");
                     if (!await allow(meter, ct))
                     {

@@ -49,7 +49,6 @@ internal sealed record TcpPushSource(long Count, Func<IEnumerable<MeterRef>> Met
     Func<MeterRef, byte[][]> Build,
     Func<MeterRef, byte[][], CancellationToken, Task<PushDeliveryResult>> Send,
     Func<bool> IsCurrent,
-    Func<MeterRef, CancellationToken, Task<bool>>? Allow = null,
     Func<MeterRef, DateTimeOffset?, byte[][]>? BuildAt = null);
 
 public sealed class TcpPushRun : IAsyncDisposable
@@ -213,8 +212,6 @@ public sealed class TcpPushRun : IAsyncDisposable
                     try
                     {
                         ct.ThrowIfCancellationRequested();
-                        if (item.Source.Allow is { } allow && !await allow(item.Meter, ct))
-                        { Interlocked.Increment(ref skipped); _metrics?.RecordPushSkipped(NicType.Tcp4G); return; }
                         byte[][] payloads = item.Payloads ?? item.Source.Build(item.Meter);
                         if (payloads.Length == 0) { Interlocked.Increment(ref skipped); _metrics?.RecordPushSkipped(NicType.Tcp4G); return; }
                         var result = await item.Source.Send(item.Meter, payloads, ct);

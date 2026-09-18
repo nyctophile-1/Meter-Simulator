@@ -12,6 +12,7 @@ public sealed class HistoricalPushService(PushCoordinator push, IHostApplication
     private CancellationTokenSource? _stop;
     private Task _work = Task.CompletedTask;
     private HistoricalPushState _state = new();
+    private HistoricalPushRun? _run;
     private bool _disposed;
     public HistoricalPushState State { get { lock (_sync) return _state; } }
 
@@ -38,6 +39,11 @@ public sealed class HistoricalPushService(PushCoordinator push, IHostApplication
         try
         {
             await using var run = await push.OpenHistoricalRunAsync(request, token);
+            lock (_sync)
+            {
+                run.SetRecordsPerSecond(_state.Request!.RecordsPerSecond);
+                _run = run;
+            }
             await run.SendAsync(progress =>
             {
                 lock (_sync) _state = _state with { Phase = token.IsCancellationRequested ? "Stopping" : "Sending", Progress = progress };
@@ -46,7 +52,27 @@ public sealed class HistoricalPushService(PushCoordinator push, IHostApplication
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { phase = "Stopped"; }
         catch (Exception ex) { phase = "Failed"; error = ex.Message; }
-        finally { lock (_sync) _state = _state with { Phase = phase, Error = error }; }
+        finally
+        {
+            lock (_sync)
+            {
+                _run = null;
+                _state = _state with { Phase = phase, Error = error };
+            }
+        }
+    }
+
+    public void SetRecordsPerSecond(int rate)
+    {
+        if (rate != 0) Networking.Mqtt.MqttPublishRateLimiter.Validate(rate);
+        lock (_sync)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_state.Phase is not ("Connecting" or "Sending") || _state.Request is null)
+                throw new InvalidOperationException("There is no active historical push to adjust.");
+            _run?.SetRecordsPerSecond(rate);
+            _state = _state with { Request = _state.Request with { RecordsPerSecond = rate } };
+        }
     }
 
     public async Task StopAsync()

@@ -22,7 +22,7 @@ public sealed partial class PushCoordinator
                 PushSetupLogicalName = pushSetupLogicalName,
                 ChunkSize = _options.ChunkSize == int.MaxValue ? 0 : Math.Clamp(_options.ChunkSize, 0, 1_000_000),
                 ChunkIntervalSeconds = _options.ChunkIntervalSeconds,
-            }, cancellationToken);
+            }, cancellationToken, applyImpairments: true);
             var result = await run.SendLiveAsync();
             _logger.LogInformation("MQTT push batch {BatchId}: {Sent} meters sent, {Failed} failed, {Skipped} skipped; " +
                 "{Messages} publishes completed, {Rejected} failed/unconfirmed. {Error}", batch.Id,
@@ -34,11 +34,18 @@ public sealed partial class PushCoordinator
     }
 
     /// <summary>Opens one publish-only pool per selected broker/transport. This sends no payloads.</summary>
-    public async Task<MqttPushRun> OpenMqttRunAsync(MqttPushRequest request, CancellationToken cancellationToken = default)
+    public Task<MqttPushRun> OpenMqttRunAsync(MqttPushRequest request, CancellationToken cancellationToken = default)
+        => OpenMqttRunAsync(request, cancellationToken, applyImpairments: false);
+
+    private async Task<MqttPushRun> OpenMqttRunAsync(MqttPushRequest request, CancellationToken cancellationToken,
+        bool applyImpairments)
     {
         request = request with { BatchIds = request.BatchIds.ToArray() };
         request.Validate();
-        var sources = request.BatchIds.Select(id => ResolveMqttSource(id, request)).ToArray();
+        var sources = request.BatchIds.Select(id => ResolveMqttSource(id, request) with
+        {
+            Allow = applyImpairments ? AllowPushAsync : null
+        }).ToArray();
         var pools = new Dictionary<BrokerBinding, IMqttPushPool>();
         var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         try
@@ -112,7 +119,7 @@ public sealed partial class PushCoordinator
         long startIndex = batch.StartIndex;
         int? hesTemplate = batch.HesTemplateId;
         var header = batch.CustomPushHeaderKind;
-        return new MqttPushSource(batch.Id, count, binding, Meters, Build, IsCurrent, AllowPushAsync, BuildAt);
+        return new MqttPushSource(batch.Id, count, binding, Meters, Build, IsCurrent, BuildAt: BuildAt);
 
         IEnumerable<MeterRef> Meters()
         {

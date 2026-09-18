@@ -73,21 +73,21 @@ public partial class MqttPushRunTests
     [Theory]
     [InlineData(CommClass.BadComm)]
     [InlineData(CommClass.NonComm)]
-    public async Task AllExistingMqttModesUseLiveBadCommAtDelivery(CommClass classification)
+    public async Task MqttStressBypassesBadCommWhileOrdinaryAndScheduledPushHonorIt(CommClass classification)
     {
         var settings = HistoricalPushTests.Impaired(CommClass.Healthy);
         var f = new Fixture(2, badComm: settings);
         await using var prepared = await f.Push.OpenMqttRunAsync(f.Request);
         await prepared.PrepareAsync();
         Assert.True(settings.TryUpdate(HistoricalPushTests.Impaired(classification).Snapshot(CommunicationDirection.Push), out _, CommunicationDirection.Push));
-        Assert.Equal(2, (await prepared.FireAsync()).MetersSkipped);
+        Assert.Equal(2, (await prepared.FireAsync()).MetersSent);
         await using var live = await f.Push.OpenMqttRunAsync(f.Request);
-        Assert.Equal(2, (await live.SendLiveAsync()).MetersSkipped);
+        Assert.Equal(2, (await live.SendLiveAsync()).MetersSent);
         Assert.Equal(0, (await f.Push.PushBatchAsync(f.Batch.Id, pushSetupLogicalName: MqttPushProfiles.CustomDaily)).Sent);
         await using var scheduled = await f.Push.OpenBatchTrafficAsync(f.Batch, BatchTrafficKind.Daily, default);
         await Assert.ThrowsAsync<PushSkippedException>(() => scheduled.SendAsync(f.Batch.StartIndex, default));
-        Assert.Empty(f.Publisher.Messages);
-        Assert.Equal(7, f.Metrics.Snapshot(0).TotalPushMetersSkipped);
+        Assert.Equal(4, f.Publisher.Messages.Count);
+        Assert.Equal(3, f.Metrics.Snapshot(0).TotalPushMetersSkipped);
     }
 
     [Fact]
@@ -142,5 +142,31 @@ public partial class MqttPushRunTests
         Assert.Equal("Stopped", service.State.Phase);
         Assert.All(f.Publisher.Pools, p => Assert.True(p.Disposed));
         Assert.Empty(f.Publisher.Messages);
+    }
+
+    [Fact]
+    public async Task HistoricalServiceChangesRateWhileConnectingAndSendingWithoutRestart()
+    {
+        var f = new Fixture(1);
+        var batch = f.Batches.AddBatch("history", "D1_Master.xml", 1, NicType.Mqtt4G, null, "local");
+        f.Batches.TryStart(batch.Id);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        f.Publisher.BeforePublish = async ct => { entered.TrySetResult(); await Task.Delay(Timeout.Infinite, ct); };
+        await using var service = new HistoricalPushService(f.Push, new TestLifetime());
+        Assert.Throws<InvalidOperationException>(() => service.SetRecordsPerSecond(100));
+        service.Start(new() { BatchIds = [batch.Id] });
+        service.SetRecordsPerSecond(100);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(100, service.State.Request!.RecordsPerSecond);
+        service.SetRecordsPerSecond(300000);
+        Assert.Equal(300000, service.State.Request.RecordsPerSecond);
+        Assert.Throws<ArgumentOutOfRangeException>(() => service.SetRecordsPerSecond(99));
+        Assert.Equal(300000, service.State.Request.RecordsPerSecond);
+        service.SetRecordsPerSecond(0);
+        Assert.Equal(0, service.State.Request.RecordsPerSecond);
+        Assert.Single(f.Publisher.Pools);
+        await service.StopAsync();
+        Assert.Throws<InvalidOperationException>(() => service.SetRecordsPerSecond(100));
+        Assert.All(f.Publisher.Pools, p => Assert.True(p.Disposed));
     }
 }
