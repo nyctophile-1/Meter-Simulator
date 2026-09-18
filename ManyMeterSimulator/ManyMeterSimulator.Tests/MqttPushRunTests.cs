@@ -227,7 +227,8 @@ public partial class MqttPushRunTests
 
         public Fixture(int count, bool ciphering = false, string template = "unused.xml", int customTemplateId = 93,
             CustomPushEncoder? encoder = null, CustomPullOptions? customPullOptions = null, TimeProvider? clock = null,
-            ManyMeterSimulator.BadComm.BadCommSettings? badComm = null)
+            ManyMeterSimulator.BadComm.BadCommSettings? badComm = null,
+            ManyMeterSimulator.Networking.NetworkDelaySettings? networkDelay = null)
         {
             Network.AddBroker(new BrokerEndpoint { Key = "local", Host = "unused.invalid" }, verified: true);
             Batch = Batches.AddBatch("custom", template, count, NicType.MqttWirepas,
@@ -241,7 +242,7 @@ public partial class MqttPushRunTests
             Push = new PushCoordinator(Batches, Sessions, Network, new TcpPushSender(NullLogger<TcpPushSender>.Instance, options),
                 Publisher, new NicCodecFactory(), options, Options.Create(new CustomPushOptions()),
                 Metrics, NullLogger<PushCoordinator>.Instance, encoder ?? CustomPushFixtureModel.DailyEncoder(customTemplateId),
-                Options.Create(customPullOptions ?? new()), clock, badComm);
+                Options.Create(customPullOptions ?? new()), clock, badComm, networkDelay);
         }
     }
 

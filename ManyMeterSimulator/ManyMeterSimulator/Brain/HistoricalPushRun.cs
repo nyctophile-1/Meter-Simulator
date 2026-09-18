@@ -16,6 +16,7 @@ public sealed record HistoricalPushRequest
     public int RecordsPerSecond { get; init; } = 1000;
     public int PublisherCount { get; init; } = 8;
     public int Qos { get; init; } = 1;
+    public bool SimulateNetworkDelay { get; init; }
 
     public void Validate()
     {
@@ -94,7 +95,8 @@ public sealed partial class PushCoordinator
             foreach (var binding in pools.Keys.ToArray())
                 pools[binding] = await _mqtt.OpenPoolAsync(binding, request.PublisherCount, request.Qos, _options.PublishTimeoutSeconds, token);
             token.ThrowIfCancellationRequested();
-            return new HistoricalPushRun(sources.ToArray(), pools.Values.ToArray(), request, start, end, AllowPushAsync, _metrics);
+            return new HistoricalPushRun(sources.ToArray(), pools.Values.ToArray(), request, start, end,
+                (meter, ct) => AllowPushAsync(meter, ct, request.SimulateNetworkDelay), _metrics);
         }
         catch
         {
