@@ -16,22 +16,59 @@ namespace ManyMeterSimulator.Tests;
 public sealed class HesRegistrationLeaseTests
 {
     [Theory]
+    [InlineData(0, "gate_17_1", "sink0", 0u)]
+    [InlineData(3, "gate_17_1", "sink3", 3u)]
+    [InlineData(499, "gate_17_1", "sink3", 3u)]
+    [InlineData(500, "gate_17_2", "sink0", 0u)]
+    [InlineData(999, "gate_17_2", "sink3", 3u)]
+    [InlineData(1000, "gate_17_3", "sink0", 0u)]
+    public void GatewaysUseBatchRelativeGroupsAndFourSinks(int offset, string gateway, string wirepasSink, uint kmeshSink)
+    {
+        Assert.Equal((gateway, wirepasSink), BatchGatewayAssignment.For(17, 2300002, 2300002 + offset));
+        Assert.Equal((gateway, kmeshSink), BatchGatewayAssignment.ForKmesh(17, 2300002, 2300002 + offset));
+    }
+
+    [Fact]
+    public void EditsValidateAndFreezeConfirmedValues()
+    {
+        var definition = new HesRegistrationDefinition(1, 1, 7, "model", "Kimbal", "MY01.1", "6", "D1", "", 2025,
+            1, 1, 15, "fd00::/64", 4059, "TCP", "direct_tcp", "direct_tcp", -1, "demo", "demo", "demo");
+        var draft = HesRegistrationEdits.From(definition);
+        draft.Category = "D3"; draft.CtRatio = 100; draft.PtRatio = 10; draft.CapturePeriodMinutes = 60;
+        var confirmed = draft.Apply(definition);
+        draft.CtRatio = 999;
+        Assert.Equal(100, confirmed.CtRatio);
+        Assert.Equal("D3", confirmed.Category);
+        Assert.Equal(60, confirmed.CapturePeriod);
+        Assert.Equal("D1", definition.Category);
+        draft.CapturePeriodMinutes = 900;
+        Assert.Throws<InvalidOperationException>(() => draft.Apply(definition));
+        draft.CapturePeriodMinutes = 15; draft.Category = "D9";
+        Assert.Throws<InvalidOperationException>(() => draft.Apply(definition));
+        draft.Category = "D2"; draft.PtRatio = 0;
+        Assert.Throws<InvalidOperationException>(() => draft.Apply(definition));
+    }
+    [Theory]
     [InlineData(NicType.Tcp4G, "direct_tcp", "direct_tcp", -1)]
     [InlineData(NicType.Mqtt4G, "direct_4g", "direct_4g", -1)]
     [InlineData(NicType.Mqtt4GImg, "direct_4g", "direct_4g", -1)]
-    [InlineData(NicType.MqttWirepas, "wirepas-gateway", "sink1", 3)]
-    [InlineData(NicType.MqttKmesh, "kmesh-gateway", "1", -1)]
+    [InlineData(NicType.MqttWirepas, "gate_1_1", "sink0", 3)]
+    [InlineData(NicType.MqttKmesh, "gate_1_1", "0", -1)]
     public void DefinitionUsesActualModelAndTransport(NicType nic, string gateway, string sink, int endpoint)
     {
         var templates = new TemplateRegistry(Options.Create(new TemplateOptions { Folder = Path.Combine(AppContext.BaseDirectory, "Templates") }),
             new TestEnvironment(), NullLogger<TemplateRegistry>.Instance);
-        var factory = new HesRegistrationDefinitionFactory(templates, Options.Create(new BrainOptions()), Options.Create(new TcpOptions()),
-            Options.Create(new CustomPushOptions { WirepasGatewayId = "wirepas-gateway" }), Options.Create(new PushOptions { KmeshGatewayId = "kmesh-gateway" }));
+        var factory = new HesRegistrationDefinitionFactory(templates, Options.Create(new BrainOptions()), Options.Create(new TcpOptions()));
         var batch = new MeterRegistry().AddBatch("test", "D1_Master.xml", 10, nic, hesTemplateId: 7);
         var d = factory.Create(batch, 7);
         Assert.Equal("D1", d.Category);
         Assert.Equal("6", d.MeterType);
-        Assert.Equal(900, d.CapturePeriod);
+        Assert.Equal(15, d.CapturePeriod);
+        Assert.Equal("Kimbal", d.Manufacturer);
+        Assert.Equal("MY01.1", d.Firmware);
+        Assert.True(d.CtRatio > 0);
+        Assert.True(d.PtRatio > 0);
+        Assert.Equal(nic switch { NicType.Tcp4G => "TCP", NicType.MqttWirepas => "RF", NicType.MqttKmesh => "KMesh", _ => "MQTT4G" }, d.Module);
         Assert.Equal(gateway, d.Gateway);
         Assert.Equal(sink, d.Sink);
         Assert.Equal(endpoint, d.Endpoint);
@@ -112,8 +149,8 @@ public sealed class HesRegistrationPostgresTests
         return new() { Key = "local fixture", Provider = DatabaseProvider.PostgreSql, ConnectionString = builder.ConnectionString };
     }
     private static HesRegistrationDefinition Definition(long start = 1, long count = 2) => new(start, count, 7, "fixture-model",
-        "MAYA", "test", "6", "D1", "(10-60) A", 2025, null, null, 900,
-        "fd00:6d65:7472::/64", 4059, "4G", "direct_tcp", "direct_tcp", -1,
+        "Kimbal", "MY01.1", "6", "D1", "(10-60) A", 2025, 1, 1, 15,
+        "fd00:6d65:7472::/64", 4059, "TCP", "direct_tcp", "direct_tcp", -1,
         "AAAAAAAAAAAAAAAA", "AAAAAAAAAAAAAAAA", "12345678");
 
     private static async Task Reset()
@@ -128,7 +165,8 @@ public sealed class HesRegistrationPostgresTests
                 id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, guid uuid NOT NULL, meterno citext UNIQUE,
                 deviceid citext, manufacturer citext, firmwareversion citext, metertype citext, metercategory citext,
                 rating citext, yearofmanufacture int, ctratio int, ptratio int, createddate timestamp NOT NULL,
-                nodeid citext, metertemplateid bigint, ip citext, port int CHECK(port > 0), communicationmodule citext, blockcaptureperiod int);
+                nodeid citext, metertemplateid bigint, ip citext, port int CHECK(port > 0), communicationmodule citext, blockcaptureperiod int,
+                installedon timestamp, originalinstalledon timestamp);
             CREATE TABLE kimbaldb_dbo.metersecurity(
                 id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, meterno citext NOT NULL, masterkey citext NOT NULL,
                 globalkey citext NOT NULL, hlsussecret citext NOT NULL, hlsfwsecret citext NOT NULL, llsmrsecret citext NOT NULL, createddate timestamp NOT NULL);
@@ -151,6 +189,65 @@ public sealed class HesRegistrationPostgresTests
     {
         var preview = await _store.PreviewAsync(Database(), d, default);
         await _store.ReplaceAsync(Database(), d, preview, false, default);
+    }
+
+    [LocalRegistrationPostgresFact]
+    public async Task EditedPreviewSubmitsExactValuesAndBatchRelativeRouting()
+    {
+        await Reset();
+        var folder = Path.Combine(Path.GetTempPath(), "maya-registration-edits-" + Guid.NewGuid());
+        var meters = new MeterRegistry();
+        meters.AddBatch("other", "D1_Master.xml", 2300001);
+        var batch = meters.AddBatch("edited", "D1_Master.xml", 1001, NicType.MqttWirepas, hesTemplateId: 7);
+        var network = new NetworkRegistry();
+        network.SaveDatabase(Database(), false);
+        var host = new TestEnvironment();
+        var templates = new TemplateRegistry(Options.Create(new TemplateOptions { Folder = Path.Combine(AppContext.BaseDirectory, "Templates") }), host, NullLogger<TemplateRegistry>.Instance);
+        var factory = new HesRegistrationDefinitionFactory(templates, Options.Create(new BrainOptions()), Options.Create(new TcpOptions()));
+        var service = new HesBatchRegistrationService(meters, network, factory, _store, new ManyMeterSimulator.Diagnostics.SessionRegistry(meters),
+            Options.Create(new PersistenceOptions { Folder = folder }), host, NullLogger<HesBatchRegistrationService>.Instance);
+        var admin = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "Admin"), new Claim(ClaimTypes.Role, "Admin")], "test"));
+        try
+        {
+            var preview = await service.PreviewAsync(admin, batch.Id, Database().Key, 7, default);
+            var draft = preview.EditableValues;
+            draft.Category = "D3"; draft.CtRatio = 100; draft.PtRatio = 10; draft.CapturePeriodMinutes = 30;
+            var confirmed = service.RevisePreview(admin, preview, draft);
+            draft.CtRatio = 999;
+            var receipt = await service.ReplaceAsync(admin, confirmed, false, default);
+            Assert.Equal(1001, receipt.Count);
+            Assert.Equal(1001L, await Sql("""
+                SELECT count(*) FROM kimbaldb_dbo.nameplate WHERE metercategory='D3' AND ctratio=100 AND ptratio=10
+                AND blockcaptureperiod=30 AND manufacturer='Kimbal' AND firmwareversion='MY01.1'
+                AND communicationmodule='RF' AND deviceid=nodeid::text || 'MAYA'
+                AND installedon=originalinstalledon AND abs(extract(epoch FROM (installedon-(now() at time zone 'UTC')))) < 30
+                """));
+            Assert.Equal("gate_2_1/sink3", await Sql("SELECT gatewayid::text || '/' || sinkid::text FROM kimbaldb_dbo.latestrouting WHERE nodeid='1002300501'"));
+            Assert.Equal("gate_2_2/sink0", await Sql("SELECT gatewayid::text || '/' || sinkid::text FROM kimbaldb_dbo.latestrouting WHERE nodeid='1002300502'"));
+            Assert.Equal("gate_2_3/sink0", await Sql("SELECT gatewayid::text || '/' || sinkid::text FROM kimbaldb_dbo.latestrouting WHERE nodeid='1002301002'"));
+            Assert.Equal(500L, await Sql("SELECT count(*) FROM kimbaldb_dbo.latestrouting WHERE gatewayid='gate_2_1'"));
+            Assert.Equal(500L, await Sql("SELECT count(*) FROM kimbaldb_dbo.latestrouting WHERE gatewayid='gate_2_2'"));
+            Assert.Equal(1L, await Sql("SELECT count(*) FROM kimbaldb_dbo.latestrouting WHERE gatewayid='gate_2_3'"));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => service.ReplaceAsync(admin, confirmed, false, default));
+        }
+        finally { if (Directory.Exists(folder)) Directory.Delete(folder, true); }
+    }
+
+    [LocalRegistrationPostgresFact]
+    public async Task KmeshRegistrationUsesNumericSinksAndGeneratedGateways()
+    {
+        await Reset();
+        await Provision(Definition(1234, 501) with { Module = "KMesh", GroupGateways = true, BatchId = 4 });
+        Assert.Equal("gate_4_1/3", await Sql("SELECT gatewayid::text || '/' || sinkid::text FROM kimbaldb_dbo.latestrouting WHERE nodeid='1000001733'"));
+        Assert.Equal("gate_4_2/0", await Sql("SELECT gatewayid::text || '/' || sinkid::text FROM kimbaldb_dbo.latestrouting WHERE nodeid='1000001734'"));
+    }
+
+    private sealed class TestEnvironment : IHostEnvironment
+    {
+        public string EnvironmentName { get; set; } = "Test";
+        public string ApplicationName { get; set; } = "Tests";
+        public string ContentRootPath { get; set; } = AppContext.BaseDirectory;
+        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
     }
 
     [LocalRegistrationPostgresFact]

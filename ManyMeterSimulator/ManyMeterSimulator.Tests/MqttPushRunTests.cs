@@ -100,11 +100,23 @@ public partial class MqttPushRunTests
         Assert.Equal(25, result.MessagesSent);
         Assert.Equal(25, result.MetersSent);
         Assert.Equal(0, result.MetersFailed);
-        Assert.All(fixture.Publisher.Messages, m => Assert.Matches(@"^gw-event/received_data/sim-gw/sink1/\d+/10/10$", m.Topic));
+        Assert.All(fixture.Publisher.Messages, m => Assert.Matches(@"^gw-event/received_data/gate_1_1/sink[0-3]/\d+/10/10$", m.Topic));
         Assert.Equal(25, fixture.Publisher.Messages.Select(m => m.Topic).Distinct().Count());
         Assert.False(run.IsReady);
         await Assert.ThrowsAsync<InvalidOperationException>(() => run.FireAsync());
         Assert.Equal(25, fixture.Publisher.Messages.Count);
+    }
+
+    [Fact]
+    public async Task WirepasPushRoutingUsesFiveHundredMetersPerGateway()
+    {
+        var fixture = new Fixture(501);
+        await using var run = await fixture.Push.OpenMqttRunAsync(fixture.Request);
+        var result = await run.SendLiveAsync();
+        Assert.Equal(501, result.MetersSent);
+        Assert.Equal(500, fixture.Publisher.Messages.Count(m => m.Topic.Contains("/gate_1_1/")));
+        Assert.Single(fixture.Publisher.Messages, m => m.Topic.Contains("/gate_1_2/sink0/"));
+        Assert.Equal(125, fixture.Publisher.Messages.Count(m => m.Topic.Contains("/gate_1_1/sink3/")));
     }
 
     [Fact]
