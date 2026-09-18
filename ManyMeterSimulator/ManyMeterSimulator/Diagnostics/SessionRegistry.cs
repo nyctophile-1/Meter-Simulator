@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Linq;
 using ManyMeterSimulator.Networking.Nic;
+using ManyMeterSimulator.Provisioning;
 
 namespace ManyMeterSimulator.Diagnostics;
 
@@ -14,6 +15,8 @@ namespace ManyMeterSimulator.Diagnostics;
 /// </summary>
 public sealed class SessionRegistry
 {
+    private readonly MeterRegistry? _meters;
+    public SessionRegistry(MeterRegistry? meters = null) => _meters = meters;
     private readonly ConcurrentDictionary<long, ConnectionState> _activeSessions = new();
 
     /// <summary>Raised for each real session open/close, including the new active-session count.</summary>
@@ -22,7 +25,9 @@ public sealed class SessionRegistry
     /// <summary>Atomically registers a session for a meter. False if one is already active.</summary>
     public bool TryRegister(MeterRef meter, ConnectionState state)
     {
-        if (!_activeSessions.TryAdd(meter.Index, state)) return false;
+        bool added = _meters is null ? _activeSessions.TryAdd(meter.Index, state)
+            : _meters.TryAdmitSession(meter.Index, () => _activeSessions.TryAdd(meter.Index, state));
+        if (!added) return false;
         ActiveCountChanged?.Invoke(_activeSessions.Count, DateTimeOffset.UtcNow);
         return true;
     }

@@ -85,12 +85,13 @@ public sealed class MqttPushRun : IAsyncDisposable
     private string? _invalidReason;
     private readonly object _lifetimeSync = new();
     private readonly SimulatorMetrics? _metrics;
+    private readonly IDisposable? _batchLease;
     public MqttLoopSummary? LoopResult { get; private set; }
     private MqttPushSummary? _lastPass;
 
     internal MqttPushRun(MqttPushSource[] sources, IReadOnlyDictionary<BrokerBinding, IMqttPushPool> pools,
         MqttPushRequest request, bool ciphering, CancellationTokenSource stop,
-        Action<Action> subscribe, Action<Action> unsubscribe, SimulatorMetrics? metrics = null)
+        Action<Action> subscribe, Action<Action> unsubscribe, SimulatorMetrics? metrics = null, IDisposable? batchLease = null)
     {
         _sources = sources;
         _pools = pools;
@@ -100,6 +101,7 @@ public sealed class MqttPushRun : IAsyncDisposable
         _stop = stop;
         _unsubscribe = unsubscribe;
         _metrics = metrics;
+        _batchLease = batchLease;
         subscribe(CheckConfiguration);
         CheckConfiguration();
     }
@@ -364,7 +366,7 @@ public sealed class MqttPushRun : IAsyncDisposable
         }
         _prepared = null;
         try { await Task.WhenAll(_pools.Values.Select(async p => await p.DisposeAsync())); }
-        finally { _stop.Dispose(); }
+        finally { _stop.Dispose(); _batchLease?.Dispose(); }
     }
 
     private sealed record PreparedMeter(BrokerBinding Binding, NicType Nic, IReadOnlyList<NicPublish> Messages,

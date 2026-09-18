@@ -131,6 +131,8 @@ public sealed partial class PushCoordinator
 
         destination = resolved;
 
+        using var registrationGuard = _registry.AcquirePushLease([batch.Id]);
+
         IReadOnlyList<(MeterRef Meter, DLMSServerSession Session)> meters = await _sessions.MaterializeBatchAsync(batch, cancellationToken: cancellationToken, maximumMeters: maximumMeters, selectRandomly: selectRandomly);
 
         int metersSent = 0, metersFailed = 0, metersSkipped = 0, payloadsSent = 0, payloadsFailed = 0;
