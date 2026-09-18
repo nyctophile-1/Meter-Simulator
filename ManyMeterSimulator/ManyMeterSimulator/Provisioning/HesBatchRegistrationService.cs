@@ -15,6 +15,7 @@ public sealed class HesRegistrationPreview
     internal HesRegistrationDefinition Definition { get; init; } = default!;
     internal string Owner { get; init; } = "";
     internal string? EnvironmentKey { get; init; }
+    internal string SourceFingerprint { get; init; } = "";
     internal int Consumed;
     public required RegistrationInspection Inspection { get; init; }
     public DateTimeOffset ExpiresAt { get; init; } = DateTimeOffset.UtcNow.AddMinutes(5);
@@ -26,7 +27,13 @@ public sealed class HesRegistrationPreview
     public string MeterType => Definition.MeterType;
     public int TemplateId => Definition.TemplateId;
     public string ModelHash => Definition.ModelHash;
-    public string Route => $"{Definition.Gateway} / {Definition.Sink}; endpoint {Definition.Endpoint}";
+    public string Route => Definition.GroupGateways
+        ? $"{Definition.RouteFor(Definition.StartIndex).Gateway} … {Definition.RouteFor(Definition.EndIndex).Gateway}; up to 500 meters/gateway; {(Definition.Module == "KMesh" ? "sinks 0–3" : "sink0–sink3")}; endpoint {Definition.Endpoint}"
+        : $"{Definition.Gateway} / {Definition.Sink}; endpoint {Definition.Endpoint}";
+    public string Module => Definition.Module;
+    public string FirstDeviceId => HesRegistrationDefinition.DeviceId(Definition.StartIndex);
+    public string LastDeviceId => HesRegistrationDefinition.DeviceId(Definition.EndIndex);
+    public HesRegistrationEdits EditableValues => HesRegistrationEdits.From(Definition);
     public string FirstAddress => MeterAddressing.ComputeAddress(Definition.AddressPrefix, Definition.StartIndex).ToString();
     public int Port => Definition.Port;
 }
@@ -53,8 +60,21 @@ public sealed class HesBatchRegistrationService(MeterRegistry meters, NetworkReg
         timeout.CancelAfter(TimeSpan.FromMinutes(15));
         return new()
         {
-            Database = connection, Batch = batch, Definition = definition, Owner = owner, EnvironmentKey = batch.EnvironmentKey,
+            Database = connection, Batch = batch, Definition = definition, Owner = owner, EnvironmentKey = batch.EnvironmentKey, SourceFingerprint = definition.Fingerprint,
             Inspection = await database.PreviewAsync(connection, definition, timeout.Token)
+        };
+    }
+
+    public HesRegistrationPreview RevisePreview(ClaimsPrincipal user, HesRegistrationPreview preview, HesRegistrationEdits edits)
+    {
+        if (RequireAdmin(user) != preview.Owner) throw new UnauthorizedAccessException("Preview belongs to another administrator.");
+        if (preview.ExpiresAt <= DateTimeOffset.UtcNow || Volatile.Read(ref preview.Consumed) != 0)
+            throw new InvalidOperationException("Preview has expired or was already used. Preview again.");
+        return new()
+        {
+            Database = preview.Database, Batch = preview.Batch, Definition = edits.Apply(preview.Definition), Owner = preview.Owner,
+            EnvironmentKey = preview.EnvironmentKey, SourceFingerprint = preview.SourceFingerprint,
+            Inspection = preview.Inspection, ExpiresAt = preview.ExpiresAt
         };
     }
 
@@ -67,7 +87,7 @@ public sealed class HesBatchRegistrationService(MeterRegistry meters, NetworkReg
         CheckSessions(preview.Batch);
         var current = network.Databases.SingleOrDefault(d => d.Key == preview.Database.Key);
         if (current != preview.Database || preview.Batch.EnvironmentKey != preview.EnvironmentKey ||
-            definitions.Create(preview.Batch, preview.TemplateId).Fingerprint != preview.Definition.Fingerprint)
+            definitions.Create(preview.Batch, preview.TemplateId).Fingerprint != preview.SourceFingerprint)
             throw new InvalidOperationException("Batch, model or connection changed. Preview again.");
         if (preview.Inspection.Conflicts > 0 || preview.Inspection.LegacyMeters > 0 && !adoptLegacy)
             throw new InvalidOperationException("Resolve ownership conflicts before replacement.");

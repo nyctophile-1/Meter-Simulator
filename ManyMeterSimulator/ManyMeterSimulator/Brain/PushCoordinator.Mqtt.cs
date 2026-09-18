@@ -104,8 +104,9 @@ public sealed partial class PushCoordinator
         }
         else
         {
+            var firstRoute = BatchGatewayAssignment.ForKmesh(batch.Id, batch.StartIndex, batch.StartIndex);
             codec = _codecs.CreatePush(binding.Transport, _customPushOptions.WirepasGatewayId,
-                _customPushOptions.WirepasSinkId, _options.KmeshGatewayId, _options.KmeshSinkId)
+                _customPushOptions.WirepasSinkId, firstRoute.Gateway, firstRoute.Sink)
                 ?? throw new InvalidOperationException($"No push codec for {binding.Transport}.");
             _ = codec.EncodePush(new MeterRef(batch.StartIndex, batch.NicType).NodeId, new byte[] { 0 });
             var session = _sessions.GetOrCreate(new MeterRef(batch.StartIndex, batch.NicType));
@@ -167,12 +168,19 @@ public sealed partial class PushCoordinator
                         unchecked((uint)Random.Shared.NextInt64()), timestamp,
                         field => CustomProfileDataGenerator.Value(field, meter.Index, timestamp, profile.Kind, profile.EventId, period), esw));
                 }
-                return packets.Select(packet => WirepasCustomPushEnvelope.Create(_customPushOptions.WirepasGatewayId,
-                    _customPushOptions.WirepasSinkId, meter.NodeId, _customPushOptions.WirepasEndpoint,
+                var route = BatchGatewayAssignment.For(batch.Id, batch.StartIndex, meter.Index);
+                return packets.Select(packet => WirepasCustomPushEnvelope.Create(route.Gateway,
+                    route.Sink, meter.NodeId, _customPushOptions.WirepasEndpoint,
                     packet)).ToArray();
             }
 
             byte[][] payloads = BuildDlms(meter, _options.UseCiphering, selection, readingTime);
+            if (batch.NicType == NicType.MqttKmesh)
+            {
+                var route = BatchGatewayAssignment.ForKmesh(batch.Id, batch.StartIndex, meter.Index);
+                var meterCodec = _codecs.CreatePush(binding.Transport, "", "", route.Gateway, route.Sink)!;
+                return payloads.SelectMany(p => meterCodec.EncodePush(meter.NodeId, p)).ToArray();
+            }
             // Codec instances can carry frame state. Only encoding is serialized, never network I/O.
             lock (codec!) return payloads.SelectMany(p => codec.EncodePush(meter.NodeId, p)).ToArray();
         }

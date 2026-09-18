@@ -148,7 +148,8 @@ public sealed class HesRegistrationDatabase
                     if (!owned.Add(node)) { Issue($"Multiple nameplates use node {node}."); continue; }
                     if (reader.GetGuid(4) != HesRegistrationDefinition.OwnershipId(index))
                     {
-                        if (reader.IsDBNull(5) || !string.Equals(reader.GetString(5), "CRY" + serial, StringComparison.OrdinalIgnoreCase))
+                        if (reader.IsDBNull(5) || !(string.Equals(reader.GetString(5), "CRY" + serial, StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(reader.GetString(5), HesRegistrationDefinition.DeviceId(index), StringComparison.OrdinalIgnoreCase)))
                             Issue($"MAYA ownership cannot be established for node {node}.");
                         else legacy++;
                     }
@@ -181,7 +182,7 @@ public sealed class HesRegistrationDatabase
     private static async Task Insert(NpgsqlConnection connection, HesRegistrationDefinition d, long[] indices, DateTime now, CancellationToken ct)
     {
         await using (var copy = await connection.BeginBinaryImportAsync("""
-            COPY kimbaldb_dbo.nameplate (guid,meterno,deviceid,manufacturer,firmwareversion,metertype,metercategory,rating,yearofmanufacture,ctratio,ptratio,createddate,nodeid,metertemplateid,ip,port,communicationmodule,blockcaptureperiod)
+            COPY kimbaldb_dbo.nameplate (guid,meterno,deviceid,manufacturer,firmwareversion,metertype,metercategory,rating,yearofmanufacture,ctratio,ptratio,createddate,nodeid,metertemplateid,ip,port,communicationmodule,blockcaptureperiod,installedon,originalinstalledon)
             FROM STDIN (FORMAT BINARY)
             """, ct))
         {
@@ -190,7 +191,7 @@ public sealed class HesRegistrationDatabase
                 await copy.StartRowAsync(ct);
                 await copy.WriteAsync(HesRegistrationDefinition.OwnershipId(index), NpgsqlDbType.Uuid, ct);
                 await Text(copy, MeterRegistry.FormatSerial(index), ct);
-                await Text(copy, "CRY" + MeterRegistry.FormatSerial(index), ct);
+                await Text(copy, HesRegistrationDefinition.DeviceId(index), ct);
                 foreach (var value in new[] { d.Manufacturer, d.Firmware, d.MeterType, d.Category, d.Rating }) await Text(copy, value, ct);
                 foreach (var value in new[] { d.Year, d.CtRatio, d.PtRatio }) await Number(copy, value, ct);
                 await copy.WriteAsync(now, NpgsqlDbType.Timestamp, ct);
@@ -200,6 +201,8 @@ public sealed class HesRegistrationDatabase
                 await copy.WriteAsync(d.Port, NpgsqlDbType.Integer, ct);
                 await Text(copy, d.Module, ct);
                 await Number(copy, d.CapturePeriod, ct);
+                await copy.WriteAsync(now, NpgsqlDbType.Timestamp, ct);
+                await copy.WriteAsync(now, NpgsqlDbType.Timestamp, ct);
             }
             await copy.CompleteAsync(ct);
         }
@@ -221,7 +224,8 @@ public sealed class HesRegistrationDatabase
             {
                 await copy.StartRowAsync(ct);
                 await copy.WriteAsync(now, NpgsqlDbType.Timestamp, ct);
-                foreach (var value in new[] { MeterNodeIds.Format(index), d.Gateway, d.Sink }) await Text(copy, value, ct);
+                var route = d.RouteFor(index);
+                foreach (var value in new[] { MeterNodeIds.Format(index), route.Gateway, route.Sink }) await Text(copy, value, ct);
                 await copy.WriteAsync(1L, NpgsqlDbType.Bigint, ct);
                 await copy.WriteAsync(now, NpgsqlDbType.Timestamp, ct);
                 await copy.WriteAsync((long)d.Endpoint, NpgsqlDbType.Bigint, ct);
