@@ -17,7 +17,9 @@ public sealed partial class PushCoordinator
         lock (session) return session.BuildPushPayloads(ciphering, profile, timestamp).ToArray();
     }
 
-    private async Task<bool> AllowPushAsync(MeterRef meter, CancellationToken token)
+    private Task<bool> AllowPushAsync(MeterRef meter, CancellationToken token) => AllowPushAsync(meter, token, true);
+
+    private async Task<bool> AllowPushAsync(MeterRef meter, CancellationToken token, bool simulateNetworkDelay)
     {
         token.ThrowIfCancellationRequested();
         var impairment = (_badComm?.GetClassifier(CommunicationDirection.Push) ?? MeterClassifier.Disabled).Classify(meter.Index);
@@ -26,7 +28,9 @@ public sealed partial class PushCoordinator
             _metrics.RecordNonCommDrop();
             return false;
         }
-        int delay = NetworkDelaySettings.ApplyImpairment(_networkDelay?.NextDelayMs(CommunicationDirection.Push) ?? 0, impairment.Multiplier);
+        int delay = simulateNetworkDelay
+            ? NetworkDelaySettings.ApplyImpairment(_networkDelay?.NextDelayMs(CommunicationDirection.Push) ?? 0, impairment.Multiplier)
+            : 0;
         if (delay > 0) await Task.Delay(delay, token);
         _metrics.RecordNetworkDelay(TimeSpan.FromMilliseconds(delay));
         if (impairment.Class == CommClass.BadComm)

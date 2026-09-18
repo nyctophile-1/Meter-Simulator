@@ -26,6 +26,8 @@
             <MudSelectItem T="int" Value="0">0</MudSelectItem><MudSelectItem T="int" Value="1">1</MudSelectItem><MudSelectItem T="int" Value="2">2</MudSelectItem>
         </MudSelect></MudItem>
     </MudGrid>
+    <MudCheckBox T="bool" Label="Wait for simulated network delays" @bind-Value="_simulateNetworkDelay" Disabled="@Locked" />
+    <MudText Typo="Typo.caption">Accelerated replay keeps BadComm and non-comm gaps without waiting out artificial delays. Enable this option for real-time delay simulation; 64 workers with a 1-second delay can attempt only about 64 records/sec.</MudText>
     <MudText Typo="Typo.caption" Class="my-3">Rate limits record attempts across both profiles and all batches, including BadComm skips. DLMS replays template samples; custom Wirepas uses its timestamp-based readings. This run is not resumed after an app restart.</MudText>
     <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(Locked || !_batches.Any())" OnClick="Start">Start historical push</MudButton>
     <MudButton Class="ml-2" Variant="Variant.Outlined" Disabled="@(!History.State.IsActive)" OnClick="History.StopAsync">Stop</MudButton>
@@ -47,6 +49,7 @@
     private bool Locked => Disabled || History.State.IsActive;
     private IReadOnlyCollection<int> _batches = [];
     private int _days = 7, _interval = 30, _concurrency = 64, _rate = 1000, _publishers = 8, _qos = 1;
+    private bool _simulateNetworkDelay;
     private System.Threading.Timer? _timer;
     protected override void OnInitialized()
     {
@@ -54,6 +57,7 @@
         {
             _batches = r.BatchIds.ToArray(); _days = r.Days; _interval = r.InstantaneousIntervalMinutes;
             _concurrency = r.MaxConcurrency; _rate = r.RecordsPerSecond; _publishers = r.PublisherCount; _qos = r.Qos;
+            _simulateNetworkDelay = r.SimulateNetworkDelay;
         }
         _timer = new(_ => _ = InvokeAsync(StateHasChanged), null, 500, 500);
     }
@@ -61,7 +65,8 @@
     {
         if (Locked) return;
         try { History.Start(new() { BatchIds = _batches.ToArray(), Days = _days, InstantaneousIntervalMinutes = _interval,
-            MaxConcurrency = _concurrency, RecordsPerSecond = _rate, PublisherCount = _publishers, Qos = _qos }); }
+            MaxConcurrency = _concurrency, RecordsPerSecond = _rate, PublisherCount = _publishers, Qos = _qos,
+            SimulateNetworkDelay = _simulateNetworkDelay }); }
         catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
     }
     public void Dispose() => _timer?.Dispose();
