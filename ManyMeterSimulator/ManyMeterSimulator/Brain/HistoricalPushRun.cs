@@ -12,9 +12,9 @@ public sealed record HistoricalPushRequest
     public IReadOnlyList<int> BatchIds { get; init; } = [];
     public int Days { get; init; } = 7;
     public int InstantaneousIntervalMinutes { get; init; } = 30;
-    public int MaxConcurrency { get; init; } = 64;
-    public int RecordsPerSecond { get; init; } = 1000;
-    public int PublisherCount { get; init; } = 8;
+    public int MaxConcurrency { get; init; } = 256;
+    public int RecordsPerSecond { get; init; }
+    public int PublisherCount { get; init; } = MqttPushPool.MaximumPublisherCount;
     public int Qos { get; init; } = 1;
     public bool SimulateNetworkDelay { get; init; }
 
@@ -28,7 +28,7 @@ public sealed record HistoricalPushRequest
         if (PublisherCount is < 1 or > 256 || PublisherCount > MaxConcurrency)
             throw new ArgumentException("Publishers must be 1 to 256 and no more than concurrency.");
         if (Qos is < 0 or > 2) throw new ArgumentException("QoS must be 0, 1 or 2.");
-        MqttPublishRateLimiter.Validate(RecordsPerSecond);
+        if (RecordsPerSecond != 0) MqttPublishRateLimiter.Validate(RecordsPerSecond);
     }
 }
 
@@ -133,7 +133,7 @@ internal sealed class HistoricalPushRun(HistoricalPushSource[] sources, IMqttPus
         string? error = null;
         long readingTicks = 0;
         var watch = Stopwatch.StartNew();
-        var limiter = new MqttPublishRateLimiter(request.RecordsPerSecond);
+        var limiter = request.RecordsPerSecond == 0 ? null : new MqttPublishRateLimiter(request.RecordsPerSecond);
         var queue = new PriorityQueue<(HistoricalPushSource Source, DateTimeOffset Time), DateTimeOffset>();
         foreach (var source in sources)
         {
@@ -160,7 +160,7 @@ internal sealed class HistoricalPushRun(HistoricalPushSource[] sources, IMqttPus
                 Interlocked.Exchange(ref readingTicks, slot.Time.UtcTicks);
                 await Parallel.ForEachAsync(Meters(source), new ParallelOptions { MaxDegreeOfParallelism = request.MaxConcurrency, CancellationToken = token }, async (meter, ct) =>
                 {
-                    await limiter.WaitAsync(ct);
+                    if (limiter is not null) await limiter.WaitAsync(ct);
                     if (!source.IsCurrent()) throw new InvalidOperationException($"Batch {source.BatchId} or its destination changed.");
                     if (!await allow(meter, ct))
                     {
