@@ -308,7 +308,7 @@ namespace MeterSimulator.DLMS
         /// Instant, "0.5.25.9.0.255" for Block Load) — each profile type is its own PushSetup at its
         /// own channel OBIS, because that LN is also the "SelfLN" element the HES uses to dispatch to
         /// the matching parser (see BuildPushPayloads' Item[1] in each flat structure). Null (the
-        /// default) sends every non-empty PushSetup the template configures.
+        /// default) sends every non-empty PushSetup plus supported basic-profile fallbacks.
         ///
         /// <para>
         /// If the template has no PushSetup at this LN but it's one of the well-known dispatch codes
@@ -329,10 +329,13 @@ namespace MeterSimulator.DLMS
 
             bool includeDaily = (pushSetupLogicalName is null or DailyPushLogicalName)
                 && !pushObjects.Any(p => p.LogicalName == DailyPushLogicalName) && CanBuildDailyPush;
-            if (pushObjects.Count == 0 && !includeDaily && pushSetupLogicalName != null
-                && BuildEphemeralPushSetup(pushSetupLogicalName) is GXDLMSPushSetup ephemeral)
+            var fallbacks = pushSetupLogicalName is null
+                ? BasicPushLogicalNames : new[] { pushSetupLogicalName };
+            foreach (string logicalName in fallbacks)
             {
-                pushObjects.Add(ephemeral);
+                if (logicalName != DailyPushLogicalName && !pushObjects.Any(p => p.LogicalName == logicalName)
+                    && BuildEphemeralPushSetup(logicalName) is GXDLMSPushSetup ephemeral)
+                    pushObjects.Add(ephemeral);
             }
 
             if (pushObjects.Count == 0 && !includeDaily)
@@ -353,7 +356,8 @@ namespace MeterSimulator.DLMS
                 byte[][] frames;
                 lock (PushEncodeLock)
                 {
-                    var encodingPush = push.LogicalName == EventStatusWord.PushLogicalName ? PrepareEswPush(push) : push;
+                    var encodingPush = PrepareBasicPushIdentity(push);
+                    if (push.LogicalName == EventStatusWord.PushLogicalName) encodingPush = PrepareEswPush(encodingPush);
                     SyncProfileBackedPushValues(encodingPush);
                     SyncPushValues(encodingPush);
                     ConfigureNotifyCiphering(useCiphering);
@@ -372,15 +376,49 @@ namespace MeterSimulator.DLMS
         }
 
         /// <summary>Available push setups without encoding or advancing invocation counters.</summary>
-        public IReadOnlyList<string> GetPushSetupLogicalNames() => _objects.OfType<GXDLMSPushSetup>()
-            .Where(p => p.PushObjectList.Count > 0).Select(p => p.LogicalName)
-            .Concat(CanBuildDailyPush ? [DailyPushLogicalName] : Array.Empty<string>()).Distinct().ToArray();
+        public IReadOnlyList<string> GetPushSetupLogicalNames() => GetPushSetupLogicalNames(_objectsFromFile);
+
+        public static IReadOnlyList<string> GetPushSetupLogicalNames(GXDLMSObjectCollection objects) =>
+            objects.OfType<GXDLMSPushSetup>().Where(p => p.PushObjectList.Count > 0).Select(p => p.LogicalName)
+                .Concat(BasicPushLogicalNames.Where(ln => CanBuildFallback(objects, ln))).Distinct().ToArray();
+
+        private static readonly string[] BasicPushLogicalNames =
+            [InstantDispatchLN, "0.5.25.9.0.255", DailyPushLogicalName, EventStatusWord.PushLogicalName];
+
+        private static bool CanBuildFallback(GXDLMSObjectCollection objects, string logicalName)
+        {
+            if (logicalName == DailyPushLogicalName) return FindDailyRow(objects) is not null;
+            if (logicalName == EventStatusWord.PushLogicalName)
+                return objects.FindByLN(ObjectType.Data, EventStatusWord.LogicalName) is GXDLMSData;
+            if (logicalName == InstantDispatchLN)
+                return objects.Any(o => o is GXDLMSRegister);
+            return KnownProfileBackedDispatchLNs.TryGetValue(logicalName, out string? source)
+                && objects.FindByLN(ObjectType.ProfileGeneric, source) is GXDLMSProfileGeneric profile
+                && profile.CaptureObjects.Count > 1
+                && profile.Buffer.Any(row => row.Length >= profile.CaptureObjects.Count && row[0] is GXDateTime);
+        }
 
         public string GetEventStatusWord()
         {
             string? value = _meter.GetValue(EventStatusWord.LogicalName)?.ToString();
             EventStatusWord.Validate(value);
             return value!;
+        }
+
+        private GXDLMSPushSetup PrepareBasicPushIdentity(GXDLMSPushSetup push)
+        {
+            if (!BasicPushLogicalNames.Contains(push.LogicalName)) return push;
+            var captures = push.PushObjectList;
+            if (captures.Count >= 2 && captures[0].Key.LogicalName == DeviceIdLN && captures[0].Value.AttributeIndex == 2
+                && captures[1].Key.LogicalName == push.LogicalName && captures[1].Value.AttributeIndex == 1)
+                return push;
+            var result = new GXDLMSPushSetup(push.LogicalName);
+            AddDeviceIdAndSelfLN(result);
+            foreach (var capture in captures)
+                if (!(capture.Key.LogicalName == DeviceIdLN && capture.Value.AttributeIndex == 2)
+                    && !(capture.Key.LogicalName == push.LogicalName && capture.Value.AttributeIndex == 1))
+                    result.PushObjectList.Add(capture);
+            return result;
         }
 
         private GXDLMSPushSetup PrepareEswPush(GXDLMSPushSetup push)
@@ -667,6 +705,15 @@ namespace MeterSimulator.DLMS
         /// </summary>
         private GXDLMSPushSetup? BuildEphemeralPushSetup(string dispatchLogicalName)
         {
+            if (!CanBuildFallback(_objectsFromFile, dispatchLogicalName)) return null;
+            if (dispatchLogicalName == EventStatusWord.PushLogicalName)
+            {
+                var push = new GXDLMSPushSetup(dispatchLogicalName);
+                AddDeviceIdAndSelfLN(push);
+                push.PushObjectList.Add(new(new GXDLMSClock("0.0.1.0.0.255"), new GXDLMSCaptureObject(2, 0)));
+                push.PushObjectList.Add(new(new GXDLMSData(EventStatusWord.LogicalName), new GXDLMSCaptureObject(2, 0)));
+                return push;
+            }
             if (dispatchLogicalName == InstantDispatchLN)
             {
                 return BuildEphemeralInstantPushSetup();
@@ -740,6 +787,10 @@ namespace MeterSimulator.DLMS
             if (_objectsFromFile.FindByLN(ObjectType.Data, DeviceIdLN) is GXDLMSData deviceId)
             {
                 push.PushObjectList.Add(new GXKeyValuePair<GXDLMSObject, GXDLMSCaptureObject>(deviceId, new GXDLMSCaptureObject(2, 0)));
+            }
+            else
+            {
+                push.PushObjectList.Add(new(new GXDLMSData(DeviceIdLN) { Value = "CRY" + _meter.MeterNo }, new GXDLMSCaptureObject(2, 0)));
             }
 
             push.PushObjectList.Add(new GXKeyValuePair<GXDLMSObject, GXDLMSCaptureObject>(push, new GXDLMSCaptureObject(1, 0)));

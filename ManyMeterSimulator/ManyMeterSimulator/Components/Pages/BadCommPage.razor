@@ -7,6 +7,7 @@
 @using ManyMeterSimulator.Auth
 @using ManyMeterSimulator.BadComm
 @using ManyMeterSimulator.Provisioning
+@using ManyMeterSimulator.Settings
 @inject NetworkDelaySettings NetworkDelay
 @inject BadCommSettings BadComm
 @inject FleetCompositionCache Composition
@@ -17,10 +18,16 @@
 <PageTitle>MAYA - BadComm Setup</PageTitle>
 
 <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
-    Field communication impairment. Everything here is global, applies to every batch, and takes
+    Push and pull have independent impairment rules and network delays. The selected settings apply to every batch and take
     effect on the next exchange &mdash; including sessions already open. Settings survive restarts.
     Export/import lives on the <MudLink Href="/config">Configuration</MudLink> page.
 </MudText>
+
+<MudSelect T="CommunicationDirection" Value="_direction" ValueChanged="ChangeDirection"
+           Label="Traffic" Variant="Variant.Outlined" Class="mb-4" Style="max-width:240px">
+    <MudSelectItem Value="CommunicationDirection.Pull">Pull</MudSelectItem>
+    <MudSelectItem Value="CommunicationDirection.Push">Push</MudSelectItem>
+</MudSelect>
 
 @* ══════════ Explain a meter ══════════ *@
 <MudPaper Elevation="1" Class="pa-4 mb-6">
@@ -48,11 +55,11 @@
         <div>
             <MudText Typo="Typo.h6">Network delay</MudText>
             <MudText Typo="Typo.caption" Class="mud-text-secondary">
-                Round-trip wire time applied to every meter before its request reaches the brain.
+                Simulated wire time applied to every meter's @_direction.ToString().ToLowerInvariant() traffic.
             </MudText>
         </div>
         <div class="d-flex align-center" style="gap:12px;">
-            <code>@NetworkDelay.Current.LowerMs&ndash;@NetworkDelay.Current.UpperMs ms</code>
+            <code>@NetworkDelay.GetCurrent(_direction).LowerMs&ndash;@NetworkDelay.GetCurrent(_direction).UpperMs ms</code>
             @if (IsAdmin)
             {
                 <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small"
@@ -291,7 +298,7 @@ else
 
 @* ---------- Network delay dialog ---------- *@
 <MudDialog @bind-Visible="_delayDialogOpen" Options="_delayDialogOptions">
-    <TitleContent><MudText Typo="Typo.h6">Network delay</MudText></TitleContent>
+    <TitleContent><MudText Typo="Typo.h6">@_delayDirection network delay</MudText></TitleContent>
     <DialogContent>
         <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
             Applies to <strong>all</strong> meters. Bad-comm meters multiply this value. Maximum
@@ -326,6 +333,9 @@ else
     private bool IsAdmin { get; set; }
 
     private BadCommConfig _draft = new();
+    private CommunicationDirection _direction;
+    private CommunicationDirection _delayDirection;
+    private readonly Dictionary<CommunicationDirection, BadCommConfig> _drafts = new();
     private FleetComposition _composition;
     private FleetComposition _preview;
 
@@ -363,7 +373,7 @@ else
     /// </summary>
     private void Refresh()
     {
-        _composition = Composition.Current();
+        _composition = Composition.Current(_direction);
 
         if (DraftError is not null)
         {
@@ -380,7 +390,17 @@ else
 
     private void ResetDraft()
     {
-        _draft = BadComm.Snapshot();
+        _draft = BadComm.Snapshot(_direction);
+        _drafts[_direction] = _draft;
+        Refresh();
+    }
+
+    private void ChangeDirection(CommunicationDirection direction)
+    {
+        _drafts[_direction] = _draft;
+        _direction = direction;
+        _draft = _drafts.TryGetValue(direction, out var draft) ? draft : BadComm.Snapshot(direction);
+        _explainResult = null;
         Refresh();
     }
 
@@ -424,8 +444,8 @@ else
     {
         get
         {
-            int ndLo = NetworkDelay.Current.LowerMs;
-            int ndHi = NetworkDelay.Current.UpperMs;
+            int ndLo = NetworkDelay.GetCurrent(_direction).LowerMs;
+            int ndHi = NetworkDelay.GetCurrent(_direction).UpperMs;
             int mLo = Math.Max(1, _draft.Defaults.MultiplierMin);
             int mHi = Math.Max(mLo, _draft.Defaults.MultiplierMax);
 
@@ -459,11 +479,13 @@ else
             return;
         }
 
-        FleetComposition after = Composition.Preview(_draft);
+        CommunicationDirection direction = _direction;
+        BadCommConfig draft = _draft;
+        FleetComposition after = Composition.Preview(draft);
         bool? confirmed = await DialogService.ShowMessageBoxAsync(
-            "Apply impairment settings?",
-            $"{after.NonComm:N0} meters will stop responding entirely and {after.BadComm:N0} will become " +
-            "slow and lossy. This takes effect on the next exchange for every connected meter and " +
+            $"Apply {direction} impairment settings?",
+            $"For {direction.ToString().ToLowerInvariant()} traffic, {after.NonComm:N0} meters will be non-comm and {after.BadComm:N0} will become " +
+            "slow and lossy. This takes effect on the next exchange for every meter and " +
             "persists across restarts.",
             yesText: "Apply", cancelText: "Cancel");
 
@@ -472,14 +494,15 @@ else
             return;
         }
 
-        if (!BadComm.TryUpdate(_draft, out string? error))
+        if (!BadComm.TryUpdate(draft, out string? error, direction))
         {
             Snackbar.Add(error ?? "Could not apply those settings.", Severity.Error);
             return;
         }
 
-        ResetDraft();
-        Snackbar.Add("Impairment settings applied.", Severity.Success);
+        _drafts[direction] = BadComm.Snapshot(direction);
+        if (_direction == direction) ResetDraft();
+        Snackbar.Add($"{direction} impairment settings applied.", Severity.Success);
     }
 
     // ---------- Rules ----------
@@ -536,7 +559,7 @@ else
             return;
         }
 
-        MeterImpairment result = BadComm.Classifier.Classify(index);
+        MeterImpairment result = BadComm.GetClassifier(_direction).Classify(index);
         string serial = MeterRegistry.FormatSerial(index);
 
         _explainSeverity = result.Class switch
@@ -574,8 +597,9 @@ else
             return;
         }
 
-        _delayLower = NetworkDelay.Current.LowerMs;
-        _delayUpper = NetworkDelay.Current.UpperMs;
+        _delayDirection = _direction;
+        _delayLower = NetworkDelay.GetCurrent(_direction).LowerMs;
+        _delayUpper = NetworkDelay.GetCurrent(_direction).UpperMs;
         _delayDialogOpen = true;
     }
 
@@ -591,8 +615,8 @@ else
             : $"a random {_delayLower}-{_delayUpper} ms pause before every request reaches the brain";
 
         bool? confirmed = await DialogService.ShowMessageBoxAsync(
-            "Apply network delay?",
-            $"All batches will use {range}. Bad-comm meters multiply this value. Takes effect on the " +
+            $"Apply {_delayDirection} network delay?",
+            $"All batches will use {range} for {_delayDirection.ToString().ToLowerInvariant()} traffic. Bad-comm meters multiply this value. Takes effect on the " +
             "next exchange, including sessions already open.",
             yesText: "Apply", cancelText: "Cancel");
 
@@ -601,14 +625,14 @@ else
             return;
         }
 
-        if (!NetworkDelay.TryUpdate(_delayLower, _delayUpper))
+        if (!NetworkDelay.TryUpdate(_delayLower, _delayUpper, _delayDirection))
         {
             Snackbar.Add("Could not apply those limits.", Severity.Error);
             return;
         }
 
         _delayDialogOpen = false;
-        Snackbar.Add($"Network delay set to {_delayLower}-{_delayUpper} ms.", Severity.Success);
+        Snackbar.Add($"{_delayDirection} network delay set to {_delayLower}-{_delayUpper} ms.", Severity.Success);
     }
 
     // ---------- Helpers ----------

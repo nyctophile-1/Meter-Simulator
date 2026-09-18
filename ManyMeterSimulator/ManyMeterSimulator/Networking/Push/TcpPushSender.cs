@@ -62,7 +62,7 @@ public sealed class TcpPushSender
         if (!TryParseDestination(destination, defaultPort, out string host, out int port))
         {
             _logger.LogWarning("Push {Meter}: bad destination '{Destination}'", meterNo, destination);
-            return new PushDeliveryResult(0, payloads.Count);
+            return new PushDeliveryResult(0, payloads.Count, $"Invalid TCP push destination '{destination}'.");
         }
 
         if (payloads.Count == 0)
@@ -77,14 +77,17 @@ public sealed class TcpPushSender
         //
         // The meter's OWN assigned IP is the identity of a TCP push. Tried once, not per-retry: if
         // that address cannot reach this destination it never will (it times out, it isn't transient).
+        string? sourceError = source is null ? "The meter has no source IP assigned."
+            : $"Meter source {source} cannot bind to destination {host}:{port} (address family mismatch or non-IP destination).";
         if (CanBindSource(source, host))
         {
-            PushDeliveryResult? bound = await TryConnectAndWriteAsync(
+            var bound = await TryConnectAndWriteAsync(
                 meterNo, source, host, port, payloads, bindSource: true, cancellationToken);
-            if (bound is not null)
+            if (bound.Connected)
             {
-                return bound.Value;
+                return bound.Result;
             }
+            sourceError = bound.Result.Error;
         }
 
         // Strict (default): never deliver a push the HES push server would attribute to the wrong
@@ -100,32 +103,31 @@ public sealed class TcpPushSender
                 "the prefix on the HES push server side), or set Push:RequireMeterSourceIp=false to " +
                 "accept unattributable pushes for bring-up.",
                 meterNo, source is null ? "(none assigned)" : source, host, port);
-            return new PushDeliveryResult(0, payloads.Count);
+            return new PushDeliveryResult(0, payloads.Count, sourceError);
         }
 
         // Opt-in fallback: the sim server's default source. The push lands but carries no meter
         // identity, so it is warned on every meter, every time — this is a bring-up crutch only.
-        PushDeliveryResult? fallback = await TryConnectAndWriteAsync(
+        var fallback = await TryConnectAndWriteAsync(
             meterNo, source, host, port, payloads, bindSource: false, cancellationToken);
-        if (fallback is not null)
+        if (fallback.Connected)
         {
             _logger.LogWarning(
                 "Push {Meter}: delivered to {Host}:{Port} from the sim server's default address, NOT " +
                 "the meter's own {Source} — the HES push server cannot tell which meter this is. " +
                 "Push:RequireMeterSourceIp is off.",
                 meterNo, host, port, source is null ? "(none assigned)" : source);
-            return fallback.Value;
+            return fallback.Result;
         }
 
-        return new PushDeliveryResult(0, payloads.Count);
+        return fallback.Result;
     }
 
     /// <summary>
-    /// Opens one socket and writes every payload down it. Returns null when the CONNECT failed (the
-    /// caller may still have a fallback source worth trying); otherwise the per-payload tally, which
-    /// can be partial if the far side died mid-stream.
+    /// Opens one socket and writes every payload down it. Reports the failing stage and whether
+    /// connect succeeded, so fallback never resends payloads after a partial write.
     /// </summary>
-    private async Task<PushDeliveryResult?> TryConnectAndWriteAsync(
+    private async Task<(PushDeliveryResult Result, bool Connected)> TryConnectAndWriteAsync(
         string meterNo, IPAddress? source, string host, int port,
         IReadOnlyList<byte[]> payloads, bool bindSource, CancellationToken cancellationToken)
     {
@@ -139,7 +141,7 @@ public sealed class TcpPushSender
             _logger.LogDebug(
                 "Push {Meter}: could not open a {Which} socket for {Host}:{Port}: {Message}",
                 meterNo, bindSource ? "source-bound" : "default-source", host, port, ex.Message);
-            return null;
+            return (new(0, payloads.Count, $"TCP socket bind/open failed for {meterNo} from {source} to {host}:{port}: {ex.Message}"), false);
         }
 
         using (client)
@@ -161,13 +163,15 @@ public sealed class TcpPushSender
                 _logger.LogDebug(
                     "Push {Meter}: {Which} connect to {Host}:{Port} failed: {Message}",
                     meterNo, bindSource ? "source-bound" : "default-source", host, port, ex.Message);
-                return null;
+                string detail = ex is OperationCanceledException ? $"timed out after {_options.ConnectTimeoutSeconds}s" : ex.Message;
+                return (new(0, payloads.Count, $"TCP connect failed for {meterNo} from {(bindSource ? source?.ToString() : "default source")} to {host}:{port}: {detail}"), false);
             }
 
             var sendTimeout = TimeSpan.FromSeconds(Math.Max(1, _options.SendTimeoutSeconds));
             NetworkStream stream = client.GetStream();
 
             int sent = 0;
+            string? error = null;
             for (int i = 0; i < payloads.Count; i++)
             {
                 try
@@ -184,6 +188,8 @@ public sealed class TcpPushSender
                 }
                 catch (Exception ex)
                 {
+                    string detail = ex is OperationCanceledException ? $"timed out after {_options.SendTimeoutSeconds}s" : ex.Message;
+                    error = $"TCP write {i + 1}/{payloads.Count} failed for {meterNo} to {host}:{port}: {detail}";
                     // A HES that accepts the connection and then stops reading is the failure mode
                     // this bounds: without the write deadline that Write blocked forever and leaked
                     // the thread — and "HES slows down under load" is the scenario being tested.
@@ -213,7 +219,7 @@ public sealed class TcpPushSender
                     bindSource ? $"from {source}" : "from the host's default source");
             }
 
-            return new PushDeliveryResult(sent, payloads.Count - sent);
+            return (new PushDeliveryResult(sent, payloads.Count - sent, error), true);
         }
     }
 
@@ -291,4 +297,4 @@ public sealed class TcpPushSender
 }
 
 /// <summary>Outcome of sending one meter's push payloads.</summary>
-public readonly record struct PushDeliveryResult(int Sent, int Failed);
+public readonly record struct PushDeliveryResult(int Sent, int Failed, string? Error = null);

@@ -21,7 +21,7 @@ public partial class TcpStressIntegrationTests
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         using var listener = new TcpListener(IPAddress.IPv6Loopback, 0);
         listener.Start();
-        var f = new Fixture(((IPEndPoint)listener.LocalEndpoint).Port);
+        var f = new Fixture(((IPEndPoint)listener.LocalEndpoint).Port, "HP_Template_111.xml");
         await using var session = await f.Push.OpenBatchTrafficAsync(f.Batch, kind, timeout.Token);
         var sending = session.SendAsync(f.Batch.StartIndex, timeout.Token);
         using var client = await listener.AcceptTcpClientAsync(timeout.Token);
@@ -59,7 +59,7 @@ public partial class MqttPushRunTests
     public async Task ScheduledMqttSenderPublishesSelectedProfile(BatchTrafficKind kind, byte channel)
     {
         var f = new Fixture(1);
-        var batch = f.Batches.AddBatch("4G", "SA1231166HP_values.xml", 1, NicType.Mqtt4G, null, "local");
+        var batch = f.Batches.AddBatch("4G", "HP_Template_111.xml", 1, NicType.Mqtt4G, null, "local");
         f.Batches.TryStart(batch.Id);
         await using (var session = await f.Push.OpenBatchTrafficAsync(batch, kind, default))
             await session.SendAsync(batch.StartIndex, default);

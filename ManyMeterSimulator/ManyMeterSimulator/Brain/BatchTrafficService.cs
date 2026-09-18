@@ -126,8 +126,12 @@ public sealed class BatchTrafficService : BackgroundService
                         {
                             ct.ThrowIfCancellationRequested();
                             if (!Eligible(job) || _clock.GetUtcNow() >= window.End) return;
-                            await session.SendAsync(index, ct);
-                            Interlocked.Increment(ref sent);
+                            try
+                            {
+                                await session.SendAsync(index, ct);
+                                Interlocked.Increment(ref sent);
+                            }
+                            catch (PushSkippedException) { Interlocked.Increment(ref skipped); }
                         });
                         break;
                     }

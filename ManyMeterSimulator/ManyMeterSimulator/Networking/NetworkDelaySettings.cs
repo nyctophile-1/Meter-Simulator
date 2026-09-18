@@ -7,8 +7,7 @@ namespace ManyMeterSimulator.Networking;
 /// The artificial think-time a NIC waits before handing a request to the brain, so a simulated
 /// fleet responds at something closer to real-meter speed instead of instantly.
 ///
-/// Global for every batch by design — per-batch delays were not wanted, and one shared value
-/// keeps the hot path free of any per-meter lookup.
+/// Global for every batch, with independent push and pull bounds.
 ///
 /// Changed live from the BadComm page: the listener reads the current bounds on every exchange,
 /// so an update takes effect on the next request with no restart. The chosen value is persisted
@@ -26,6 +25,8 @@ public sealed class NetworkDelaySettings
     public sealed record Bounds(int LowerMs, int UpperMs);
 
     private volatile Bounds _bounds;
+    private volatile Bounds _pushBounds;
+    private readonly object _writeLock = new();
     private readonly IRuntimeConfigStore _store;
 
     public NetworkDelaySettings(IOptions<NetworkDelayOptions> options, IRuntimeConfigStore store)
@@ -36,13 +37,20 @@ public sealed class NetworkDelaySettings
         // more deliberate decision, and re-applying it after every restart would otherwise be
         // manual. With no persisted value, fall back to configuration (0/0 unless a deployment
         // seeds it).
-        DelayRange? persisted = store.Current.NetworkDelay;
+        DelayRange? persisted = store.Current.PullNetworkDelay ?? store.Current.NetworkDelay;
         int lower = DelayLimits.ClampNetworkDelay(persisted?.LowerMs ?? options.Value.LowerMs);
         int upper = DelayLimits.ClampNetworkDelay(persisted?.UpperMs ?? options.Value.UpperMs);
         _bounds = new Bounds(lower, Math.Max(lower, upper));
+        persisted = store.Current.PushNetworkDelay ?? store.Current.NetworkDelay;
+        lower = DelayLimits.ClampNetworkDelay(persisted?.LowerMs ?? options.Value.LowerMs);
+        upper = DelayLimits.ClampNetworkDelay(persisted?.UpperMs ?? options.Value.UpperMs);
+        _pushBounds = new Bounds(lower, Math.Max(lower, upper));
     }
 
     public Bounds Current => _bounds;
+
+    public Bounds GetCurrent(CommunicationDirection direction) =>
+        direction == CommunicationDirection.Push ? _pushBounds : _bounds;
 
     /// <summary>
     /// Applies new bounds. Returns false (and changes nothing) if either value is negative, above
@@ -50,7 +58,8 @@ public sealed class NetworkDelaySettings
     /// Rejected rather than silently clamped: an operator who typed 20000 should be told, not
     /// quietly given 10000.
     /// </summary>
-    public bool TryUpdate(int lowerMs, int upperMs)
+    public bool TryUpdate(int lowerMs, int upperMs,
+        CommunicationDirection direction = CommunicationDirection.Pull)
     {
         if (lowerMs < 0 || upperMs < 0 || upperMs < lowerMs ||
             lowerMs > DelayLimits.MaxNetworkDelayMs || upperMs > DelayLimits.MaxNetworkDelayMs)
@@ -58,11 +67,18 @@ public sealed class NetworkDelaySettings
             return false;
         }
 
-        _bounds = new Bounds(lowerMs, upperMs);
-
-        // Write through so the change survives a restart or redeploy. Only this section is
-        // touched, so any other setting in the document is left intact.
-        _store.Update(doc => doc.NetworkDelay = new DelayRange { LowerMs = lowerMs, UpperMs = upperMs });
+        lock (_writeLock)
+        {
+            if (direction == CommunicationDirection.Push)
+                _pushBounds = new Bounds(lowerMs, upperMs);
+            else
+                _bounds = new Bounds(lowerMs, upperMs);
+            _store.Update(doc =>
+            {
+                doc.PullNetworkDelay = new DelayRange { LowerMs = _bounds.LowerMs, UpperMs = _bounds.UpperMs };
+                doc.PushNetworkDelay = new DelayRange { LowerMs = _pushBounds.LowerMs, UpperMs = _pushBounds.UpperMs };
+            });
+        }
         return true;
     }
 
@@ -70,9 +86,9 @@ public sealed class NetworkDelaySettings
     /// The delay to apply to the next exchange: a fresh random draw in [LowerMs, UpperMs].
     /// Returns 0 when both bounds are 0, which is the no-delay default.
     /// </summary>
-    public int NextDelayMs()
+    public int NextDelayMs(CommunicationDirection direction = CommunicationDirection.Pull)
     {
-        Bounds b = _bounds;
+        Bounds b = GetCurrent(direction);
         if (b.UpperMs <= 0)
         {
             return 0;

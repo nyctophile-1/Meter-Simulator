@@ -189,23 +189,8 @@ namespace MeterSimulator.DLMS
                 capture.Key.Object.SetDataType(capture.Key.Attribute, capture.Value);
         }
 
-        // ════════════════════════════════════════════════════════════════════════
-        // STEP 3.5 — SHIFT BUFFER TIMESTAMPS TO "NOW"
-        // Per profile: find the newest concrete row timestamp, compute a single
-        // delta = now − newest, and add it to every concrete timestamp in that
-        // profile.  Newest row → exactly now (UTC); older rows keep their exact
-        // original spacing (so a daily profile becomes now, now−1d, now−2d …).
-        //
-        // This only runs once, at template load — and the template model is cached
-        // and shared for the whole process lifetime (see TemplateModelCache), so
-        // without a later re-shift the buffer's "latest" row falls further and
-        // further behind real time the longer the process stays up. The two helpers
-        // below (LatestConcreteTimestamp / ShiftProfileTimestamps) are the reusable
-        // core of that same logic — DLMSServerSession.EnsureBufferFreshness calls
-        // them again, per profile, whenever a push finds the buffer has drifted
-        // stale, so "newest row ≈ now" keeps being true for the life of the process,
-        // not just at the moment it started.
-        // ════════════════════════════════════════════════════════════════════════
+        // Move snapshots to the present; block RTCs stop at the last capture boundary.
+        // The same shift helper is used when a push refreshes a stale shared buffer.
         private static void ShiftBufferTimestamps(GXDLMSObjectCollection objects)
         {
             var nowUtc = new DateTimeOffset(DateTime.UtcNow);
@@ -245,8 +230,8 @@ namespace MeterSimulator.DLMS
 
         /// <summary>
         /// Adds <paramref name="delta"/> to every distinct concrete row timestamp in the profile's
-        /// buffer, preserving each row's spacing relative to the others. Returns how many distinct
-        /// timestamps were shifted.
+        /// buffer, then floors block-load RTCs to the profile's capture period. Returns how many
+        /// distinct timestamps were shifted.
         /// </summary>
         public static int ShiftProfileTimestamps(GXDLMSProfileGeneric profile, TimeSpan delta)
         {
@@ -261,6 +246,24 @@ namespace MeterSimulator.DLMS
 
             foreach (var dt in stamps)
                 dt.Value = dt.Value + delta;
+
+            if (profile.LogicalName == "1.0.99.1.0.255" && profile.CapturePeriod > 0)
+            {
+                long periodTicks = profile.CapturePeriod * TimeSpan.TicksPerSecond;
+                int clockColumn = profile.CaptureObjects.FindIndex(c =>
+                    c.Key is GXDLMSClock && c.Value.AttributeIndex == 2);
+                if (clockColumn >= 0)
+                {
+                    foreach (var row in profile.Buffer)
+                    {
+                        if (clockColumn >= row.Length || row[clockColumn] is not GXDateTime rtc || !IsConcreteDate(rtc))
+                            continue;
+                        // Align before selective access filters rows, including after a stale-buffer refresh.
+                        rtc.Value = new DateTimeOffset(rtc.Value.Ticks - rtc.Value.Ticks % periodTicks, rtc.Value.Offset);
+                        rtc.Skip &= ~DateTimeSkips.Deviation;
+                    }
+                }
+            }
 
             return stamps.Count;
         }

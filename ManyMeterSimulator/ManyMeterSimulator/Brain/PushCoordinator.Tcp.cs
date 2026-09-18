@@ -29,15 +29,16 @@ public sealed partial class PushCoordinator
         if (!TcpPushSender.TryParseDestination(destination, _options.DefaultPort, out _, out int port) || port is < 1 or > 65535)
             throw new InvalidOperationException($"Batch '{batch.Name}' has an invalid TCP destination.");
         var first = _sessions.GetOrCreate(new MeterRef(batch.StartIndex, NicType.Tcp4G));
+        string? selection = MqttPushProfiles.ForNic(request.PushSetupLogicalName, batch.NicType);
         lock (first)
         {
             var profiles = first.GetPushSetupLogicalNames();
-            if (profiles.Count == 0 || request.PushSetupLogicalName is { } profile && !profiles.Contains(profile))
-                throw new InvalidOperationException($"Batch '{batch.Name}' does not support the selected push profile.");
+            if (profiles.Count == 0 || selection is { } profile && !profiles.Contains(profile))
+                throw new InvalidOperationException($"Batch '{batch.Name}' cannot build {MqttPushProfiles.Label(selection)} from template '{batch.TemplateName}': the push setup or required profile data is missing.");
         }
         string? environment = batch.EnvironmentKey;
         long count = Math.Min(batch.Count, request.MaximumMetersPerBatch ?? int.MaxValue);
-        return new(count, Meters, Build, Send, IsCurrent);
+        return new(count, Meters, Build, Send, IsCurrent, AllowPushAsync);
 
         IEnumerable<MeterRef> Meters()
         {
@@ -59,7 +60,7 @@ public sealed partial class PushCoordinator
         byte[][] Build(MeterRef meter)
         {
             var session = _sessions.GetOrCreate(meter);
-            lock (session) return session.BuildPushPayloads(ciphering, request.PushSetupLogicalName).ToArray();
+            lock (session) return session.BuildPushPayloads(ciphering, selection).ToArray();
         }
 
         Task<PushDeliveryResult> Send(MeterRef meter, byte[][] payloads, CancellationToken token) =>

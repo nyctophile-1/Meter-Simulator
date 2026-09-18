@@ -1,4 +1,5 @@
 using ManyMeterSimulator.Provisioning;
+using ManyMeterSimulator.Settings;
 
 namespace ManyMeterSimulator.BadComm;
 
@@ -23,9 +24,7 @@ public sealed class FleetCompositionCache
     private readonly BadCommSettings _badComm;
     private readonly object _lock = new();
 
-    private FleetComposition _cached;
-    private int _cachedGeneration = -1;
-    private long _cachedBatchFingerprint = -1;
+    private readonly Dictionary<CommunicationDirection, (int Generation, long Fingerprint, FleetComposition Composition)> _cache = new();
 
     public FleetCompositionCache(MeterRegistry registry, BadCommSettings badComm)
     {
@@ -33,22 +32,22 @@ public sealed class FleetCompositionCache
         _badComm = badComm;
     }
 
-    public FleetComposition Current()
+    public FleetComposition Current(CommunicationDirection direction = CommunicationDirection.Pull)
     {
-        MeterClassifier classifier = _badComm.Classifier;
+        MeterClassifier classifier = _badComm.GetClassifier(direction);
         long fingerprint = BatchFingerprint();
 
         lock (_lock)
         {
-            if (classifier.Generation == _cachedGeneration && fingerprint == _cachedBatchFingerprint)
+            if (_cache.TryGetValue(direction, out var cached) &&
+                classifier.Generation == cached.Generation && fingerprint == cached.Fingerprint)
             {
-                return _cached;
+                return cached.Composition;
             }
 
-            _cached = Compute(classifier);
-            _cachedGeneration = classifier.Generation;
-            _cachedBatchFingerprint = fingerprint;
-            return _cached;
+            FleetComposition composition = Compute(classifier);
+            _cache[direction] = (classifier.Generation, fingerprint, composition);
+            return composition;
         }
     }
 

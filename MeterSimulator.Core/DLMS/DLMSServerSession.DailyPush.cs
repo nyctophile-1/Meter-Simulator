@@ -11,9 +11,11 @@ public partial class DLMSServerSession
 
     public bool CanBuildDailyPush => FindDailyRow() is not null;
 
-    private object[]? FindDailyRow()
+    private object[]? FindDailyRow() => FindDailyRow(_objectsFromFile);
+
+    private static object[]? FindDailyRow(GXDLMSObjectCollection objects)
     {
-        if (_objectsFromFile.FindByLN(ObjectType.ProfileGeneric, "1.0.99.2.0.255") is not GXDLMSProfileGeneric profile)
+        if (objects.FindByLN(ObjectType.ProfileGeneric, "1.0.99.2.0.255") is not GXDLMSProfileGeneric profile)
             return null;
         var positions = DailyColumns.Select(ln => profile.CaptureObjects.FindIndex(c =>
             c.Key.LogicalName == ln && c.Value.AttributeIndex == 2 && c.Value.DataIndex == 0)).ToArray();

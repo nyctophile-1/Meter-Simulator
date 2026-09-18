@@ -1,6 +1,5 @@
-using System.Xml.Linq;
+using MeterSimulator.DLMS;
 using ManyMeterSimulator.Networking.Nic;
-using ManyMeterSimulator.Provisioning;
 
 namespace ManyMeterSimulator.Brain;
 
@@ -20,31 +19,42 @@ public static class MqttPushProfiles
         CustomDaily => "Daily (custom)",
         CustomEsw => "ESW (custom)",
         CustomRtc => "RTC (custom Wirepas)",
-        Daily => "Daily (DLMS)",
+        Daily => "Daily",
         Esw => "ESW (Event Status Word)",
         "0.0.25.9.0.255" => "Instantaneous",
         "0.5.25.9.0.255" => "Block load",
+        "0.7.25.9.0.255" => "Billing",
         _ => logicalName,
     };
 
-    /// <summary>Discover all non-empty push setups, including uploaded templates. No payload generation.</summary>
-    public static IReadOnlyList<MqttPushProfile> ReadTemplate(string path)
+    public static string? ForNic(string? selection, NicType nic)
     {
-        var document = XDocument.Load(path);
-        var profiles = document.Descendants("GXDLMSPushSetup")
-            .Where(p => p.Element("ObjectList")?.Elements("Item").Any() == true)
-            .Select(p => (string?)p.Element("LN"))
-            .Where(ln => !string.IsNullOrWhiteSpace(ln)).ToList();
-        var daily = document.Descendants("GXDLMSProfileGeneric").FirstOrDefault(p => (string?)p.Element("LN") == "1.0.99.2.0.255");
-        string[] columns = ["0.0.1.0.0.255", "1.0.1.8.0.255", "1.0.9.8.0.255", "1.0.2.8.0.255", "1.0.10.8.0.255"];
-        var captures = daily?.Element("CaptureObjects")?.Elements("Item").ToArray() ?? [];
-        var positions = columns.Select(ln => Array.FindIndex(captures, c => (string?)c.Element("LN") == ln
-            && (string?)c.Element("Attribute") == "2" && (string?)c.Element("Data") == "0")).ToArray();
-        if (positions.All(p => p >= 0) && daily?.Element("Buffer")?.Elements("Row").Any(r =>
-            positions.All(p => p < r.Elements("Cell").Count())
-            && (string?)r.Elements("Cell").ElementAt(positions[0]).Attribute("Type") == "25") == true)
-            profiles.Add(Daily);
-        return profiles.Distinct(StringComparer.Ordinal)
-            .Select(ln => new MqttPushProfile(ln!, Label(ln))).OrderBy(p => p.LogicalName).ToArray();
+        selection = Canonical(selection);
+        if (nic != NicType.MqttWirepas) return selection;
+        return selection switch
+        {
+            "0.0.25.9.0.255" => "custom:instant",
+            "0.5.25.9.0.255" => "custom:block",
+            Daily => CustomDaily,
+            Esw => CustomEsw,
+            "0.7.25.9.0.255" => "custom:bill",
+            _ => selection
+        };
     }
+
+    public static string? Canonical(string? selection) => selection switch
+    {
+        null or "all" => null,
+        "custom:instant" => "0.0.25.9.0.255",
+        "custom:block" => "0.5.25.9.0.255",
+        CustomDaily or "custom:93:daily" => Daily,
+        CustomEsw => Esw,
+        "custom:bill" => "0.7.25.9.0.255",
+        _ => selection
+    };
+
+    /// <summary>Use the encoder's loaded model and fallback capabilities without generating payloads.</summary>
+    public static IReadOnlyList<MqttPushProfile> ReadTemplate(string path) =>
+        DLMSServerSession.GetPushSetupLogicalNames(TemplateModelCache.Shared.Get(path))
+            .Select(ln => new MqttPushProfile(ln, Label(ln))).OrderBy(p => p.LogicalName).ToArray();
 }

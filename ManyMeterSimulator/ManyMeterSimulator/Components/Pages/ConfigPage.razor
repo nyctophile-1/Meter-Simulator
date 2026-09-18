@@ -85,7 +85,7 @@ else
                 <td class="col-flex">
                     <MudText Typo="Typo.body1">BadComm</MudText>
                     <MudText Typo="Typo.caption" Class="mud-text-secondary">
-                        Field-impairment rules and network delay, applied fleet-wide on the next exchange.
+                        Separate push and pull impairment rules and network delays, applied fleet-wide on the next exchange.
                     </MudText>
                 </td>
                 <td style="text-align:right">
@@ -318,7 +318,7 @@ else
 
         bool? confirmed = await DialogService.ShowMessageBoxAsync(
             "Replace BadComm settings?",
-            "This replaces the current bad-comm rules and network delay for the whole fleet, on the " +
+            "This imports push and pull bad-comm rules and network delays for the whole fleet, on the " +
             "next exchange. This cannot be undone.",
             yesText: "Replace settings", cancelText: "Cancel");
 

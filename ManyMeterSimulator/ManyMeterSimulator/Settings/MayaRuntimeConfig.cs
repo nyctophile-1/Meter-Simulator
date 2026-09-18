@@ -18,11 +18,16 @@ public sealed class MayaRuntimeConfig
     /// <summary>Bumped only if a future change needs migration logic; unread today.</summary>
     public int Version { get; set; } = 1;
 
-    /// <summary>Simulated wire time applied before the request reaches the brain.</summary>
+    /// <summary>Legacy shared delay, used when direction-specific settings are absent.</summary>
     public DelayRange? NetworkDelay { get; set; }
 
-    /// <summary>Field-impairment simulation: non-comm and bad-comm populations and rules.</summary>
+    /// <summary>Legacy shared impairment, used when direction-specific settings are absent.</summary>
     public BadComm.BadCommConfig? BadComm { get; set; }
+
+    public BadComm.BadCommConfig? PullBadComm { get; set; }
+    public BadComm.BadCommConfig? PushBadComm { get; set; }
+    public DelayRange? PullNetworkDelay { get; set; }
+    public DelayRange? PushNetworkDelay { get; set; }
 
     // Future sections slot in here, e.g. a BridgeDelay to mimic slow meters:
     //     public DelayRange? BridgeDelay { get; set; }

@@ -24,6 +24,12 @@ public sealed class CustomPullOptions
     /// <summary>Generated block interval; field-layout exports do not contain capture periods.</summary>
     public int BlockPeriodMinutes { get; set; } = 15;
     public Dictionary<int, int> BlockPeriodMinutesByTemplate { get; set; } = new();
+    public int GetBlockPeriodMinutes(int templateId)
+    {
+        int period = BlockPeriodMinutesByTemplate.GetValueOrDefault(templateId, BlockPeriodMinutes);
+        return period is 15 or 30 or 60 ? period
+            : throw new InvalidOperationException("Generated block period must be 15, 30 or 60 minutes.");
+    }
     public int ResponseTimestampOffsetMinutes { get; set; } = 330;
     public int[]? EventsWithPowerProfile { get; set; }
     public Dictionary<int, Dictionary<int, int>> EventIds { get; set; } = new();

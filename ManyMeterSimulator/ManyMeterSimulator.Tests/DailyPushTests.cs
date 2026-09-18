@@ -97,17 +97,14 @@ public partial class MqttPushRunTests
     [Theory]
     [InlineData(NicType.Mqtt4G, false)]
     [InlineData(NicType.Mqtt4GImg, false)]
-    [InlineData(NicType.MqttWirepas, false)]
     [InlineData(NicType.MqttKmesh, false)]
     [InlineData(NicType.Mqtt4G, true)]
     [InlineData(NicType.Mqtt4GImg, true)]
-    [InlineData(NicType.MqttWirepas, true)]
     [InlineData(NicType.MqttKmesh, true)]
     public async Task DailyDlmsPushUsesTheSamePayloadAcrossAllMqttNics(NicType nic, bool ciphering)
     {
         var f = new Fixture(1, ciphering, "SA1231166HP_values.xml");
-        var batch = nic == NicType.MqttWirepas ? f.Batch :
-            f.Batches.AddBatch("DLMS", "SA1231166HP_values.xml", 1, nic, null, "local");
+        var batch = f.Batches.AddBatch("DLMS", "SA1231166HP_values.xml", 1, nic, null, "local");
         f.Batches.TryStart(batch.Id);
         await using var run = await f.Push.OpenMqttRunAsync(f.Request with
             { BatchIds = [batch.Id], PushSetupLogicalName = MqttPushProfiles.Daily });
@@ -116,17 +113,7 @@ public partial class MqttPushRunTests
         var message = Assert.Single(f.Publisher.Messages);
         var meter = new MeterRef(batch.StartIndex, nic);
         byte[] payload = message.Payload;
-        if (nic == NicType.MqttWirepas)
-        {
-            Assert.Equal($"gw-event/received_data/sim-gw/sink1/{meter.NodeId}/1/1", message.Topic);
-            var packet = Serializer.Deserialize<GenericMessage>(new MemoryStream(payload)).wirepas.packet_received_event;
-            Assert.Equal(uint.Parse(meter.NodeId), packet.source_address);
-            Assert.Equal(1u, packet.source_endpoint);
-            Assert.Equal(1, packet.payload[1]);
-            Assert.Equal(1, packet.payload[2]);
-            payload = packet.payload[5..];
-        }
-        else if (nic == NicType.MqttKmesh)
+        if (nic == NicType.MqttKmesh)
         {
             Assert.Equal($"gateway/push/meter/sim-gw/{meter.NodeId}", message.Topic);
             var packet = PushDataMessage.Parser.ParseFrom(payload);

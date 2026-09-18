@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using ManyMeterSimulator.Networking.SmartNic;
 using ManyMeterSimulator.Brain;
 using ManyMeterSimulator.Diagnostics;
 using ManyMeterSimulator.Networking.CustomPush;
@@ -224,7 +225,8 @@ public partial class MqttPushRunTests
         public MqttPushRequest Request => new() { BatchIds = [Batch.Id], PublisherCount = 4, MaxConcurrency = 8,
             PushSetupLogicalName = MqttPushProfiles.CustomDaily };
 
-        public Fixture(int count, bool ciphering = false, string template = "unused.xml", int customTemplateId = 93)
+        public Fixture(int count, bool ciphering = false, string template = "unused.xml", int customTemplateId = 93,
+            CustomPushEncoder? encoder = null, CustomPullOptions? customPullOptions = null, TimeProvider? clock = null)
         {
             Network.AddBroker(new BrokerEndpoint { Key = "local", Host = "unused.invalid" }, verified: true);
             Batch = Batches.AddBatch("custom", template, count, NicType.MqttWirepas,
@@ -237,7 +239,8 @@ public partial class MqttPushRunTests
             var options = Options.Create(new PushOptions { UseCiphering = ciphering });
             Push = new PushCoordinator(Batches, Sessions, Network, new TcpPushSender(NullLogger<TcpPushSender>.Instance, options),
                 Publisher, new NicCodecFactory(), options, Options.Create(new CustomPushOptions()),
-                Metrics, NullLogger<PushCoordinator>.Instance, CustomPushFixtureModel.DailyEncoder(customTemplateId));
+                Metrics, NullLogger<PushCoordinator>.Instance, encoder ?? CustomPushFixtureModel.DailyEncoder(customTemplateId),
+                Options.Create(customPullOptions ?? new()), clock);
         }
     }
 
