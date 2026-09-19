@@ -320,9 +320,12 @@ namespace MeterSimulator.DLMS
         /// </para>
         /// </param>
         /// <returns>One byte[] per PushSetup — each a complete DLMS wrapper DataNotification frame.</returns>
-        public IReadOnlyList<byte[]> BuildPushPayloads(bool useCiphering, string? pushSetupLogicalName = null, DateTimeOffset? readingTime = null)
+        public IReadOnlyList<byte[]> BuildPushPayloads(bool useCiphering, string? pushSetupLogicalName = null, DateTimeOffset? readingTime = null, ushort powerEventId = 101)
         {
+            bool includePower = (pushSetupLogicalName is null or PowerPushLogicalName) && CanBuildPowerPush(_objectsFromFile);
+            if (pushSetupLogicalName == PowerPushLogicalName && !includePower) throw new NotSupportedException("Template has no supported power-event capture definition.");
             var pushObjects = _objects.OfType<GXDLMSPushSetup>()
+                .Where(p => p.LogicalName != PowerPushLogicalName)
                 .Where(p => p.PushObjectList.Count > 0)
                 .Where(p => pushSetupLogicalName == null || p.LogicalName == pushSetupLogicalName)
                 .ToList();
@@ -338,7 +341,7 @@ namespace MeterSimulator.DLMS
                     pushObjects.Add(ephemeral);
             }
 
-            if (pushObjects.Count == 0 && !includeDaily)
+            if (pushObjects.Count == 0 && !includeDaily && !includePower)
             {
                 CoreLog.Warn(
                     $"[Push] {_meter.MeterNo}: no PushSetup with a non-empty push_object_list — " +
@@ -373,6 +376,7 @@ namespace MeterSimulator.DLMS
             }
 
             if (includeDaily) payloads.AddRange(BuildDailyPush(useCiphering));
+            if (includePower) payloads.Add(BuildPowerPush(useCiphering, powerEventId, readingTime ?? DateTimeOffset.UtcNow));
             return payloads;
         }
 
@@ -380,8 +384,9 @@ namespace MeterSimulator.DLMS
         public IReadOnlyList<string> GetPushSetupLogicalNames() => GetPushSetupLogicalNames(_objectsFromFile);
 
         public static IReadOnlyList<string> GetPushSetupLogicalNames(GXDLMSObjectCollection objects) =>
-            objects.OfType<GXDLMSPushSetup>().Where(p => p.PushObjectList.Count > 0).Select(p => p.LogicalName)
-                .Concat(BasicPushLogicalNames.Where(ln => CanBuildFallback(objects, ln))).Distinct().ToArray();
+            objects.OfType<GXDLMSPushSetup>().Where(p => p.PushObjectList.Count > 0 && p.LogicalName != PowerPushLogicalName).Select(p => p.LogicalName)
+                .Concat(BasicPushLogicalNames.Where(ln => CanBuildFallback(objects, ln)))
+                .Concat(CanBuildPowerPush(objects) ? new[] { PowerPushLogicalName } : Array.Empty<string>()).Distinct().ToArray();
 
         private static readonly string[] BasicPushLogicalNames =
             [InstantDispatchLN, "0.5.25.9.0.255", DailyPushLogicalName, EventStatusWord.PushLogicalName];

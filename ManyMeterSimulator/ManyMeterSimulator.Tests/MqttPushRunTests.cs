@@ -287,7 +287,11 @@ public partial class MqttPushRunTests
             RateLimiter = rateLimiter;
             cancellationToken.ThrowIfCancellationRequested();
             if (owner.BeforePublish is { } before) await before(cancellationToken);
-            foreach (var message in messages) owner.Messages.Enqueue(message);
+            foreach (var message in messages)
+            {
+                owner.Messages.Enqueue(message);
+                if (!owner.Reject) message.DeliveryConfirmed?.Invoke();
+            }
             owner.AfterPublish?.Invoke();
             return owner.Reject ? new MqttPushDelivery(0, messages.Count, "Broker rejected a publish.")
                 : new MqttPushDelivery(messages.Count, 0);

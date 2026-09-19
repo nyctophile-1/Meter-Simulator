@@ -42,7 +42,7 @@ public sealed partial class PushCoordinator
     {
         request = request with { BatchIds = request.BatchIds.ToArray() };
         request.Validate();
-        var sources = request.BatchIds.Select(id => ResolveMqttSource(id, request) with
+        var sources = request.BatchIds.Select(id => ResolveMqttSource(id, request, normalPower: applyImpairments) with
         {
             Allow = applyImpairments ? AllowPushAsync : null
         }).ToArray();
@@ -69,7 +69,7 @@ public sealed partial class PushCoordinator
         }
     }
 
-    private MqttPushSource ResolveMqttSource(int batchId, MqttPushRequest request)
+    private MqttPushSource ResolveMqttSource(int batchId, MqttPushRequest request, bool normalPower = false)
     {
         MeterBatch batch = _registry.Batches.FirstOrDefault(b => b.Id == batchId)
             ?? throw new InvalidOperationException($"Batch {batchId} no longer exists.");
@@ -84,6 +84,7 @@ public sealed partial class PushCoordinator
             throw new InvalidOperationException($"Broker '{endpoint.Key}' has no live client for {binding.Transport}. Start the batch first.");
 
         string? selection = MqttPushProfiles.ForNic(request.PushSetupLogicalName, batch.NicType);
+        var powerSequence = normalPower ? _normalPower.GetValue(batch, _ => new()) : new PowerEventSequence();
         bool custom = batch.NicType == NicType.MqttWirepas;
         IReadOnlyList<CustomPushProfile> customProfiles = [];
         INicCodec? codec = null;
@@ -123,7 +124,10 @@ public sealed partial class PushCoordinator
         long startIndex = batch.StartIndex;
         int? hesTemplate = batch.HesTemplateId;
         var header = batch.CustomPushHeaderKind;
-        return new MqttPushSource(batch.Id, count, binding, Meters, Build, IsCurrent, BuildAt: BuildAt);
+        bool includesPower = custom ? customProfiles.Any(p => p.Key == MqttPushProfiles.CustomPower)
+            : (selection is null or MqttPushProfiles.Power) && _sessions.GetOrCreate(new MeterRef(startIndex, batch.NicType)).GetPushSetupLogicalNames().Contains(MqttPushProfiles.Power);
+        return new MqttPushSource(batch.Id, count, binding, Meters, Build, IsCurrent, BuildAt: BuildAt,
+            Acquire: normalPower && includesPower ? (meter, ct) => powerSequence.AcquireAsync(meter.Index, ct) : null);
 
         IEnumerable<MeterRef> Meters()
         {
@@ -150,7 +154,8 @@ public sealed partial class PushCoordinator
         {
             if (custom)
             {
-                var packets = new List<byte[]>(customProfiles.Count);
+                var messages = new List<NicPublish>(customProfiles.Count);
+                var route = BatchGatewayAssignment.For(batch.Id, batch.StartIndex, meter.Index);
                 string? esw = null;
                 if (customProfiles.Any(p => p.Kind == "ESW"))
                 {
@@ -160,29 +165,38 @@ public sealed partial class PushCoordinator
                 var now = readingTime ?? _clock.GetUtcNow();
                 foreach (var profile in customProfiles)
                 {
+                    bool power = profile.Key == MqttPushProfiles.CustomPower;
+                    ushort eventId = power ? powerSequence.Next(meter.Index) : (ushort)profile.EventId;
                     int period = profile.Kind == "BLOCK" ? _customPullOptions.GetBlockPeriodMinutes(batch.HesTemplateId!.Value) : 15;
                     var timestamp = profile.Kind == "BLOCK"
                         ? DateTimeOffset.FromUnixTimeSeconds(now.ToUnixTimeSeconds() / (period * 60) * (period * 60))
                         : now;
-                    packets.Add(_customEncoder.Encode(batch.HesTemplateId!.Value, profile.Key, meter.Index,
+                    var packet = _customEncoder.Encode(batch.HesTemplateId!.Value, profile.Key, meter.Index,
                         unchecked((uint)Random.Shared.NextInt64()), timestamp,
-                        field => CustomProfileDataGenerator.Value(field, meter.Index, timestamp, profile.Kind, profile.EventId, period), esw));
+                        field => CustomProfileDataGenerator.Value(field, meter.Index, timestamp, profile.Kind, eventId, period), esw,
+                        power ? eventId : null);
+                    var message = WirepasCustomPushEnvelope.Create(route.Gateway, route.Sink, meter.NodeId,
+                        _customPushOptions.WirepasEndpoint, packet);
+                    messages.Add(power ? message with { DeliveryConfirmed = () => powerSequence.Confirm(meter.Index, eventId) } : message);
                 }
-                var route = BatchGatewayAssignment.For(batch.Id, batch.StartIndex, meter.Index);
-                return packets.Select(packet => WirepasCustomPushEnvelope.Create(route.Gateway,
-                    route.Sink, meter.NodeId, _customPushOptions.WirepasEndpoint,
-                    packet)).ToArray();
+                return messages;
             }
 
-            byte[][] payloads = BuildDlms(meter, _options.UseCiphering, selection, readingTime);
+            var delivery = BuildTrackedDlms(meter, _options.UseCiphering, selection, powerSequence, readingTime);
+            IReadOnlyList<NicPublish> Encode(INicCodec encoder) => delivery.Payloads.SelectMany((payload, index) =>
+            {
+                var fragments = encoder.EncodePush(meter.NodeId, payload).ToArray();
+                return delivery.Confirm is not null && index == delivery.Payloads.Length - 1
+                    ? TrackPowerFragments(fragments, () => delivery.Confirm(index)) : fragments;
+            }).ToArray();
             if (batch.NicType == NicType.MqttKmesh)
             {
                 var route = BatchGatewayAssignment.ForKmesh(batch.Id, batch.StartIndex, meter.Index);
                 var meterCodec = _codecs.CreatePush(binding.Transport, "", "", route.Gateway, route.Sink)!;
-                return payloads.SelectMany(p => meterCodec.EncodePush(meter.NodeId, p)).ToArray();
+                return Encode(meterCodec);
             }
             // Codec instances can carry frame state. Only encoding is serialized, never network I/O.
-            lock (codec!) return payloads.SelectMany(p => codec.EncodePush(meter.NodeId, p)).ToArray();
+            lock (codec!) return Encode(codec);
         }
 
         bool IsCurrent()

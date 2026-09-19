@@ -60,7 +60,8 @@ internal sealed record MqttPushSource(int BatchId, long Count, BrokerBinding Bin
     Func<IEnumerable<MeterRef>> Meters, Func<MeterRef, IReadOnlyList<NicPublish>> Build,
     Func<bool> IsCurrent,
     Func<MeterRef, CancellationToken, Task<bool>>? Allow = null,
-    Func<MeterRef, DateTimeOffset?, IReadOnlyList<NicPublish>>? BuildAt = null);
+    Func<MeterRef, DateTimeOffset?, IReadOnlyList<NicPublish>>? BuildAt = null,
+    Func<MeterRef, CancellationToken, ValueTask<IDisposable>>? Acquire = null);
 
 /// <summary>
 /// A run with preconnected publishers. Prepared bytes are consumed once; live loops rebuild each cycle. Dispose after
@@ -291,6 +292,7 @@ public sealed class MqttPushRun : IAsyncDisposable
                             _metrics?.RecordPushSkipped(nic);
                             return;
                         }
+                        using var gate = source.Acquire is { } acquire ? await acquire(meter, ct) : null;
                         PreparedMeter item = workItem.Prepared ?? new PreparedMeter(workItem.Source!.Binding, nic,
                             workItem.Source.Build(workItem.Meter), workItem.Source, workItem.Meter);
                         if (item.Messages.Count == 0)

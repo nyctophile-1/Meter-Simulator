@@ -39,6 +39,8 @@ public sealed partial class PushCoordinator
                 throw new InvalidOperationException($"Batch '{batch.Name}' cannot build {MqttPushProfiles.Label(selection)} from template '{batch.TemplateName}': the push setup or required profile data is missing.");
         }
         string? environment = batch.EnvironmentKey;
+        var powerSequence = new PowerEventSequence();
+        var deliveries = new System.Runtime.CompilerServices.ConditionalWeakTable<byte[][], DlmsPowerDelivery>();
         long count = Math.Min(batch.Count, request.MaximumMetersPerBatch ?? int.MaxValue);
         return new(count, Meters, Build, Send, IsCurrent, BuildAt);
 
@@ -63,11 +65,16 @@ public sealed partial class PushCoordinator
             => BuildAt(meter, null);
 
         byte[][] BuildAt(MeterRef meter, DateTimeOffset? timestamp)
-            => BuildDlms(meter, ciphering, selection, timestamp);
+        {
+            var delivery = BuildTrackedDlms(meter, ciphering, selection, powerSequence, timestamp);
+            if (delivery.Confirm is not null) deliveries.Add(delivery.Payloads, delivery);
+            return delivery.Payloads;
+        }
 
         Task<PushDeliveryResult> Send(MeterRef meter, byte[][] payloads, CancellationToken token) =>
             _tcpPush.SendAsync(meter.Serial, _sessions.GetOrCreate(meter).SourceAddress,
-                destination, _options.DefaultPort, payloads, token);
+                destination, _options.DefaultPort, payloads, token,
+                deliveries.TryGetValue(payloads, out var delivery) ? delivery.Confirm : null);
 
         bool IsCurrent() => ReferenceEquals(_registry.GetBatchForIndex(batch.StartIndex), batch)
             && batch.Status == BatchStatus.Running && batch.EnvironmentKey == environment

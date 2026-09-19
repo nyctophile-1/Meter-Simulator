@@ -34,15 +34,7 @@
             var profiles = new List<MqttPushProfile>();
             try
             {
-                if (batch.NicType == ManyMeterSimulator.Networking.Nic.NicType.MqttWirepas)
-                {
-                    if (batch.CustomPushHeaderKind is not (null or ManyMeterSimulator.Networking.CustomPush.CustomPushHeaderKind.New))
-                        throw new InvalidOperationException("Custom push requires the supported 12-byte HES header.");
-                    profiles.AddRange(CustomEncoder.GetProfiles(batch.HesTemplateId
-                        ?? throw new InvalidOperationException("Wirepas custom push requires a HES template mapping."))
-                        .Select(p => new MqttPushProfile(MqttPushProfiles.Canonical(p.Key)!, p.Label)));
-                }
-                else profiles.AddRange(MqttPushProfiles.ReadTemplate(Templates.ResolveOrThrow(batch.TemplateName)));
+                profiles.AddRange(MqttPushProfiles.ReadBatch(batch, Templates, CustomEncoder));
             }
             catch (Exception ex) { _error = $"Cannot read profiles for {batch.Name}: {ex.Message}"; }
             var keys = profiles.Select(p => p.LogicalName).ToHashSet(StringComparer.Ordinal);

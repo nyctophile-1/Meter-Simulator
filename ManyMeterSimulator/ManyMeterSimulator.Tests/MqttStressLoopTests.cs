@@ -42,13 +42,13 @@ public partial class MqttPushRunTests
         var batch = fixture.Batches.AddBatch("DLMS", "SA1231166HP_values.xml", 1, NicType.Mqtt4G, null, "local");
         fixture.Batches.TryStart(batch.Id);
         using var stop = new CancellationTokenSource();
-        fixture.Publisher.AfterPublish = () => { if (fixture.Publisher.Messages.Count >= 12) stop.Cancel(); };
+        fixture.Publisher.AfterPublish = () => { if (fixture.Publisher.Messages.Count >= 15) stop.Cancel(); };
         await using var run = await fixture.Push.OpenMqttRunAsync(fixture.Request with { BatchIds = [batch.Id], PushSetupLogicalName = null }, stop.Token);
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run.SendLoopAsync(new()));
         var messages = fixture.Publisher.Messages.ToArray();
-        Assert.Equal(12, messages.Length); // instant + block load + ESW + daily, repeated three times
+        Assert.Equal(15, messages.Length); // instant + block load + ESW + daily + power, repeated three times
         Assert.Equal(3, run.LoopResult!.Totals.MetersSent);
-        Assert.NotEqual(messages[0].Payload, messages[4].Payload);
+        Assert.NotEqual(messages[0].Payload, messages[5].Payload);
         Assert.Single(fixture.Publisher.Pools);
     }
 
@@ -181,7 +181,7 @@ public partial class MqttPushRunTests
     public void ProfileDiscoveryIncludesAllNonEmptySetupsAndExcludesPlaceholders()
     {
         var profiles = MqttPushProfiles.ReadTemplate(Path.Combine(AppContext.BaseDirectory, "Templates", "SA1231166HP_values.xml"));
-        Assert.Equal(new[] { "0.0.25.9.0.255", "0.4.25.9.0.255", "0.5.25.9.0.255", "0.6.25.9.0.255" }, profiles.Select(p => p.LogicalName));
+        Assert.Equal(new[] { "0.0.25.9.0.255", MqttPushProfiles.Power, "0.4.25.9.0.255", "0.5.25.9.0.255", "0.6.25.9.0.255" }, profiles.Select(p => p.LogicalName));
         string path = Path.Combine(Path.GetTempPath(), "maya-profiles-" + Guid.NewGuid().ToString("N") + ".xml");
         try
         {
