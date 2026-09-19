@@ -1,5 +1,7 @@
 using MeterSimulator.DLMS;
 using ManyMeterSimulator.Networking.Nic;
+using ManyMeterSimulator.Networking.CustomPush;
+using ManyMeterSimulator.Provisioning;
 
 namespace ManyMeterSimulator.Brain;
 
@@ -7,6 +9,8 @@ public sealed record MqttPushProfile(string LogicalName, string Label);
 
 public static class MqttPushProfiles
 {
+    public const string Power = DLMSServerSession.PowerPushLogicalName;
+    public const string CustomPower = "custom:event:power";
     public const string CustomDaily = "custom:daily";
     public const string CustomEsw = "custom:esw";
     public const string CustomRtc = "custom:rtc";
@@ -16,6 +20,7 @@ public static class MqttPushProfiles
     public static string Label(string? logicalName) => logicalName switch
     {
         null or "all" => "All supported profiles",
+        Power or CustomPower => "Power events (101 / 102)",
         CustomDaily => "Daily (custom)",
         CustomEsw => "ESW (custom)",
         CustomRtc => "RTC (custom Wirepas)",
@@ -37,6 +42,7 @@ public static class MqttPushProfiles
             "0.5.25.9.0.255" => "custom:block",
             Daily => CustomDaily,
             Esw => CustomEsw,
+            Power => CustomPower,
             "0.7.25.9.0.255" => "custom:bill",
             _ => selection
         };
@@ -49,11 +55,22 @@ public static class MqttPushProfiles
         "custom:block" => "0.5.25.9.0.255",
         CustomDaily or "custom:93:daily" => Daily,
         CustomEsw => Esw,
+        CustomPower => Power,
         "custom:bill" => "0.7.25.9.0.255",
         _ => selection
     };
 
     /// <summary>Use the encoder's loaded model and fallback capabilities without generating payloads.</summary>
+    public static IReadOnlyList<MqttPushProfile> ReadBatch(MeterBatch batch, TemplateRegistry templates, CustomPushEncoder encoder)
+    {
+        if (batch.NicType != NicType.MqttWirepas) return ReadTemplate(templates.ResolveOrThrow(batch.TemplateName));
+        if (batch.CustomPushHeaderKind is not (null or CustomPushHeaderKind.New))
+            throw new InvalidOperationException("Custom push requires the supported 12-byte HES header.");
+        return encoder.GetProfiles(batch.HesTemplateId
+                ?? throw new InvalidOperationException("Wirepas custom push requires a HES template mapping."))
+            .Select(p => new MqttPushProfile(Canonical(p.Key)!, Label(Canonical(p.Key)))).ToArray();
+    }
+
     public static IReadOnlyList<MqttPushProfile> ReadTemplate(string path) =>
         DLMSServerSession.GetPushSetupLogicalNames(TemplateModelCache.Shared.Get(path))
             .Select(ln => new MqttPushProfile(ln, Label(ln))).OrderBy(p => p.LogicalName).ToArray();

@@ -207,7 +207,7 @@ public class PushBlockLoadProfileTests
 
         IReadOnlyList<byte[]> payloads = session.BuildPushPayloads(useCiphering: true);
 
-        Assert.Equal(4, payloads.Count);
+        Assert.Equal(5, payloads.Count);
         var selfLns = payloads.Select(p => Convert.ToHexString((byte[])DecodePush(p)[1])).ToHashSet();
         Assert.Contains(Convert.ToHexString(new byte[] { 0, 0, 25, 9, 0, 255 }), selfLns); // Instant
         Assert.Contains(Convert.ToHexString(new byte[] { 0, 5, 25, 9, 0, 255 }), selfLns); // Block Load

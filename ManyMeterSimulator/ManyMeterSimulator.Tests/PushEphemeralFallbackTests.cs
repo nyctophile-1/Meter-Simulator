@@ -130,7 +130,7 @@ public class PushEphemeralFallbackTests
         IReadOnlyList<byte[]> payloads = session.BuildPushPayloads(useCiphering: true);
 
         Assert.True(session.CanBuildDailyPush);
-        Assert.Equal(4, payloads.Count); // Instant + Alert + Daily + Block Load.
+        Assert.Equal(5, payloads.Count); // Instant + Alert + Daily + Block Load + Power.
         Assert.Contains(payloads.Select(DecodePush), fields =>
             fields[1] is byte[] dispatch && dispatch.AsSpan().SequenceEqual(new byte[] { 0, 6, 25, 9, 0, 255 }));
         byte[] blockLoadSelfLn = { 0, 5, 25, 9, 0, 255 };

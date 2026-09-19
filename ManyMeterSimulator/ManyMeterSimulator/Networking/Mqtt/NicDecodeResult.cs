@@ -48,4 +48,7 @@ public readonly record struct NicDecodeResult(NicDecodeStatus Status, byte[]? Dl
 }
 
 /// <summary>One outbound broker message.</summary>
-public sealed record NicPublish(string Topic, byte[] Payload);
+public sealed record NicPublish(string Topic, byte[] Payload)
+{
+    internal Action? DeliveryConfirmed { get; init; }
+}

@@ -41,7 +41,7 @@ public class BasicPushProfilesTests
     }
 
     [Fact]
-    public void MissingPushDeclarationsStillProduceFourDistinctBasicProfiles()
+    public void MissingPushDeclarationsStillProduceBasicAndPowerProfiles()
     {
         var xml = XDocument.Load(Path.Combine(AppContext.BaseDirectory, "Templates", "SA1231166HP_values.xml"));
         xml.Descendants("GXDLMSPushSetup").Remove();
@@ -51,11 +51,11 @@ public class BasicPushProfilesTests
             xml.Save(path);
             var session = new DLMSServerSession(new DLMSMeter(701, "1.0.0.0.0.255", 16, 1), path);
             session.Initialize(true);
-            Assert.Equal(Profiles.Order(), MqttPushProfiles.ReadTemplate(path).Select(p => p.LogicalName).Order());
+            Assert.Equal(Profiles.Append(MqttPushProfiles.Power).Order(), MqttPushProfiles.ReadTemplate(path).Select(p => p.LogicalName).Order());
             var frames = session.BuildPushPayloads(false);
-            Assert.Equal(4, frames.Count);
+            Assert.Equal(5, frames.Count);
             var fields = frames.Select(DailyPushTests.Decode).ToArray();
-            Assert.Equal(Profiles.Order(), fields.Select(f => string.Join('.', (byte[])f[1])).Order());
+            Assert.Equal(Profiles.Append(MqttPushProfiles.Power).Order(), fields.Select(f => string.Join('.', (byte[])f[1])).Order());
             Assert.All(fields, f => Assert.Equal("CRY" + MeterIdentity.Serial(701), f[0]));
             Assert.Equal(session.GetEventStatusWord(), fields.Single(f => ((byte[])f[1])[1] == 4)[3].ToString());
         }
@@ -67,7 +67,7 @@ public partial class MqttPushRunTests
 {
     public static IEnumerable<object[]> BasicMqttCases() =>
         from nic in new[] { NicType.Mqtt4G, NicType.Mqtt4GImg, NicType.MqttKmesh }
-        from profile in BasicPushProfilesTests.Profiles
+        from profile in BasicPushProfilesTests.Profiles.Append(MqttPushProfiles.Power)
         from prepared in new[] { false, true }
         select new object[] { nic, profile, prepared };
 
@@ -95,7 +95,7 @@ public partial class MqttPushRunTests
 
     public static IEnumerable<object[]> BasicWirepasCases() =>
         from entry in new[] { (501, "1P"), (702, "3P"), (803, "CT") }
-        from profile in BasicPushProfilesTests.Profiles
+        from profile in BasicPushProfilesTests.Profiles.Append(MqttPushProfiles.Power)
         from prepared in new[] { false, true }
         select new object[] { entry.Item1, entry.Item2, profile, prepared };
 
@@ -114,7 +114,7 @@ public partial class MqttPushRunTests
         var packet = Serializer.Deserialize<GenericMessage>(new MemoryStream(message.Payload)).wirepas.packet_received_event.payload;
         Assert.Equal((uint)(id + 123456), BinaryPrimitives.ReadUInt32LittleEndian(packet));
         Assert.Equal(packet.Length, BinaryPrimitives.ReadUInt16LittleEndian(packet.AsSpan(4)));
-        Assert.Equal(profile switch { "0.0.25.9.0.255" => 1, "0.5.25.9.0.255" => 6, MqttPushProfiles.Daily => 7, _ => 5 }, packet[12]);
+        Assert.Equal(profile switch { "0.0.25.9.0.255" => 1, "0.5.25.9.0.255" => 6, MqttPushProfiles.Daily => 7, MqttPushProfiles.Power => 11, _ => 5 }, packet[12]);
     }
 
     [Fact]

@@ -40,22 +40,25 @@ public sealed class CustomPushEncoder(HesDataModel model, IOptions<CustomPushOpt
     public IReadOnlyList<CustomPushProfile> GetProfiles(int templateId)
     {
         var (template, category, _) = Resolve(templateId);
-        return Profiles.Where(p => p.Kind != "EVENT" || _options.EventIds.TryGetValue(templateId, out var ids) && ids.ContainsKey(p.Key))
+        return Profiles.Where(p => p.Key == MqttPushProfiles.CustomPower || p.Kind != "EVENT" || _options.EventIds.TryGetValue(templateId, out var ids) && ids.ContainsKey(p.Key))
             .Select(p => ResolveProfile(templateId, p.Key))
-            .Where(p => p.Kind is "ESW" or "RTC" || Fields(template, category, p).Count > 0).ToArray();
+            .Where(p => p.Key == MqttPushProfiles.CustomPower ? SupportsPower(template, category)
+                : p.Kind is "ESW" or "RTC" || Fields(template, category, p).Count > 0).ToArray();
     }
 
-    public IReadOnlyList<TemplateField> GetFields(int templateId, string profileKey)
+    public IReadOnlyList<TemplateField> GetFields(int templateId, string profileKey, ushort? powerEventId = null)
     {
         var (template, category, _) = Resolve(templateId);
-        return Fields(template, category, ResolveProfile(templateId, profileKey));
+        return Fields(template, category, ResolveProfile(templateId, profileKey, powerEventId));
     }
 
     public byte[] Encode(int templateId, string profileKey, long meterIndex, uint frameId,
-        DateTimeOffset timestamp, Func<TemplateField, object?> valueForField, string? eventStatusWord = null)
+        DateTimeOffset timestamp, Func<TemplateField, object?> valueForField, string? eventStatusWord = null, ushort? powerEventId = null)
     {
         var (template, category, magic) = Resolve(templateId);
-        var profile = ResolveProfile(templateId, profileKey);
+        var profile = ResolveProfile(templateId, profileKey, powerEventId);
+        if (profileKey == MqttPushProfiles.CustomPower && !SupportsPower(template, category))
+            throw new NotSupportedException($"No verified layout for both power events 101/102 in HES template {templateId}/{category}.");
         var fields = Fields(template, category, profile);
         if (profile.Kind is not ("ESW" or "RTC") && fields.Count == 0)
             throw new NotSupportedException($"No {profile.Kind} custom-push layout for template {templateId}/{category}.");
@@ -143,9 +146,22 @@ public sealed class CustomPushEncoder(HesDataModel model, IOptions<CustomPushOpt
     private static CustomPushProfile Find(string key) => Profiles.SingleOrDefault(p => p.Key == key)
         ?? throw new NotSupportedException($"Unknown custom push profile {key}.");
 
-    private CustomPushProfile ResolveProfile(int templateId, string key)
+    private bool SupportsPower(MeterTemplateRow template, string category) => new[] { 101, 102 }.All(id =>
+    {
+        var fields = Fields(template, category, Find(MqttPushProfiles.CustomPower) with { EventId = id });
+        return fields.Any(f => f.ParameterName == "RtcDateTime" && f.DataType == "DateTime")
+            && fields.Any(f => f.ParameterName == "EventId" && f.DataType == "UInt16");
+    });
+
+    private CustomPushProfile ResolveProfile(int templateId, string key, ushort? powerEventId = null)
     {
         var profile = Find(key);
+        if (key == MqttPushProfiles.CustomPower)
+        {
+            ushort id = powerEventId ?? 101;
+            if (id is not (101 or 102)) throw new ArgumentOutOfRangeException(nameof(powerEventId));
+            return profile with { EventId = id };
+        }
         if (profile.Kind != "EVENT") return profile;
         if (!_options.EventIds.TryGetValue(templateId, out var ids) || !ids.TryGetValue(key, out int eventId))
             throw new NotSupportedException($"Configure a HES-supported event ID for template {templateId}/{key}.");

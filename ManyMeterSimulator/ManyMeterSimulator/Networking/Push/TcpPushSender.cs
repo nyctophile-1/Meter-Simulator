@@ -56,7 +56,7 @@ public sealed class TcpPushSender
         string destination,
         int defaultPort,
         IReadOnlyList<byte[]> payloads,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default, Action<int>? deliveryConfirmed = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (!TryParseDestination(destination, defaultPort, out string host, out int port))
@@ -82,7 +82,7 @@ public sealed class TcpPushSender
         if (CanBindSource(source, host))
         {
             var bound = await TryConnectAndWriteAsync(
-                meterNo, source, host, port, payloads, bindSource: true, cancellationToken);
+                meterNo, source, host, port, payloads, bindSource: true, cancellationToken, deliveryConfirmed);
             if (bound.Connected)
             {
                 return bound.Result;
@@ -109,7 +109,7 @@ public sealed class TcpPushSender
         // Opt-in fallback: the sim server's default source. The push lands but carries no meter
         // identity, so it is warned on every meter, every time — this is a bring-up crutch only.
         var fallback = await TryConnectAndWriteAsync(
-            meterNo, source, host, port, payloads, bindSource: false, cancellationToken);
+            meterNo, source, host, port, payloads, bindSource: false, cancellationToken, deliveryConfirmed);
         if (fallback.Connected)
         {
             _logger.LogWarning(
@@ -129,7 +129,7 @@ public sealed class TcpPushSender
     /// </summary>
     private async Task<(PushDeliveryResult Result, bool Connected)> TryConnectAndWriteAsync(
         string meterNo, IPAddress? source, string host, int port,
-        IReadOnlyList<byte[]> payloads, bool bindSource, CancellationToken cancellationToken)
+        IReadOnlyList<byte[]> payloads, bool bindSource, CancellationToken cancellationToken, Action<int>? deliveryConfirmed)
     {
         TcpClient client;
         try
@@ -181,6 +181,7 @@ public sealed class TcpPushSender
 
                     await stream.WriteAsync(payloads[i], writeCts.Token);
                     sent++;
+                    deliveryConfirmed?.Invoke(i);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {

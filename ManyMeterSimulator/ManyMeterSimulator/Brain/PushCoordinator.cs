@@ -49,6 +49,7 @@ public sealed partial class PushCoordinator
         ManyMeterSimulator.Networking.NetworkDelaySettings? networkDelay = null)
     {
         _registry = registry;
+        _registry.Changed += RemoveRetiredPowerSequences;
         _sessions = sessions;
         _network = network;
         _tcpPush = tcpPush;
@@ -138,6 +139,7 @@ public sealed partial class PushCoordinator
         int metersSent = 0, metersFailed = 0, metersSkipped = 0, payloadsSent = 0, payloadsFailed = 0;
         string? pushError = null;
         string? selection = MqttPushProfiles.ForNic(pushSetupLogicalName, batch.NicType);
+        var powerSequence = _normalPower.GetValue(batch, _ => new());
 
         await ProcessInWavesAsync(meters, batch, async pair =>
         {
@@ -150,7 +152,10 @@ public sealed partial class PushCoordinator
                     _metrics.RecordPushSkipped(batch.NicType);
                     return;
                 }
-                byte[][] payloads = BuildDlms(pair.Meter, _options.UseCiphering, selection);
+                using var powerGate = selection is null or MqttPushProfiles.Power
+                    ? await powerSequence.AcquireAsync(pair.Meter.Index, cancellationToken) : null;
+                var delivery = BuildTrackedDlms(pair.Meter, _options.UseCiphering, selection, powerSequence);
+                byte[][] payloads = delivery.Payloads;
 
                 if (payloads.Length == 0)
                 {
@@ -159,7 +164,7 @@ public sealed partial class PushCoordinator
 
                 PushDeliveryResult result = await _tcpPush.SendAsync(
                     pair.Meter.Serial, pair.Session.SourceAddress, destination,
-                    _options.DefaultPort, payloads, cancellationToken);
+                    _options.DefaultPort, payloads, cancellationToken, delivery.Confirm);
 
                 _metrics.RecordPushPayloads(batch.NicType, result.Sent, result.Failed);
                 Interlocked.Add(ref payloadsSent, result.Sent);

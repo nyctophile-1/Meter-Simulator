@@ -97,7 +97,11 @@ public sealed class MqttPushPool : IMqttPushPool
                 try
                 {
                     if (!connection.IsConnected) throw new IOException("Publishing connection disconnected; prepare a new run to reconnect.");
-                    if (await connection.PublishAsync(message, _qos, timeout.Token)) sent++;
+                    if (await connection.PublishAsync(message, _qos, timeout.Token))
+                    {
+                        sent++;
+                        message.DeliveryConfirmed?.Invoke();
+                    }
                     else
                     {
                         failed++;

@@ -13,6 +13,7 @@
 @inject MeterRegistry MeterRegistry
 @inject TemplateRegistry Templates
 @inject NetworkRegistry Network
+@inject ManyMeterSimulator.Networking.CustomPush.CustomPushEncoder CustomEncoder
 @inject PushCoordinator Push
 @inject HistoricalPushService History
 @inject PushScheduleService Schedule
@@ -1334,58 +1335,16 @@
     {
         get
         {
-            var declared = new Dictionary<string, string>(StringComparer.Ordinal);
-            var fallbackEligible = new Dictionary<string, string>(StringComparer.Ordinal);
-
-            foreach (string templateName in _batches.Select(b => b.TemplateName).Distinct(StringComparer.OrdinalIgnoreCase))
+            var byObis = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var batch in _batches)
             {
                 try
                 {
-                    string path = Templates.ResolveOrThrow(templateName);
-                    GXDLMSObjectCollection objects = TemplateModelCache.Shared.Get(path);
-
-                    foreach (GXDLMSPushSetup push in objects.OfType<GXDLMSPushSetup>())
-                    {
-                        if (push.PushObjectList.Count == 0)
-                        {
-                            continue;
-                        }
-
-                        string label = string.IsNullOrWhiteSpace(push.Description) ? push.LogicalName : push.Description;
-                        declared[push.LogicalName] = label;
-                    }
-
-                    if (objects.OfType<GXDLMSRegister>().Any() || objects.OfType<GXDLMSData>().Any())
-                    {
-                        fallbackEligible.TryAdd(DLMSServerSession.InstantDispatchLN, "Instantaneous Profile (from pull data)");
-                    }
-
-                    foreach ((string dispatchLn, string profileLn) in DLMSServerSession.KnownProfileBackedDispatchLNs)
-                    {
-                        if (objects.FindByLN(Gurux.DLMS.Enums.ObjectType.ProfileGeneric, profileLn) is GXDLMSProfileGeneric profile && profile.Buffer.Count > 0)
-                        {
-                            string label = string.IsNullOrWhiteSpace(profile.Description) ? profileLn : profile.Description;
-                            fallbackEligible.TryAdd(dispatchLn, $"{label} (from pull data)");
-                        }
-                    }
+                    foreach (var profile in MqttPushProfiles.ReadBatch(batch, Templates, CustomEncoder))
+                        byObis.TryAdd(profile.LogicalName, profile.Label);
                 }
-                catch (Exception)
-                {
-                    // A batch whose template can't be resolved/parsed just contributes no options —
-                    // the page must still render.
-                }
+                catch (Exception) { /* An unsupported batch must not prevent rendering other batches. */ }
             }
-
-            var byObis = new Dictionary<string, string>(fallbackEligible, StringComparer.Ordinal);
-            foreach ((string obis, string label) in declared)
-            {
-                byObis[obis] = label;
-            }
-
-            byObis.TryAdd(MqttPushProfiles.Esw, "ESW (Event Status Word)");
-            byObis.TryAdd(MqttPushProfiles.CustomDaily, "Daily (template 93 custom push)");
-            byObis.TryAdd(MqttPushProfiles.Daily, "Daily (DLMS)");
-
             var options = byObis
                 .OrderBy(kv => kv.Value, StringComparer.OrdinalIgnoreCase)
                 .Select(kv => ((string?)kv.Key, kv.Value))
