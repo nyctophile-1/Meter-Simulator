@@ -30,11 +30,11 @@ without replaying already enumerated meters. Unsupported profiles remain visible
 
 ## Topics and data
 
-Routing sends an empty payload to `FakeRouting/{nodeId}/{transport}` using the enabled MQTT
+Routing sends an empty payload to `FakeRouting/{nodeId}/{transport}/{gatewayId}/{sinkId}` using the enabled MQTT
 broker in the batch's environment, including for TCP batches. Transport is 4 for TCP,
 3 for either 4G MQTT variant, 2 for Wirepas and 1 for Kmesh. Stopped/disabled/unbound batches
 cannot send. This scheduler replaces the previous automatic `MqttRoutingService` registration;
-there is only one automatic routing scheduler.
+there is only one automatic routing scheduler. RF routes use stable groups of 1,000 meters and four node-derived sinks; direct transports use direct_4g/direct_tcp for both gateway and sink. See [the contract](../../fake-routing-gateway-sink.md).
 
 Push data uses its existing NIC transport and encoding, including source-bound TCP and
 publish-only MQTT pools. Instantaneous uses `0.0.25.9.0.255`, Block Load `0.5.25.9.0.255`, and

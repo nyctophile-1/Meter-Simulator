@@ -27,30 +27,52 @@ public sealed class MqttRoutingService(
         foreach (var batch in registry.Batches)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (batch.Status != BatchStatus.Running || !batch.Traffic.Routing) continue;
+
+            if (batch.Status != BatchStatus.Running || !batch.Traffic.Routing)
+            {
+                continue;
+            }
 
             var endpoint = batch.BrokerKey is { } key ? network.Broker(key) : null;
-            if (endpoint is not { Enabled: true }) continue;
+
+            if (endpoint is not { Enabled: true })
+            {
+                continue;
+            }
 
             long sent = 0;
+
             try
             {
                 await using var pool = await publisher.OpenPoolAsync(endpoint, cancellationToken);
+
                 for (long index = batch.StartIndex; index <= batch.EndIndex; index++)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    if (!IsCurrent()) break;
+
+                    if (!IsCurrent())
+                    {
+                        break;
+                    }
+
                     var message = new NicPublish(
-                        NicTopics.FakeRouting(MeterNodeIds.Format(index), batch.NicType), Array.Empty<byte>());
+                        NicTopics.FakeRouting(batch, index), Array.Empty<byte>());
                     var delivery = await pool.PublishMeterAsync([message], cancellationToken);
                     sent += delivery.Sent;
+
                     if (delivery.Failed > 0)
+                    {
                         throw new IOException(delivery.Error ?? "Routing publish failed.");
+                    }
                 }
+
                 logger.LogInformation("Routing batch {BatchId}: sent {Sent}/{Count} empty MQTT messages",
                     batch.Id, sent, batch.Count);
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
                 logger.LogWarning(ex, "Routing batch {BatchId}: stopped after {Sent}/{Count} messages; next attempt in the next routing cycle",

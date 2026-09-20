@@ -16,12 +16,12 @@ namespace ManyMeterSimulator.Tests;
 public sealed class HesRegistrationLeaseTests
 {
     [Theory]
-    [InlineData(0, "gate_17_1", "sink0", 0u)]
-    [InlineData(3, "gate_17_1", "sink3", 3u)]
-    [InlineData(499, "gate_17_1", "sink3", 3u)]
-    [InlineData(500, "gate_17_2", "sink0", 0u)]
-    [InlineData(999, "gate_17_2", "sink3", 3u)]
-    [InlineData(1000, "gate_17_3", "sink0", 0u)]
+    [InlineData(0, "gate_17_1", "sink1", 1u)]
+    [InlineData(3, "gate_17_1", "sink0", 0u)]
+    [InlineData(499, "gate_17_1", "sink0", 0u)]
+    [InlineData(500, "gate_17_1", "sink1", 1u)]
+    [InlineData(999, "gate_17_1", "sink0", 0u)]
+    [InlineData(1000, "gate_17_2", "sink1", 1u)]
     public void GatewaysUseBatchRelativeGroupsAndFourSinks(int offset, string gateway, string wirepasSink, uint kmeshSink)
     {
         Assert.Equal((gateway, wirepasSink), BatchGatewayAssignment.For(17, 2300002, 2300002 + offset));
@@ -222,12 +222,12 @@ public sealed class HesRegistrationPostgresTests
                 AND communicationmodule='RF' AND deviceid=nodeid::text || 'MAYA'
                 AND installedon=originalinstalledon AND abs(extract(epoch FROM (installedon-(now() at time zone 'UTC')))) < 30
                 """));
-            Assert.Equal("gate_2_1/sink3", await Sql("SELECT gatewayid::text || '/' || sinkid::text FROM kimbaldb_dbo.latestrouting WHERE nodeid='1002300501'"));
-            Assert.Equal("gate_2_2/sink0", await Sql("SELECT gatewayid::text || '/' || sinkid::text FROM kimbaldb_dbo.latestrouting WHERE nodeid='1002300502'"));
-            Assert.Equal("gate_2_3/sink0", await Sql("SELECT gatewayid::text || '/' || sinkid::text FROM kimbaldb_dbo.latestrouting WHERE nodeid='1002301002'"));
-            Assert.Equal(500L, await Sql("SELECT count(*) FROM kimbaldb_dbo.latestrouting WHERE gatewayid='gate_2_1'"));
-            Assert.Equal(500L, await Sql("SELECT count(*) FROM kimbaldb_dbo.latestrouting WHERE gatewayid='gate_2_2'"));
-            Assert.Equal(1L, await Sql("SELECT count(*) FROM kimbaldb_dbo.latestrouting WHERE gatewayid='gate_2_3'"));
+            Assert.Equal("gate_2_1/sink0", await Sql("SELECT gatewayid::text || '/' || sinkid::text FROM kimbaldb_dbo.latestrouting WHERE nodeid='1002300501'"));
+            Assert.Equal("gate_2_1/sink1", await Sql("SELECT gatewayid::text || '/' || sinkid::text FROM kimbaldb_dbo.latestrouting WHERE nodeid='1002300502'"));
+            Assert.Equal("gate_2_2/sink1", await Sql("SELECT gatewayid::text || '/' || sinkid::text FROM kimbaldb_dbo.latestrouting WHERE nodeid='1002301002'"));
+            Assert.Equal(1000L, await Sql("SELECT count(*) FROM kimbaldb_dbo.latestrouting WHERE gatewayid='gate_2_1'"));
+            Assert.Equal(1L, await Sql("SELECT count(*) FROM kimbaldb_dbo.latestrouting WHERE gatewayid='gate_2_2'"));
+            Assert.Equal(0L, await Sql("SELECT count(*) FROM kimbaldb_dbo.latestrouting WHERE gatewayid='gate_2_3'"));
             await Assert.ThrowsAsync<InvalidOperationException>(() => service.ReplaceAsync(admin, confirmed, false, default));
         }
         finally { if (Directory.Exists(folder)) Directory.Delete(folder, true); }

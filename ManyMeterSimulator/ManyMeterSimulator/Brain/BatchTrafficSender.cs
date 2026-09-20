@@ -12,20 +12,39 @@ public sealed class BatchTrafficSender(PushCoordinator push, NetworkRegistry net
 {
     public async Task<IBatchTrafficSession> OpenAsync(MeterBatch batch, BatchTrafficKind kind, CancellationToken token)
     {
-        if (kind != BatchTrafficKind.Routing) return await push.OpenBatchTrafficAsync(batch, kind, token);
+        if (kind != BatchTrafficKind.Routing)
+        {
+            return await push.OpenBatchTrafficAsync(batch, kind, token);
+        }
+
         var endpoint = batch.BrokerKey is { } key ? network.Broker(key) : null;
-        if (endpoint is not { Enabled: true }) throw new InvalidOperationException("Routing needs an enabled broker in the batch's environment.");
+
+        if (endpoint is not { Enabled: true })
+        {
+            throw new InvalidOperationException("Routing needs an enabled broker in the batch's environment.");
+        }
+
         var pool = await routing.OpenPoolAsync(endpoint, token);
+
         return new BatchTrafficSession(async (index, ct) =>
         {
             ct.ThrowIfCancellationRequested();
+
             var current = batch.BrokerKey is { } binding ? network.Broker(binding) : null;
+
             if (current is not { Enabled: true } || current.Key != endpoint.Key || current.Host != endpoint.Host
                 || current.Port != endpoint.Port || current.UseTls != endpoint.UseTls
                 || current.Username != endpoint.Username || current.Password != endpoint.Password)
+            {
                 throw new InvalidOperationException("Routing broker changed; reconnecting.");
-            var result = await pool.PublishMeterAsync([new(NicTopics.FakeRouting(MeterNodeIds.Format(index), batch.NicType), [])], ct);
-            if (result.Failed > 0) throw new IOException(result.Error ?? "Routing publish failed.");
+            }
+
+            var result = await pool.PublishMeterAsync([new(NicTopics.FakeRouting(batch, index), [])], ct);
+
+            if (result.Failed > 0)
+            {
+                throw new IOException(result.Error ?? "Routing publish failed.");
+            }
         }, pool.DisposeAsync);
     }
 }

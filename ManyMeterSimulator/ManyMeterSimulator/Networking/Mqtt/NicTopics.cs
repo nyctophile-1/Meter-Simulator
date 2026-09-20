@@ -1,4 +1,5 @@
 using ManyMeterSimulator.Networking.Nic;
+using ManyMeterSimulator.Provisioning;
 
 namespace ManyMeterSimulator.Networking.Mqtt;
 
@@ -13,8 +14,15 @@ public static class NicTopics
 {
     public const string FakeRoutingPrefix = "FakeRouting/";
 
-    public static string FakeRouting(string nodeId, NicType nicType)
+    public static string FakeRouting(MeterBatch batch, long meterIndex)
     {
+        if (meterIndex < batch.StartIndex || meterIndex > batch.EndIndex)
+        {
+            throw new ArgumentOutOfRangeException(nameof(meterIndex));
+        }
+
+        string nodeId = MeterNodeIds.Format(meterIndex);
+        var nicType = batch.NicType;
         var transport = nicType switch
         {
             NicType.Tcp4G => "4",
@@ -23,7 +31,23 @@ public static class NicTopics
             NicType.MqttKmesh => "1",
             _ => throw new ArgumentOutOfRangeException(nameof(nicType), nicType, "Unknown routing transport.")
         };
-        return FakeRoutingPrefix + nodeId + "/" + transport;
+        var route = nicType switch
+        {
+            NicType.Tcp4G => ("direct_tcp", "direct_tcp"),
+            NicType.Mqtt4G or NicType.Mqtt4GImg => ("direct_4g", "direct_4g"),
+            NicType.MqttWirepas => BatchGatewayAssignment.For(batch.Id, batch.StartIndex, meterIndex),
+            NicType.MqttKmesh => KmeshRoute(),
+            _ => throw new ArgumentOutOfRangeException(nameof(nicType))
+        };
+
+        return $"{FakeRoutingPrefix}{nodeId}/{transport}/{route.Item1}/{route.Item2}";
+
+        (string, string) KmeshRoute()
+        {
+            var assignment = BatchGatewayAssignment.ForKmesh(batch.Id, batch.StartIndex, meterIndex);
+
+            return (assignment.Gateway, assignment.Sink.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
     }
 
     // ── Direct 4G (variants c, d) — node id is IN the topic ──

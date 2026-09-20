@@ -108,15 +108,15 @@ public partial class MqttPushRunTests
     }
 
     [Fact]
-    public async Task WirepasPushRoutingUsesFiveHundredMetersPerGateway()
+    public async Task WirepasPushRoutingUsesOneThousandMetersPerGateway()
     {
-        var fixture = new Fixture(501);
+        var fixture = new Fixture(1001);
         await using var run = await fixture.Push.OpenMqttRunAsync(fixture.Request);
         var result = await run.SendLiveAsync();
-        Assert.Equal(501, result.MetersSent);
-        Assert.Equal(500, fixture.Publisher.Messages.Count(m => m.Topic.Contains("/gate_1_1/")));
+        Assert.Equal(1001, result.MetersSent);
+        Assert.Equal(1000, fixture.Publisher.Messages.Count(m => m.Topic.Contains("/gate_1_1/")));
         Assert.Single(fixture.Publisher.Messages, m => m.Topic.Contains("/gate_1_2/sink0/"));
-        Assert.Equal(125, fixture.Publisher.Messages.Count(m => m.Topic.Contains("/gate_1_1/sink3/")));
+        Assert.Equal(250, fixture.Publisher.Messages.Count(m => m.Topic.Contains("/gate_1_1/sink3/")));
     }
 
     [Fact]

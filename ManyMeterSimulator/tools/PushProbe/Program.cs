@@ -1,3 +1,4 @@
+using ManyMeterSimulator.Provisioning;
 using System.Security.Cryptography;
 using System.Text.Json;
 using ManyMeterSimulator.Brain;
@@ -67,12 +68,22 @@ foreach (var profile in config.Profiles)
 }
 if (config.Routing)
 {
+    var routingBatch = new MeterBatch
+    {
+        Id = config.BatchId,
+        Name = "probe",
+        TemplateName = config.Template,
+        StartIndex = config.BatchStartIndex,
+        Count = checked(config.Index - config.BatchStartIndex + 1),
+        NicType = nic
+    };
+
     byte[] bytes = [];
     string digest = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
     string file = Path.Combine(output, digest + ".bin");
     File.WriteAllBytes(file, bytes);
     results.Add(new { profile = "fakerouting", status = "generated", meter.NodeId, meter.Serial,
-        Topic = NicTopics.FakeRouting(meter.NodeId, nic), bytes = bytes.Length, sha256 = digest, file });
+        Topic = NicTopics.FakeRouting(routingBatch, meter.Index), bytes = bytes.Length, sha256 = digest, file });
 }
 var report = new { generatedUtc = DateTimeOffset.UtcNow, configPath, config.Index, config.HesTemplateId,
     templateSha256 = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(config.Template))).ToLowerInvariant(),
@@ -88,6 +99,8 @@ sealed record ProbeConfig(string Template, long Index, string Nic, int? HesTempl
 {
     public ProbeRead[] Reads { get; init; } = [];
     public bool Routing { get; init; }
+    public int BatchId { get; init; } = 1;
+    public long BatchStartIndex { get; init; } = 1;
     public string? DataModelDirectory { get; init; }
     public string? MeterCategory { get; init; }
     public int[]? EventsWithPowerProfile { get; init; }

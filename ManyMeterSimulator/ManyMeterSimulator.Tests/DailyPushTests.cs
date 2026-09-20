@@ -118,7 +118,7 @@ public partial class MqttPushRunTests
             Assert.Equal($"gateway/push/meter/gate_{batch.Id}_1/{meter.NodeId}", message.Topic);
             var packet = PushDataMessage.Parser.ParseFrom(payload);
             Assert.Equal($"gate_{batch.Id}_1", packet.Header.GatewayId);
-            Assert.Equal(0u, packet.Header.SinkId);
+            Assert.Equal((uint)((batch.StartIndex - 1) % 4), packet.Header.SinkId);
             Assert.Equal(uint.Parse(meter.NodeId), packet.Header.NodeAddr);
             Assert.Equal(meter.Serial, packet.Data.MeterNumber);
             Assert.Equal(RequestType.KapDlmsWraperPushData, packet.Data.RespType);
