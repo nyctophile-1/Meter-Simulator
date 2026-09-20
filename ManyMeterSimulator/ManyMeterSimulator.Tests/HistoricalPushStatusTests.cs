@@ -11,8 +11,10 @@ namespace ManyMeterSimulator.Tests;
 
 public class HistoricalPushStatusTests
 {
-    [Fact]
-    public async Task RendersCurrentProfileDatesAndMeasuredRatesSeparatelyFromPlannedCounts()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RendersCurrentProfileDatesAndMeasuredRatesSeparatelyFromPlannedCounts(bool weaving)
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -32,6 +34,15 @@ public class HistoricalPushStatusTests
             RateWindowSeconds = 5,
             Profiles = [new(7, "RF fleet", position.Profile, 10000, 150, 2, 1, 300, 0, time, time)]
         };
+        if (weaving)
+        {
+            progress = progress with
+            {
+                CurrentSlot = null,
+                CurrentSlots = [progress.CurrentSlot!, new(position with { Profile = "0.0.25.9.0.255" }, 1000, 25, 0, 0, 8)]
+            };
+        }
+
         var html = await renderer.Dispatcher.InvokeAsync(async () =>
         {
             var component = await renderer.RenderComponentAsync<HistoricalPushStatus>(ParameterView.FromDictionary(
@@ -39,10 +50,11 @@ public class HistoricalPushStatusTests
             return component.ToHtmlString();
         });
         var preview = Environment.GetEnvironmentVariable("MAYA_PROGRESS_PREVIEW");
-        if (!string.IsNullOrEmpty(preview))
+        if (weaving && !string.IsNullOrEmpty(preview))
         {
             await File.WriteAllTextAsync(preview, html);
         }
+
         Assert.Contains("Sending Block load", html);
         Assert.Contains("16 Sep 2026 00:00:00 IST", html);
         Assert.Contains("2026-09-15 18:30:00 UTC", html);
@@ -51,8 +63,11 @@ public class HistoricalPushStatusTests
         Assert.Contains("25", html);
         Assert.Contains("150", html);
         Assert.DoesNotContain("No record has completed", html);
-
-
+        if (weaving)
+        {
+            Assert.Contains("Sending Instantaneous", html);
+            Assert.Contains("Weaving due IP / LS records", html);
+        }
     }
 
     private sealed class NoJs : IJSRuntime

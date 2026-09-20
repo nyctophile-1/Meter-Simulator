@@ -20,7 +20,7 @@ public class HistoricalPushProgressTests
         var source = Source();
         var tracker = new HistoricalPushTelemetry([source], Reading, Reading);
         tracker.BeginSlot(source, Reading);
-        tracker.Sending(1);
+        tracker.Sending(source, 1);
         Assert.Equal(0, tracker.Snapshot(TimeSpan.Zero).Sent);
 
         tracker.Record(source, Reading, sent: 4, messages: 8);

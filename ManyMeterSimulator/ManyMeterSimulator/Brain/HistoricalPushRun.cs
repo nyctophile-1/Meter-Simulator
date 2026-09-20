@@ -36,6 +36,7 @@ public sealed record HistoricalPushProgress(DateTimeOffset From, DateTimeOffset 
     TimeSpan Elapsed = default, DateTimeOffset? ReadingTime = null, string? Error = null)
 {
     public HistoricalSlotProgress? CurrentSlot { get; init; }
+    public IReadOnlyList<HistoricalSlotProgress> CurrentSlots { get; init; } = [];
     public HistoricalPushPosition? LastSuccessfulPush { get; init; }
     public IReadOnlyList<HistoricalProfileProgress> Profiles { get; init; } = [];
     public double CurrentRecordsPerSecond { get; init; }
@@ -48,16 +49,44 @@ public sealed record HistoricalPushProgress(DateTimeOffset From, DateTimeOffset 
 
 internal sealed record HistoricalPushSource(int BatchId, long StartIndex, long Count, NicType Nic,
     string Profile, int PeriodSeconds, Func<bool> IsCurrent,
-    Func<MeterRef, DateTimeOffset, CancellationToken, Task<PushDeliveryResult>> Send, string? BatchName = null);
+    Func<MeterRef, DateTimeOffset, CancellationToken, Task<PushDeliveryResult>> Send,
+    string? BatchName = null, string? ResumeIdentity = null)
+{
+    public string Identity => ResumeIdentity ?? $"{BatchId}:{StartIndex}:{Count}:{Nic}:{Profile}:{PeriodSeconds}";
+}
 
 public sealed partial class PushCoordinator
 {
-    internal async Task<HistoricalPushRun> OpenHistoricalRunAsync(HistoricalPushRequest request, CancellationToken token)
+    private string HistoricalIdentity(MeterBatch batch, string profile, int period)
+    {
+        object? destination;
+        if (batch.NicType == NicType.Tcp4G)
+        {
+            TryResolveDestination(batch, null, out var endpoint, out _);
+            destination = new { endpoint, _options.DefaultPort, _options.RequireMeterSourceIp };
+        }
+        else
+        {
+            var broker = _network.Broker(batch.EnvironmentKey!);
+            destination = broker is null ? null : new { broker.Host, broker.Port, broker.Username, broker.UseTls };
+        }
+
+        var bytes = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(new
+        {
+            batch.Id, batch.CreatedAtUtc, batch.StartIndex, batch.Count, batch.NicType,
+            batch.TemplateName, batch.HesTemplateId, batch.CustomPushHeaderKind, batch.EnvironmentKey,
+            profile, period, destination, _options.UseCiphering
+        });
+        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes));
+    }
+
+    internal async Task<HistoricalPushRun> OpenHistoricalRunAsync(HistoricalPushRequest request, CancellationToken token, HistoricalPushCheckpoint? resume = null)
     {
         request = request with { BatchIds = request.BatchIds.ToArray() };
         request.Validate();
-        var end = _clock.GetUtcNow();
-        var start = end.AddDays(-request.Days);
+
+        var end = resume?.Progress.To ?? _clock.GetUtcNow();
+        var start = resume?.Progress.From ?? end.AddDays(-request.Days);
         var pools = new Dictionary<BrokerBinding, IMqttPushPool>();
         var sources = new List<HistoricalPushSource>();
 
@@ -66,6 +95,7 @@ public sealed partial class PushCoordinator
             token.ThrowIfCancellationRequested();
             var batch = _registry.Batches.SingleOrDefault(b => b.Id == id)
                 ?? throw new InvalidOperationException($"Batch {id} no longer exists.");
+
             if (batch.Status != BatchStatus.Running)
             {
                 throw new InvalidOperationException($"Start batch '{batch.Name}' first.");
@@ -92,7 +122,7 @@ public sealed partial class PushCoordinator
                 {
                     var source = ResolveTcpSource(id, new TcpPushRequest { BatchIds = [id], PushSetupLogicalName = profile }, _options.UseCiphering);
                     sources.Add(new(id, batch.StartIndex, batch.Count, batch.NicType, profile, seconds, source.IsCurrent,
-                        (meter, time, ct) => source.Send(meter, source.BuildAt!(meter, time), ct), batch.Name));
+                        (meter, time, ct) => source.Send(meter, source.BuildAt!(meter, time), ct), batch.Name, HistoricalIdentity(batch, profile, seconds)));
                 }
                 else
                 {
@@ -103,7 +133,7 @@ public sealed partial class PushCoordinator
                         {
                             var result = await pools[source.Binding].PublishMeterAsync(source.BuildAt!(meter, time), ct);
                             return new(result.Sent, result.Failed, result.Error);
-                        }, batch.Name));
+                        }, batch.Name, HistoricalIdentity(batch, profile, seconds)));
                 }
             }
         }
@@ -117,7 +147,7 @@ public sealed partial class PushCoordinator
 
             token.ThrowIfCancellationRequested();
             return new HistoricalPushRun(sources.ToArray(), pools.Values.ToArray(), request, start, end,
-                (meter, ct) => AllowPushAsync(meter, ct, simulateNetworkDelay: false), _metrics);
+                (meter, ct) => AllowPushAsync(meter, ct, simulateNetworkDelay: false), _metrics, resume);
         }
         catch
         {
@@ -133,7 +163,7 @@ public sealed partial class PushCoordinator
 
 internal sealed class HistoricalPushRun(HistoricalPushSource[] sources, IMqttPushPool[] pools,
     HistoricalPushRequest request, DateTimeOffset from, DateTimeOffset to,
-    Func<MeterRef, CancellationToken, Task<bool>> allow, Diagnostics.SimulatorMetrics metrics) : IAsyncDisposable
+    Func<MeterRef, CancellationToken, Task<bool>> allow, Diagnostics.SimulatorMetrics metrics, HistoricalPushCheckpoint? resume = null) : IAsyncDisposable
 {
     private int _used;
     private MqttPublishRateLimiter? _limiter = request.RecordsPerSecond == 0 ? null : new(request.RecordsPerSecond);
@@ -170,46 +200,84 @@ internal sealed class HistoricalPushRun(HistoricalPushSource[] sources, IMqttPus
         return first > to ? 0 : (to.UtcTicks - first.UtcTicks) / (seconds * TimeSpan.TicksPerSecond) + 1;
     }
 
-    public async Task<HistoricalPushProgress> SendAsync(Action<HistoricalPushProgress> progress, CancellationToken token)
+    public async Task<HistoricalPushProgress> SendAsync(Action<HistoricalPushProgress> progress, CancellationToken token,
+        Action<HistoricalPushCheckpoint>? checkpoint = null)
     {
         if (Interlocked.Exchange(ref _used, 1) != 0)
         {
             throw new InvalidOperationException("This run was already consumed.");
         }
 
-        var telemetry = new HistoricalPushTelemetry(sources, from, to);
-        var watch = Stopwatch.StartNew();
-        var queue = new PriorityQueue<(HistoricalPushSource Source, DateTimeOffset Time), DateTimeOffset>();
-        foreach (var source in sources)
+        if (resume is not null && (resume.Version != 1 || resume.Sources.Length != sources.Length ||
+            sources.Where((source, index) => source.Identity != resume.Sources[index].Identity).Any()))
         {
-            var first = FirstSlot(from, source.PeriodSeconds);
-            if (first <= to)
-            {
-                queue.Enqueue((source, first), first);
-            }
+            throw new InvalidOperationException("The saved batches, profiles or destinations changed. Start a new historical run.");
+        }
+
+        var cursors = sources.Select((source, index) => new HistoricalPushCursor(source, from, to,
+            resume?.Sources[index])).ToArray();
+        foreach (var cursor in cursors)
+        {
+            cursor.Validate();
+        }
+
+        if (resume is not null && (resume.Progress.Total != cursors.Sum(c => c.Total) ||
+            resume.Progress.Processed != resume.Sources.Sum(c => c.NextRecord + c.CompletedAhead.LongLength)))
+        {
+            throw new InvalidOperationException("The saved historical counts do not match its meter positions.");
+        }
+
+        var telemetry = new HistoricalPushTelemetry(sources, from, to, resume?.Progress);
+        var previousElapsed = resume?.Progress.Elapsed ?? TimeSpan.Zero;
+        var watch = Stopwatch.StartNew();
+        var lastSaved = TimeSpan.Zero;
+        long turn = 0;
+        var queue = new PriorityQueue<(HistoricalPushCursor Cursor, long Ordinal), (DateTimeOffset Time, long Turn)>();
+        foreach (var cursor in cursors.Where(c => c.Next < c.Total))
+        {
+            queue.Enqueue((cursor, cursor.Next), (cursor.Time(cursor.Next), turn++));
+        }
+
+        void SaveCheckpoint()
+        {
+            checkpoint?.Invoke(new(1, request, telemetry.Snapshot(previousElapsed + watch.Elapsed),
+                cursors.Select(c => c.Snapshot()).ToArray(), DateTimeOffset.UtcNow));
+            lastSaved = watch.Elapsed;
         }
 
         using var reporting = CancellationTokenSource.CreateLinkedTokenSource(token);
-        progress(telemetry.Snapshot(watch.Elapsed));
+        progress(telemetry.Snapshot(previousElapsed + watch.Elapsed));
         var reporter = ReportAsync();
         try
         {
-            while (queue.TryDequeue(out var slot, out _))
+            SaveCheckpoint();
+            while (queue.TryPeek(out _, out var priority))
             {
                 token.ThrowIfCancellationRequested();
-                var source = slot.Source;
-                if (!source.IsCurrent())
+                var time = priority.Time;
+                var chunk = new List<(HistoricalPushCursor Cursor, long Ordinal)>();
+                int chunkSize = Math.Max(256, request.MaxConcurrency * 2);
+                while (chunk.Count < chunkSize && queue.TryPeek(out _, out var nextPriority) && nextPriority.Time == time)
                 {
-                    throw new InvalidOperationException($"Batch {source.BatchId} or its destination changed. Start a new run.");
+                    var work = queue.Dequeue();
+                    chunk.Add(work);
+                    long next = work.Cursor.Unfinished(work.Ordinal + 1);
+                    if (next < work.Cursor.Total)
+                    {
+                        queue.Enqueue((work.Cursor, next), (work.Cursor.Time(next), turn++));
+                    }
                 }
 
-                telemetry.BeginSlot(source, slot.Time);
-                await Parallel.ForEachAsync(Meters(source), new ParallelOptions
+                telemetry.BeginSlots(chunk.Select(w => w.Cursor.Source).Distinct().ToArray(), time);
+                await Parallel.ForEachAsync(chunk, new ParallelOptions
                 {
                     MaxDegreeOfParallelism = request.MaxConcurrency,
                     CancellationToken = token
-                }, async (meter, ct) =>
+                }, async (work, ct) =>
                 {
+                    var cursor = work.Cursor;
+                    var source = cursor.Source;
+                    var meter = new MeterRef(source.StartIndex + work.Ordinal % source.Count, source.Nic);
                     await WaitForRateAsync(ct);
                     if (!source.IsCurrent())
                     {
@@ -218,7 +286,8 @@ internal sealed class HistoricalPushRun(HistoricalPushSource[] sources, IMqttPus
 
                     if (!await allow(meter, ct))
                     {
-                        telemetry.Record(source, slot.Time, skipped: 1);
+                        telemetry.Record(source, time, skipped: 1);
+                        cursor.Complete(work.Ordinal);
                         metrics.RecordPushSkipped(source.Nic);
                         return;
                     }
@@ -229,20 +298,27 @@ internal sealed class HistoricalPushRun(HistoricalPushSource[] sources, IMqttPus
                     }
 
                     long started = Stopwatch.GetTimestamp();
-                    telemetry.Sending(1);
+                    telemetry.Sending(source, 1);
                     try
                     {
-                        var result = await source.Send(meter, slot.Time, ct);
+                        var result = await source.Send(meter, time, ct);
                         bool ok = result.Sent > 0 && result.Failed == 0;
-                        telemetry.Record(source, slot.Time, sent: ok ? 1 : 0, failed: ok ? 0 : 1,
+                        telemetry.Record(source, time, sent: ok ? 1 : 0, failed: ok ? 0 : 1,
                             messages: result.Sent, rejected: result.Failed,
                             error: ok ? null : result.Error ?? "No payload delivered.");
+                        cursor.Complete(work.Ordinal);
                         metrics.RecordPushPayloads(source.Nic, result.Sent, result.Failed);
                         metrics.RecordPushMeter(source.Nic, ok, Stopwatch.GetElapsedTime(started));
                     }
                     catch (PushCanceledException ex)
                     {
-                        telemetry.Record(source, slot.Time, failed: 1, messages: ex.Sent, rejected: ex.Failed);
+                        if (ex.Sent == 0)
+                        {
+                            throw;
+                        }
+
+                        telemetry.Record(source, time, failed: 1, messages: ex.Sent, rejected: ex.Failed);
+                        cursor.Complete(work.Ordinal);
                         metrics.RecordPushPayloads(source.Nic, ex.Sent, ex.Failed);
                         metrics.RecordPushMeter(source.Nic, false, Stopwatch.GetElapsedTime(started));
                         throw;
@@ -253,19 +329,19 @@ internal sealed class HistoricalPushRun(HistoricalPushSource[] sources, IMqttPus
                     }
                     catch (Exception ex)
                     {
-                        telemetry.Record(source, slot.Time, failed: 1, error: ex.Message);
+                        telemetry.Record(source, time, failed: 1, error: ex.Message);
+                        cursor.Complete(work.Ordinal);
                         metrics.RecordPushMeter(source.Nic, false, Stopwatch.GetElapsedTime(started));
                     }
                     finally
                     {
-                        telemetry.Sending(-1);
+                        telemetry.Sending(source, -1);
                     }
                 });
 
-                var next = slot.Time.AddSeconds(source.PeriodSeconds);
-                if (next <= to)
+                if (watch.Elapsed - lastSaved >= TimeSpan.FromSeconds(2))
                 {
-                    queue.Enqueue((source, next), next);
+                    SaveCheckpoint();
                 }
             }
         }
@@ -274,10 +350,11 @@ internal sealed class HistoricalPushRun(HistoricalPushSource[] sources, IMqttPus
             reporting.Cancel();
             await reporter;
             watch.Stop();
-            progress(telemetry.Snapshot(watch.Elapsed, finished: true));
+            SaveCheckpoint();
+            progress(telemetry.Snapshot(previousElapsed + watch.Elapsed, finished: true));
         }
 
-        return telemetry.Snapshot(watch.Elapsed, finished: true);
+        return telemetry.Snapshot(previousElapsed + watch.Elapsed, finished: true);
 
         async Task ReportAsync()
         {
@@ -286,18 +363,13 @@ internal sealed class HistoricalPushRun(HistoricalPushSource[] sources, IMqttPus
                 while (true)
                 {
                     await Task.Delay(500, reporting.Token);
-                    progress(telemetry.Snapshot(watch.Elapsed));
+                    progress(telemetry.Snapshot(previousElapsed + watch.Elapsed));
                 }
             }
             catch (OperationCanceledException) when (reporting.IsCancellationRequested)
             {
             }
         }
-    }
-
-    private static IEnumerable<MeterRef> Meters(HistoricalPushSource source)
-    {
-        for (long i = 0; i < source.Count; i++) yield return new(source.StartIndex + i, source.Nic);
     }
 
     public async ValueTask DisposeAsync()
