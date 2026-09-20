@@ -76,7 +76,10 @@ public partial class MqttPushRunTests
         f.Publisher.AfterPublish = () => badComm.TryUpdate(
             HistoricalPushTests.Impaired(CommClass.NonComm).Snapshot(CommunicationDirection.Push), out _, CommunicationDirection.Push);
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        await using var run = await f.Push.OpenHistoricalRunAsync(new() { BatchIds = [batch.Id], RecordsPerSecond = 300000 }, timeout.Token);
+        await using var run = await f.Push.OpenHistoricalRunAsync(new()
+        {
+            BatchIds = [batch.Id], RecordsPerSecond = 300000, MaxConcurrency = 1, PublisherCount = 1
+        }, timeout.Token);
         var result = await run.SendAsync(_ => { }, timeout.Token);
         Assert.Equal(1, result.Sent);
         Assert.Equal(result.Total - 1, result.Skipped);

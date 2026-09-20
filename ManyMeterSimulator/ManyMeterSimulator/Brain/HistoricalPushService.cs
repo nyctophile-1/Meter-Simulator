@@ -6,15 +6,80 @@ public sealed record HistoricalPushState(string Phase = "Idle", HistoricalPushRe
     public bool IsActive => Phase is "Connecting" or "Sending" or "Stopping";
 }
 
-public sealed class HistoricalPushService(PushCoordinator push, IHostApplicationLifetime lifetime) : IAsyncDisposable
+public sealed class HistoricalPushService : IAsyncDisposable
 {
+    private readonly PushCoordinator _push;
+    private readonly IHostApplicationLifetime _lifetime;
+    private readonly IHistoricalPushCheckpointStore? _store;
     private readonly object _sync = new();
     private CancellationTokenSource? _stop;
     private Task _work = Task.CompletedTask;
     private HistoricalPushState _state = new();
     private HistoricalPushRun? _run;
+    private HistoricalPushCheckpoint? _checkpoint;
     private bool _disposed;
-    public HistoricalPushState State { get { lock (_sync) return _state; } }
+
+    public HistoricalPushService(PushCoordinator push, IHostApplicationLifetime lifetime,
+        IHistoricalPushCheckpointStore? store = null)
+    {
+        _push = push;
+        _lifetime = lifetime;
+        _store = store;
+
+        try
+        {
+            _checkpoint = store?.Load();
+            if (_checkpoint is { } saved)
+            {
+                if (saved.Version != 1)
+                {
+                    throw new InvalidOperationException("The saved historical run has an unsupported version.");
+                }
+
+                saved.Request.Validate();
+                string phase = saved.HasRemaining ? "Paused" : saved.Progress.Failed > 0 ? "Completed with failures" : "Completed";
+                _state = new(phase, saved.Request, Inactive(saved.Progress));
+            }
+        }
+        catch (Exception ex)
+        {
+            _checkpoint = null;
+            _state = new("Failed", Error: "Could not load the saved historical run: " + ex.Message);
+        }
+    }
+
+    public HistoricalPushState State
+    {
+        get
+        {
+            lock (_sync)
+            {
+                return _state;
+            }
+        }
+    }
+
+    public bool CanContinue
+    {
+        get
+        {
+            lock (_sync)
+            {
+                return !_disposed && _work.IsCompleted && _checkpoint is { HasRemaining: true };
+            }
+        }
+    }
+
+    public DateTimeOffset? SavedAtUtc
+    {
+        get
+        {
+            lock (_sync)
+            {
+                return _checkpoint?.SavedAtUtc;
+            }
+        }
+    }
 
     public void Start(HistoricalPushRequest request)
     {
@@ -22,54 +87,114 @@ public sealed class HistoricalPushService(PushCoordinator push, IHostApplication
         request.Validate();
         lock (_sync)
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            if (!_work.IsCompleted) throw new InvalidOperationException("Stop or finish the current historical push first.");
-            _stop?.Dispose();
-            _stop = CancellationTokenSource.CreateLinkedTokenSource(lifetime.ApplicationStopping);
-            _state = new("Connecting", request);
-            var token = _stop.Token;
-            _work = Task.Run(() => RunAsync(request, token));
+            StartLocked(request, null);
         }
     }
 
-    private async Task RunAsync(HistoricalPushRequest request, CancellationToken token)
+    public void Continue()
+    {
+        lock (_sync)
+        {
+            if (!CanContinue)
+            {
+                throw new InvalidOperationException("There is no stopped historical run to continue.");
+            }
+
+            StartLocked(_checkpoint!.Request, _checkpoint);
+        }
+    }
+
+    private void StartLocked(HistoricalPushRequest request, HistoricalPushCheckpoint? resume)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (!_work.IsCompleted)
+        {
+            throw new InvalidOperationException("Stop or finish the current historical push first.");
+        }
+
+        _stop?.Dispose();
+        _stop = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.ApplicationStopping);
+        _state = new("Connecting", request, resume is null ? null : Inactive(resume.Progress));
+        var token = _stop.Token;
+        _work = Task.Run(() => RunAsync(request, resume, token));
+    }
+
+    private async Task RunAsync(HistoricalPushRequest request, HistoricalPushCheckpoint? resume, CancellationToken token)
     {
         string phase = "Completed";
         string? error = null;
         try
         {
-            await using var run = await push.OpenHistoricalRunAsync(request, token);
+            await using var run = await _push.OpenHistoricalRunAsync(request, token, resume);
             lock (_sync)
             {
                 run.SetRecordsPerSecond(_state.Request!.RecordsPerSecond);
                 _run = run;
             }
+
             await run.SendAsync(progress =>
             {
-                lock (_sync) _state = _state with { Phase = token.IsCancellationRequested ? "Stopping" : "Sending", Progress = progress };
-            }, token);
-            if (State.Progress?.Failed > 0) phase = "Completed with failures";
+                lock (_sync)
+                {
+                    _state = _state with { Phase = token.IsCancellationRequested ? "Stopping" : "Sending", Progress = progress };
+                }
+            }, token, SaveCheckpoint);
+            if (State.Progress?.Failed > 0)
+            {
+                phase = "Completed with failures";
+            }
         }
-        catch (OperationCanceledException) when (token.IsCancellationRequested) { phase = "Stopped"; }
-        catch (Exception ex) { phase = "Failed"; error = ex.Message; }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            phase = "Stopped";
+        }
+        catch (Exception ex)
+        {
+            phase = "Failed";
+            error = ex.Message;
+        }
         finally
         {
             lock (_sync)
             {
                 _run = null;
-                _state = _state with { Phase = phase, Error = error };
+                _state = _state with { Phase = phase, Error = error, Progress = Inactive(_state.Progress) };
             }
         }
     }
 
+    private void SaveCheckpoint(HistoricalPushCheckpoint checkpoint)
+    {
+        lock (_sync)
+        {
+            checkpoint = checkpoint with { Request = _state.Request! };
+        }
+
+        _store?.Save(checkpoint);
+        lock (_sync)
+        {
+            _checkpoint = checkpoint;
+        }
+    }
+
+    private static HistoricalPushProgress? Inactive(HistoricalPushProgress? progress) => progress is null ? null :
+        progress with { CurrentSlot = null, CurrentSlots = [], CurrentRecordsPerSecond = 0, CurrentMessagesPerSecond = 0 };
+
     public void SetRecordsPerSecond(int rate)
     {
-        if (rate != 0) Networking.Mqtt.MqttPublishRateLimiter.Validate(rate);
+        if (rate != 0)
+        {
+            Networking.Mqtt.MqttPublishRateLimiter.Validate(rate);
+        }
+
         lock (_sync)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
             if (_state.Phase is not ("Connecting" or "Sending") || _state.Request is null)
+            {
                 throw new InvalidOperationException("There is no active historical push to adjust.");
+            }
+
             _run?.SetRecordsPerSecond(rate);
             _state = _state with { Request = _state.Request with { RecordsPerSecond = rate } };
         }
@@ -87,13 +212,22 @@ public sealed class HistoricalPushService(PushCoordinator push, IHostApplication
                 _stop?.Cancel();
             }
         }
+
         await work;
     }
 
     public async ValueTask DisposeAsync()
     {
-        lock (_sync) _disposed = true;
+        lock (_sync)
+        {
+            _disposed = true;
+        }
+
         await StopAsync();
-        lock (_sync) { _stop?.Dispose(); _stop = null; }
+        lock (_sync)
+        {
+            _stop?.Dispose();
+            _stop = null;
+        }
     }
 }

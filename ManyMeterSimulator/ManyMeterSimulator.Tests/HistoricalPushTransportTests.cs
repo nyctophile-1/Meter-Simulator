@@ -66,7 +66,10 @@ public partial class MqttPushRunTests
         var f = new Fixture(1);
         var batch = f.Batches.AddBatch("history", "D1_Master.xml", 1, NicType.Mqtt4G, null, "local");
         f.Batches.TryStart(batch.Id);
-        await using var run = await f.Push.OpenHistoricalRunAsync(new() { BatchIds = [batch.Id], Days = 1 }, default);
+        await using var run = await f.Push.OpenHistoricalRunAsync(new()
+        {
+            BatchIds = [batch.Id], Days = 1, MaxConcurrency = 1, PublisherCount = 1
+        }, default);
         f.Publisher.AfterPublish = () => f.Batches.TryStop(batch.Id);
         await Assert.ThrowsAsync<InvalidOperationException>(() => run.SendAsync(_ => { }, default));
         Assert.Single(f.Publisher.Messages);

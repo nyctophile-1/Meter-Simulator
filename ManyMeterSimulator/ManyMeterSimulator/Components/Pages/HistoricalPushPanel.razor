@@ -7,7 +7,7 @@
 
 <MudPaper Outlined="true" Class="pa-5">
     <MudText Typo="Typo.h6">N-day historical push</MudText>
-    <MudText Class="mb-4">Continuously send instantaneous and block-load records for selected batches from N days ago to the start time of this run, then stop. BadComm and NonComm meters leave gaps; simulated network delays are bypassed. Block load follows each batch's capture interval.</MudText>
+    <MudText Class="mb-4">Weave instantaneous (IP) and block-load / load-survey (LS) records for selected batches from N days ago to the start time of this run, then stop. BadComm and NonComm meters leave gaps; simulated network delays are bypassed. Block load follows each batch's capture interval.</MudText>
     <HistoricalPushStatus State="@History.State" />
     <MudGrid>
         <MudItem xs="12">
@@ -31,15 +31,20 @@
         </MudItem>
         <MudItem xs="12" sm="4"><MudNumericField T="int" Label="Last N days" @bind-Value="_days" Min="1" Max="3650" Disabled="@Locked" Variant="Variant.Outlined" /></MudItem>
         <MudItem xs="12" sm="4"><MudNumericField T="int" Label="Instantaneous interval (minutes)" @bind-Value="_interval" Min="1" Max="1440" Disabled="@Locked" Variant="Variant.Outlined" /></MudItem>
-        <MudItem xs="12" sm="4"><MudNumericField T="int" Label="Concurrent meters" @bind-Value="_concurrency" Min="1" Max="1024" Disabled="@Locked" Variant="Variant.Outlined" /></MudItem>
+        <MudItem xs="12" sm="4"><MudNumericField T="int" Label="Concurrent records (IP + LS)" @bind-Value="_concurrency" Min="1" Max="1024" Disabled="@Locked" Variant="Variant.Outlined" /></MudItem>
         <MudItem xs="12" sm="4"><MudNumericField T="int" Label="MQTT publishers per broker/transport" @bind-Value="_publishers" Min="1" Max="256" Disabled="@Locked" Variant="Variant.Outlined" /></MudItem>
         <MudItem xs="12" sm="4"><MudSelect T="int" Label="MQTT QoS" @bind-Value="_qos" Disabled="@Locked" Variant="Variant.Outlined">
             <MudSelectItem T="int" Value="0">0</MudSelectItem><MudSelectItem T="int" Value="1">1</MudSelectItem><MudSelectItem T="int" Value="2">2</MudSelectItem>
         </MudSelect></MudItem>
     </MudGrid>
-    <MudText Typo="Typo.caption" Class="my-3">Unthrottled by default: publish continuously as fast as generation and transport allow. An optional rate limit covers both profiles and all batches. DLMS replays template samples; custom Wirepas uses its timestamp-based readings. This run is not resumed after an app restart.</MudText>
+    <MudText Typo="Typo.caption" Class="my-3">Unthrottled by default: publish continuously as fast as generation and transport allow. An optional rate limit covers both profiles and all batches. DLMS replays template samples; custom Wirepas uses its timestamp-based readings. Continue last run retains its original dates and settled meter positions after Stop or restart. Failed and skipped records remain accounted for; Continue does not retry them. Unconfirmed deliveries can be retried after cancellation; a hard crash may replay deliveries since the last saved checkpoint.</MudText>
     <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(Locked || !_batches.Any())" OnClick="Start">Start historical push</MudButton>
     <MudButton Class="ml-2" Variant="Variant.Outlined" Disabled="@(!History.State.IsActive)" OnClick="History.StopAsync">Stop</MudButton>
+    <MudButton Class="ml-2" Variant="Variant.Filled" Color="Color.Secondary" Disabled="@(Locked || !History.CanContinue)" OnClick="Continue">Continue last run</MudButton>
+    @if (History.SavedAtUtc is { } saved)
+    {
+        <MudText Typo="Typo.caption" Class="mt-2">Last checkpoint: @saved.ToOffset(TimeSpan.FromHours(5.5)).ToString("dd MMM yyyy HH:mm:ss 'IST'"). Start historical push replaces the saved run once the new run is ready.</MudText>
+    }
     @if (History.State.Error is { } error) { <MudAlert Severity="Severity.Error">@error</MudAlert> }
 </MudPaper>
 
@@ -51,17 +56,36 @@
     private int _days = 7, _interval = 30, _concurrency = 256, _rate = 1000, _publishers = 256, _qos = 1;
     private bool _limitRate;
     private System.Threading.Timer? _timer;
+
     protected override void OnInitialized()
     {
-        if (History.State.Request is { } r)
+        ReadRequest();
+        _timer = new(_ => _ = InvokeAsync(() =>
         {
-            _batches = r.BatchIds.ToArray(); _days = r.Days; _interval = r.InstantaneousIntervalMinutes;
-            _concurrency = r.MaxConcurrency; _limitRate = r.RecordsPerSecond != 0;
-            if (_limitRate) _rate = r.RecordsPerSecond;
-            _publishers = r.PublisherCount; _qos = r.Qos;
-        }
-        _timer = new(_ => _ = InvokeAsync(() => { ReadRate(); StateHasChanged(); }), null, 500, 500);
+            ReadRate();
+            StateHasChanged();
+        }), null, 500, 500);
     }
+
+    private void ReadRequest()
+    {
+        if (History.State.Request is { } request)
+        {
+            _batches = request.BatchIds.ToArray();
+            _days = request.Days;
+            _interval = request.InstantaneousIntervalMinutes;
+            _concurrency = request.MaxConcurrency;
+            _publishers = request.PublisherCount;
+            _qos = request.Qos;
+            _limitRate = request.RecordsPerSecond != 0;
+
+            if (_limitRate)
+            {
+                _rate = request.RecordsPerSecond;
+            }
+        }
+    }
+
     private void ReadRate()
     {
         if (History.State is { IsActive: true, Request: { } request })
@@ -98,5 +122,24 @@
             MaxConcurrency = _concurrency, RecordsPerSecond = _limitRate ? _rate : 0, PublisherCount = _publishers, Qos = _qos }); }
         catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
     }
+
+    private void Continue()
+    {
+        if (Locked)
+        {
+            return;
+        }
+
+        try
+        {
+            History.Continue();
+            ReadRequest();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
     public void Dispose() => _timer?.Dispose();
 }

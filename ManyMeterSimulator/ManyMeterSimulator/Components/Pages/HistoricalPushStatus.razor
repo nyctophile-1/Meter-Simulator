@@ -5,13 +5,17 @@
     <MudPaper Outlined="true" Class="pa-4 my-4" aria-label="Historical push delivery progress">
         <MudText Typo="Typo.h6">Historical delivery · @State.Phase</MudText>
         <MudText>Requested reading range: @Reading(p.From) → @Reading(p.To)</MudText>
-        @if (State.IsActive && p.CurrentSlot is { } slot)
+        @if (State.IsActive && (p.CurrentSlots.Count > 0 || p.CurrentSlot is not null))
         {
-            <MudText Typo="Typo.h6" Class="mt-3">Sending @slot.Position.ProfileName · @slot.Position.BatchName (batch @slot.Position.BatchId)</MudText>
-            <MudText Typo="Typo.subtitle1">Reading timestamp: @Reading(slot.Position.ReadingTime)</MudText>
-            <MudText Typo="Typo.caption">@slot.Position.ReadingTime.ToString("yyyy-MM-dd HH:mm:ss 'UTC'")</MudText>
-            <MudText>At this timestamp: @slot.Sent.ToString("N0") sent · @slot.Skipped.ToString("N0") skipped · @slot.Failed.ToString("N0") failed · @slot.InFlight.ToString("N0") in flight</MudText>
-            <MudText Typo="Typo.caption">@slot.Processed.ToString("N0") / @slot.Total.ToString("N0") meter records processed for this batch and profile.</MudText>
+            <MudText Typo="Typo.subtitle2" Class="mt-3">Weaving due IP / LS records across meters</MudText>
+            @foreach (var slot in p.CurrentSlots.Count > 0 ? p.CurrentSlots : new[] { p.CurrentSlot! })
+            {
+                <MudText Typo="Typo.h6" Class="mt-3">Sending @slot.Position.ProfileName · @slot.Position.BatchName (batch @slot.Position.BatchId)</MudText>
+                <MudText Typo="Typo.subtitle1">Reading timestamp: @Reading(slot.Position.ReadingTime)</MudText>
+                <MudText Typo="Typo.caption">@slot.Position.ReadingTime.ToString("yyyy-MM-dd HH:mm:ss 'UTC'")</MudText>
+                <MudText>At this timestamp: @slot.Sent.ToString("N0") sent · @slot.Skipped.ToString("N0") skipped · @slot.Failed.ToString("N0") failed · @slot.InFlight.ToString("N0") in flight</MudText>
+                <MudText Typo="Typo.caption">@slot.Processed.ToString("N0") / @slot.Total.ToString("N0") meter records processed for this batch and profile.</MudText>
+            }
         }
         else
         {

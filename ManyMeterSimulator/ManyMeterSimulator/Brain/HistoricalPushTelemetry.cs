@@ -30,6 +30,7 @@ internal sealed class HistoricalPushTelemetry
     private readonly object _sync = new();
     private readonly DateTimeOffset _from;
     private readonly DateTimeOffset _to;
+
     private sealed class Counters(HistoricalPushSource source, long total)
     {
         public string BatchName { get; } = source.BatchName ?? $"Batch {source.BatchId}";
@@ -42,38 +43,85 @@ internal sealed class HistoricalPushTelemetry
 
     private readonly Dictionary<HistoricalPushSource, Counters> _profiles;
     private readonly Queue<(TimeSpan Time, long Records, long Messages)> _samples = new();
-    private HistoricalPushPosition? _current;
-    private long _slotTotal, _slotSent, _slotSkipped, _slotFailed;
-    private int _inFlight;
+
+    private sealed class Slot(HistoricalPushPosition position, long total)
+    {
+        public HistoricalPushPosition Position { get; } = position;
+        public long Sent, Skipped, Failed;
+        public int InFlight;
+        public HistoricalSlotProgress Snapshot() => new(Position, total, Sent, Skipped, Failed, InFlight);
+    }
+
+    private readonly Dictionary<HistoricalPushSource, Slot> _slots = new();
+    private DateTimeOffset? _readingTime;
     private HistoricalPushPosition? _lastSuccessful;
     private long _sent, _skipped, _failed, _messages, _rejected;
     private string? _error;
 
-    public HistoricalPushTelemetry(HistoricalPushSource[] sources, DateTimeOffset from, DateTimeOffset to)
+    public HistoricalPushTelemetry(HistoricalPushSource[] sources, DateTimeOffset from, DateTimeOffset to,
+        HistoricalPushProgress? resume = null)
     {
         _from = from;
         _to = to;
         _profiles = sources.ToDictionary(source => source, source => new Counters(source,
             checked(HistoricalPushRun.SlotCount(from, to, source.PeriodSeconds) * source.Count)));
-        _samples.Enqueue((TimeSpan.Zero, 0, 0));
+        if (resume is not null)
+        {
+            foreach (var source in sources)
+            {
+                var saved = resume.Profiles.Single(p => p.BatchId == source.BatchId && p.Profile == source.Profile);
+                var profile = _profiles[source];
+                profile.Sent = saved.Sent;
+                profile.Skipped = saved.Skipped;
+                profile.Failed = saved.Failed;
+                profile.Messages = saved.MessagesSent;
+                profile.Rejected = saved.MessagesFailed;
+                profile.FirstReading = saved.FirstSentReading;
+                profile.LastReading = saved.LastSentReading;
+                var slot = resume.CurrentSlots.SingleOrDefault(p => p.Position.BatchId == source.BatchId && p.Position.Profile == source.Profile);
+                if (slot is not null)
+                {
+                    _slots[source] = new(slot.Position, slot.Total) { Sent = slot.Sent, Skipped = slot.Skipped, Failed = slot.Failed };
+                }
+            }
+
+            _sent = resume.Sent;
+            _skipped = resume.Skipped;
+            _failed = resume.Failed;
+            _messages = resume.MessagesSent;
+            _rejected = resume.MessagesFailed;
+            _lastSuccessful = resume.LastSuccessfulPush;
+            _readingTime = resume.ReadingTime;
+            _error = resume.Error;
+        }
+
+        _samples.Enqueue((resume?.Elapsed ?? TimeSpan.Zero, _sent, _messages));
     }
 
-    public void BeginSlot(HistoricalPushSource source, DateTimeOffset time)
+    public void BeginSlot(HistoricalPushSource source, DateTimeOffset time) => BeginSlots([source], time);
+
+    public void BeginSlots(HistoricalPushSource[] sources, DateTimeOffset time)
     {
         lock (_sync)
         {
-            _current = new(source.BatchId, _profiles[source].BatchName, source.Profile, time);
-            _slotTotal = source.Count;
-            _slotSent = _slotSkipped = _slotFailed = 0;
-            _inFlight = 0;
+            if (_readingTime != time)
+            {
+                _slots.Clear();
+                _readingTime = time;
+            }
+
+            foreach (var source in sources)
+            {
+                _slots.TryAdd(source, new(new(source.BatchId, _profiles[source].BatchName, source.Profile, time), source.Count));
+            }
         }
     }
 
-    public void Sending(int delta)
+    public void Sending(HistoricalPushSource source, int delta)
     {
         lock (_sync)
         {
-            _inFlight += delta;
+            _slots[source].InFlight += delta;
         }
     }
 
@@ -95,15 +143,16 @@ internal sealed class HistoricalPushTelemetry
             profile.Failed += failed;
             profile.Messages += messages;
             profile.Rejected += rejected;
-            _slotSent += sent;
-            _slotSkipped += skipped;
-            _slotFailed += failed;
+            var slot = _slots[source];
+            slot.Sent += sent;
+            slot.Skipped += skipped;
+            slot.Failed += failed;
 
             if (sent > 0)
             {
                 profile.FirstReading ??= time;
                 profile.LastReading = time;
-                _lastSuccessful = _current;
+                _lastSuccessful = slot.Position;
             }
         }
     }
@@ -126,11 +175,12 @@ internal sealed class HistoricalPushTelemetry
             }
 
             var profiles = _profiles.Values.Select(p => p.Snapshot()).ToArray();
+            var slots = finished ? [] : _slots.Values.Select(s => s.Snapshot()).ToArray();
             return new(_from, _to, profiles.Sum(p => p.Total), _sent, _skipped, _failed, _messages,
-                _rejected, elapsed, _current?.ReadingTime, _error)
+                _rejected, elapsed, _readingTime, _error)
             {
-                CurrentSlot = finished || _current is null ? null :
-                    new(_current, _slotTotal, _slotSent, _slotSkipped, _slotFailed, _inFlight),
+                CurrentSlot = slots.Length == 1 ? slots[0] : null,
+                CurrentSlots = slots,
                 LastSuccessfulPush = _lastSuccessful,
                 Profiles = profiles,
                 CurrentRecordsPerSecond = !finished && seconds > 0 ? (_sent - baseline.Records) / seconds : 0,
