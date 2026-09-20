@@ -1,0 +1,80 @@
+@using ManyMeterSimulator.Brain
+
+@if (State.Progress is { } p)
+{
+    <MudPaper Outlined="true" Class="pa-4 my-4" aria-label="Historical push delivery progress">
+        <MudText Typo="Typo.h6">Historical delivery · @State.Phase</MudText>
+        <MudText>Requested reading range: @Reading(p.From) → @Reading(p.To)</MudText>
+        @if (State.IsActive && p.CurrentSlot is { } slot)
+        {
+            <MudText Typo="Typo.h6" Class="mt-3">Sending @slot.Position.ProfileName · @slot.Position.BatchName (batch @slot.Position.BatchId)</MudText>
+            <MudText Typo="Typo.subtitle1">Reading timestamp: @Reading(slot.Position.ReadingTime)</MudText>
+            <MudText Typo="Typo.caption">@slot.Position.ReadingTime.ToString("yyyy-MM-dd HH:mm:ss 'UTC'")</MudText>
+            <MudText>At this timestamp: @slot.Sent.ToString("N0") sent · @slot.Skipped.ToString("N0") skipped · @slot.Failed.ToString("N0") failed · @slot.InFlight.ToString("N0") in flight</MudText>
+            <MudText Typo="Typo.caption">@slot.Processed.ToString("N0") / @slot.Total.ToString("N0") meter records processed for this batch and profile.</MudText>
+        }
+        else
+        {
+            <MudText Class="mt-3">@(State.IsActive ? "Waiting for the first reading slot…" : "No historical push is currently sending.")</MudText>
+        }
+        <MudGrid Class="mt-2">
+            <MudItem xs="12" sm="4">
+                <MudText Typo="Typo.subtitle2">Actual successful records/sec</MudText>
+                <MudText Typo="Typo.h5">@p.CurrentRecordsPerSecond.ToString("N1")</MudText>
+            </MudItem>
+            <MudItem xs="12" sm="4">
+                <MudText Typo="Typo.subtitle2">Actual messages/sec</MudText>
+                <MudText Typo="Typo.h5">@p.CurrentMessagesPerSecond.ToString("N1")</MudText>
+            </MudItem>
+            <MudItem xs="12" sm="4">
+                <MudText Typo="Typo.subtitle2">Successful records this run</MudText>
+                <MudText Typo="Typo.h5">@p.Sent.ToString("N0")</MudText>
+            </MudItem>
+        </MudGrid>
+        <MudText Typo="Typo.caption">Measured from transport completions over the last @p.RateWindowSeconds.ToString("N1") seconds (about 5 seconds once running); refreshes twice a second. Run average: @p.RecordsPerSecond.ToString("N1") successful records/sec.</MudText>
+        <MudText Class="mt-2">Messages: @p.MessagesSent.ToString("N0") sent · @p.MessagesFailed.ToString("N0") failed. Records: @p.Skipped.ToString("N0") skipped · @p.Failed.ToString("N0") failed.</MudText>
+        <MudProgressLinear Class="my-3" Value="@(p.Total > 0 ? 100.0 * p.Processed / p.Total : 0)" />
+        <MudText>@p.Processed.ToString("N0") / @p.Total.ToString("N0") planned records processed · elapsed @p.Elapsed.ToString(@"d\.hh\:mm\:ss")</MudText>
+        @if (p.LastSuccessfulPush is { } last)
+        {
+            <MudText Class="my-2">Last successful record: @last.ProfileName · @last.BatchName (batch @last.BatchId) · @Reading(last.ReadingTime)</MudText>
+        }
+        else
+        {
+            <MudText Class="my-2">No record has completed successfully yet.</MudText>
+        }
+        <MudSimpleTable Dense="true" Class="mt-3" Style="overflow-x:auto">
+            <thead><tr><th>Batch / profile</th><th>Records sent / planned</th><th>Skipped</th><th>Failed</th><th>Messages sent / failed</th><th>First successful reading (IST)</th><th>Last successful reading (IST)</th></tr></thead>
+            <tbody>
+                @foreach (var profile in p.Profiles)
+                {
+                    <tr>
+                        <td>@profile.BatchName (#@profile.BatchId)<br />@profile.ProfileName</td>
+                        <td>@profile.Sent.ToString("N0") / @profile.Total.ToString("N0")</td>
+                        <td>@profile.Skipped.ToString("N0")</td>
+                        <td>@profile.Failed.ToString("N0")</td>
+                        <td>@profile.MessagesSent.ToString("N0") / @profile.MessagesFailed.ToString("N0")</td>
+                        <td>@Reading(profile.FirstSentReading)</td>
+                        <td>@Reading(profile.LastSentReading)</td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+        <MudText Typo="Typo.caption">One record is one meter/profile/reading timestamp and may contain several transport messages. Skips and failed records are excluded from successful-record rates. First/last successful readings can contain gaps. Sent means MQTT/TCP transport completion, not HES parsing or persistence.</MudText>
+        @if (p.Error is { } error)
+        {
+            <MudAlert Severity="Severity.Warning">@error</MudAlert>
+        }
+    </MudPaper>
+}
+else
+{
+    <MudText Class="my-3">Historical delivery · @State.Phase</MudText>
+}
+
+@code {
+    [Parameter, EditorRequired] public HistoricalPushState State { get; set; } = new();
+
+    private static string Reading(DateTimeOffset? time) =>
+        time?.ToOffset(TimeSpan.FromHours(5.5)).ToString("dd MMM yyyy HH:mm:ss 'IST'", System.Globalization.CultureInfo.InvariantCulture) ?? "—";
+}
