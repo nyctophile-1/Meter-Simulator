@@ -33,7 +33,7 @@ public class MqttPushSocketTests
         await service.PublishRoutingAsync(timeout.Token);
         while (broker.Received.IsEmpty) await Task.Delay(5, timeout.Token);
         var packet = Assert.Single(broker.Received);
-        Assert.Equal("FakeRouting/1000000001/" + transportType, packet.Topic);
+        Assert.Equal(NicTopics.FakeRouting(batch, batch.StartIndex), packet.Topic);
         Assert.Equal(0, packet.PayloadLength);
         Assert.Equal(0, packet.Qos);
         Assert.False(packet.Retain);

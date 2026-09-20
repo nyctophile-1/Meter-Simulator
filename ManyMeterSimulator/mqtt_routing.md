@@ -1,3 +1,5 @@
+> Historical 2026-09-13 behavior below. The current batch scheduler and gateway/sink contract are documented in [batch traffic](deploy/batch-traffic.md) and [FakeRouting gateway/sink](../fake-routing-gateway-sink.md).
+
 # Routing refresh for all running batches
 
 `MqttRoutingService` runs automatically every 30 minutes while MAYA is running.
