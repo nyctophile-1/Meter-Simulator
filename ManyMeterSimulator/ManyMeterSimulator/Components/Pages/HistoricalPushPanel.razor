@@ -8,14 +8,15 @@
 <MudPaper Outlined="true" Class="pa-5">
     <MudText Typo="Typo.h6">N-day historical push</MudText>
     <MudText Class="mb-4">Continuously send instantaneous and block-load records for selected batches from N days ago to the start time of this run, then stop. BadComm and NonComm meters leave gaps; simulated network delays are bypassed. Block load follows each batch's capture interval.</MudText>
+    <HistoricalPushStatus State="@History.State" />
     <MudGrid>
         <MudItem xs="12">
             <MudCheckBox T="bool" Label="Limit record attempts per second" Value="_limitRate" ValueChanged="SetLimitRate" Disabled="@RateLocked" />
-            <MudText Typo="Typo.subtitle2">Target records per second: @(_limitRate ? _rate.ToString("N0") : "Unthrottled")</MudText>
+            <MudText Typo="Typo.subtitle2">Configured attempt limit per second: @(_limitRate ? _rate.ToString("N0") : "Unthrottled")</MudText>
             <MudSlider T="int" Value="_rate" ValueChanged="SetRate" Min="100" Max="300000" Step="100"
                        Immediate="true" Disabled="@(RateLocked || !_limitRate)" Color="Color.Primary" aria-label="Target historical records per second" />
             <MudNumericField T="int" Value="_rate" ValueChanged="SetRate" Min="100" Max="300000"
-                             Label="Exact records per second" Disabled="@(RateLocked || !_limitRate)" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                             Label="Exact attempt limit per second" Disabled="@(RateLocked || !_limitRate)" Variant="Variant.Outlined" Margin="Margin.Dense" />
             <MudText Typo="Typo.caption">100–300,000 record attempts/sec (3 lakh), shared across both profiles and all selected batches, including skipped attempts.
                 Adjust during sending without restarting, or turn the limit off for unthrottled replay.
                 A record may use multiple transport messages. Already in-flight records may finish after a reduction; actual throughput may be lower.</MudText>
@@ -39,16 +40,6 @@
     <MudText Typo="Typo.caption" Class="my-3">Unthrottled by default: publish continuously as fast as generation and transport allow. An optional rate limit covers both profiles and all batches. DLMS replays template samples; custom Wirepas uses its timestamp-based readings. This run is not resumed after an app restart.</MudText>
     <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(Locked || !_batches.Any())" OnClick="Start">Start historical push</MudButton>
     <MudButton Class="ml-2" Variant="Variant.Outlined" Disabled="@(!History.State.IsActive)" OnClick="History.StopAsync">Stop</MudButton>
-    <MudText Class="mt-4">@History.State.Phase</MudText>
-    @if (History.State.Progress is { } p)
-    {
-        <MudText>UTC: @p.From.ToString("yyyy-MM-dd HH:mm:ss") → @p.To.ToString("yyyy-MM-dd HH:mm:ss")</MudText>
-        <MudProgressLinear Class="my-3" Value="@(p.Total > 0 ? 100.0 * p.Processed / p.Total : 0)" />
-        <MudSimpleTable Dense="true"><thead><tr><th>Processed / total</th><th>Records sent</th><th>BadComm / NonComm skipped</th><th>Failed</th><th>Messages sent</th><th>Records/sec</th></tr></thead>
-            <tbody><tr><td>@p.Processed.ToString("N0") / @p.Total.ToString("N0")</td><td>@p.Sent.ToString("N0")</td><td>@p.Skipped.ToString("N0")</td><td>@p.Failed.ToString("N0")</td><td>@p.MessagesSent.ToString("N0")</td><td>@p.RecordsPerSecond.ToString("N1")</td></tr></tbody></MudSimpleTable>
-        <MudText Typo="Typo.caption">Reading time (UTC): @p.ReadingTime?.ToString("yyyy-MM-dd HH:mm:ss") · elapsed @p.Elapsed.ToString(@"hh\:mm\:ss"). Sent means transport completion; verify ingestion in HES.</MudText>
-        @if (p.Error is { } deliveryError) { <MudAlert Severity="Severity.Warning">@deliveryError</MudAlert> }
-    }
     @if (History.State.Error is { } error) { <MudAlert Severity="Severity.Error">@error</MudAlert> }
 </MudPaper>
 
