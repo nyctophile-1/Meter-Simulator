@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using ManyMeterSimulator.Brain;
@@ -32,6 +33,7 @@ public sealed class TcpPushSender
 {
     private readonly ILogger<TcpPushSender> _logger;
     private readonly PushOptions _options;
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _meterConnections = new(StringComparer.Ordinal);
     private long _connecting, _active, _peak, _opened, _connectFailures, _peerClosed, _waitExpired, _closeErrors, _payloadsWritten;
 
     public TcpPushConnectionSnapshot Connections => new(
@@ -134,23 +136,32 @@ public sealed class TcpPushSender
         IReadOnlyList<byte[]> payloads, bool bindSource, CancellationToken cancellationToken,
         Action<int>? deliveryConfirmed, int waitForPeerCloseSeconds, TcpPushConnectionGroup? connections)
     {
-        TcpClient client;
-        try
-        {
-            client = bindSource ? new TcpClient(new IPEndPoint(source!, 0)) : NewDefaultClient(host);
-        }
-        catch (Exception ex)
-        {
-            Interlocked.Increment(ref _connectFailures);
-            _logger.LogDebug("Push {Meter}: socket open failed: {Message}", meterNo, ex.Message);
-            return (new(0, payloads.Count, $"TCP socket bind/open failed for {meterNo} from {source} to {host}:{port}: {ex.Message}"), false);
-        }
+        var meterConnection = _meterConnections.GetOrAdd(meterNo, static _ => new SemaphoreSlim(1, 1));
+        await meterConnection.WaitAsync(cancellationToken);
 
+        TcpClient? client = null;
         bool connected = false;
         bool handedOff = false;
+
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            try
+            {
+                client = bindSource ? new TcpClient(new IPEndPoint(source!, 0)) : NewDefaultClient(host);
+            }
+            catch (Exception ex)
+            {
+                Interlocked.Increment(ref _connectFailures);
+                _logger.LogDebug("Push {Meter}: socket open failed: {Message}", meterNo, ex.Message);
+
+                return (new(0, payloads.Count,
+                    $"TCP socket bind/open failed for {meterNo} from {source} to {host}:{port}: {ex.Message}"), false);
+            }
+
             Interlocked.Increment(ref _connecting);
+
             try
             {
                 using var connectCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -158,8 +169,10 @@ public sealed class TcpPushSender
                 await client.ConnectAsync(host, port, connectCts.Token);
                 connected = true;
                 Interlocked.Increment(ref _opened);
+
                 long active = Interlocked.Increment(ref _active);
                 long peak = Interlocked.Read(ref _peak);
+
                 while (active > peak)
                 {
                     long previous = Interlocked.CompareExchange(ref _peak, active, peak);
@@ -178,9 +191,14 @@ public sealed class TcpPushSender
             catch (Exception ex)
             {
                 Interlocked.Increment(ref _connectFailures);
-                string detail = ex is OperationCanceledException ? $"timed out after {_options.ConnectTimeoutSeconds}s" : ex.Message;
+                string detail = ex is OperationCanceledException
+                    ? $"timed out after {_options.ConnectTimeoutSeconds}s"
+                    : ex.Message;
                 _logger.LogDebug("Push {Meter}: connect failed: {Message}", meterNo, detail);
-                return (new(0, payloads.Count, $"TCP connect failed for {meterNo} from {(bindSource ? source?.ToString() : "default source")} to {host}:{port}: {detail}"), false);
+
+                return (new(0, payloads.Count,
+                    $"TCP connect failed for {meterNo} from {(bindSource ? source?.ToString() : "default source")} " +
+                    $"to {host}:{port}: {detail}"), false);
             }
             finally
             {
@@ -188,13 +206,15 @@ public sealed class TcpPushSender
             }
 
             var result = await WritePayloadsAsync(client, meterNo, host, port, payloads, cancellationToken, deliveryConfirmed);
+
             if (result.Sent > 0)
             {
                 if (result.Failed == 0 && waitForPeerCloseSeconds > 0)
                 {
                     if (connections is not null)
                     {
-                        connections.Track(token => CloseAfterWriteAsync(client, waitForPeerCloseSeconds, token));
+                        connections.Track(token => CloseAfterWriteAsync(
+                            client, meterConnection, waitForPeerCloseSeconds, token));
                         handedOff = true;
                     }
                     else
@@ -228,16 +248,20 @@ public sealed class TcpPushSender
         {
             if (!handedOff)
             {
-                client.Dispose();
+                client?.Dispose();
+
                 if (connected)
                 {
                     Interlocked.Decrement(ref _active);
                 }
+
+                meterConnection.Release();
             }
         }
     }
 
-    private async Task CloseAfterWriteAsync(TcpClient client, int seconds, CancellationToken token)
+    private async Task CloseAfterWriteAsync(
+        TcpClient client, SemaphoreSlim meterConnection, int seconds, CancellationToken token)
     {
         try
         {
@@ -255,6 +279,7 @@ public sealed class TcpPushSender
         {
             client.Dispose();
             Interlocked.Decrement(ref _active);
+            meterConnection.Release();
         }
     }
 

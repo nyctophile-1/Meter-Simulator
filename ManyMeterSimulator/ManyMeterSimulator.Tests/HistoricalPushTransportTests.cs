@@ -176,22 +176,20 @@ public partial class TcpStressIntegrationTests
                     {
                         Assert.Equal(0, await stream.ReadAsync(new byte[1], timeout.Token));
                     }
-                }
-
-                // Every historical timestamp must arrive before HES closes any socket.
-                if (peerCloseWait > 0)
-                {
-                    using var probe = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
-                    probe.CancelAfter(100);
-                    await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+                    else
                     {
-                        int read = await clients[0].GetStream().ReadAsync(new byte[1], probe.Token);
-                        Assert.Fail($"MAYA closed a held socket early: {read}");
-                    });
+                        if (i == 0)
+                        {
+                            using var probe = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
+                            probe.CancelAfter(100);
+                            await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+                            {
+                                using var unexpected = await listener.AcceptTcpClientAsync(probe.Token);
+                            });
+                        }
 
-                    foreach (var client in clients)
-                    {
                         client.Client.Shutdown(SocketShutdown.Send);
+                        Assert.Equal(0, await stream.ReadAsync(new byte[1], timeout.Token));
                     }
                 }
             }

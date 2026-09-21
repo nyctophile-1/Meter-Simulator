@@ -9,6 +9,110 @@ namespace ManyMeterSimulator.Tests;
 
 public class TcpHeldConnectionTests
 {
+    [Theory]
+    [InlineData("peer-close")]
+    [InlineData("deadline")]
+    [InlineData("stop")]
+    public async Task SameMeterWaitsAcrossRunsWhileOtherMetersContinue(string completion)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var listener = new TcpListener(IPAddress.IPv6Loopback, 0);
+        listener.Start();
+        int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        var sender = new TcpPushSender(NullLogger<TcpPushSender>.Instance, Options.Create(new PushOptions()));
+        await using var firstRun = new TcpPushConnectionGroup();
+        await using var secondRun = new TcpPushConnectionGroup();
+
+        await sender.SendAsync("one", IPAddress.IPv6Loopback, "::1", port, [[1]], timeout.Token,
+            waitForPeerCloseSeconds: completion == "deadline" ? 1 : 15, connections: firstRun);
+        using var first = await listener.AcceptTcpClientAsync(timeout.Token);
+        var firstStream = first.GetStream();
+        await firstStream.ReadExactlyAsync(new byte[1], timeout.Token);
+
+        using var cancelledWait = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
+        var cancelled = sender.SendAsync("one", IPAddress.IPv6Loopback, "::1", port, [[2]], cancelledWait.Token);
+        Assert.False(cancelled.IsCompleted);
+        cancelledWait.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => cancelled);
+
+        var sameMeter = sender.SendAsync("one", IPAddress.IPv6Loopback, "::1", port, [[3]], timeout.Token,
+            waitForPeerCloseSeconds: 15, connections: secondRun);
+        Assert.False(sameMeter.IsCompleted);
+        Assert.Equal(1, sender.Connections.Opened);
+
+        Assert.Equal(new PushDeliveryResult(1, 0),
+            await sender.SendAsync("other", IPAddress.IPv6Loopback, "::1", port, [[4]], timeout.Token));
+        using var other = await listener.AcceptTcpClientAsync(timeout.Token);
+        var value = new byte[1];
+        await other.GetStream().ReadExactlyAsync(value, timeout.Token);
+        Assert.Equal(4, value[0]);
+
+        if (completion == "peer-close")
+        {
+            first.Client.Shutdown(SocketShutdown.Send);
+        }
+        else if (completion == "stop")
+        {
+            await firstRun.DisposeAsync();
+        }
+
+        Assert.Equal(new PushDeliveryResult(1, 0), await sameMeter);
+        using var next = await listener.AcceptTcpClientAsync(timeout.Token);
+        await next.GetStream().ReadExactlyAsync(value, timeout.Token);
+        Assert.Equal(3, value[0]);
+        Assert.Equal(0, await firstStream.ReadAsync(new byte[1], timeout.Token));
+        Assert.Equal(1, sender.Connections.Active);
+        Assert.Equal(0, sender.Connections.ConnectFailures);
+
+        next.Client.Shutdown(SocketShutdown.Send);
+        await secondRun.DrainAsync(timeout.Token);
+        Assert.Equal(0, sender.Connections.Active);
+    }
+
+    [Fact]
+    public async Task CancellingInlineHoldReleasesMeterWithoutLosingItsWrittenCount()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
+        using var listener = new TcpListener(IPAddress.IPv6Loopback, 0);
+        listener.Start();
+        int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        var sender = new TcpPushSender(NullLogger<TcpPushSender>.Instance, Options.Create(new PushOptions()));
+
+        var sending = sender.SendAsync("one", IPAddress.IPv6Loopback, "::1", port, [[1]], stop.Token,
+            waitForPeerCloseSeconds: 15);
+        using var first = await listener.AcceptTcpClientAsync(timeout.Token);
+        await first.GetStream().ReadExactlyAsync(new byte[1], timeout.Token);
+        var next = sender.SendAsync("one", IPAddress.IPv6Loopback, "::1", port, [[2]], timeout.Token);
+        Assert.False(next.IsCompleted);
+
+        stop.Cancel();
+        await Assert.ThrowsAsync<PushCanceledException>(() => sending);
+        Assert.Equal(new PushDeliveryResult(1, 0), await next);
+        using var second = await listener.AcceptTcpClientAsync(timeout.Token);
+        Assert.Equal(2, sender.Connections.PayloadsWritten);
+        Assert.Equal(0, sender.Connections.Active);
+    }
+
+    [Fact]
+    public async Task FailedConnectReleasesMeterForNextPush()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var listener = new TcpListener(IPAddress.IPv6Loopback, 0);
+        listener.Start();
+        int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        listener.Stop();
+        var sender = new TcpPushSender(NullLogger<TcpPushSender>.Instance, Options.Create(new PushOptions()));
+
+        Assert.Equal(1, (await sender.SendAsync("one", IPAddress.IPv6Loopback, "::1", port, [[1]], timeout.Token)).Failed);
+
+        listener.Start();
+        port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        Assert.Equal(1, (await sender.SendAsync("one", IPAddress.IPv6Loopback, "::1", port, [[2]], timeout.Token)).Sent);
+        using var next = await listener.AcceptTcpClientAsync(timeout.Token);
+        Assert.Equal(0, sender.Connections.Active);
+    }
+
     [Fact]
     public async Task WrittenPacketsReleaseWorkersWhileStopClosesEveryHeldSocket()
     {
@@ -91,7 +195,7 @@ public class TcpHeldConnectionTests
 public partial class TcpStressIntegrationTests
 {
     [Fact]
-    public async Task StressLoopStartsNextPassWhilePreviousSocketRemainsOpen()
+    public async Task StressLoopWaitsForTheSameMetersPreviousSocketToClose()
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         using var stop = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
@@ -105,14 +209,26 @@ public partial class TcpStressIntegrationTests
         }, stop.Token);
         var sending = run.SendLoopAsync(new());
         using var first = await listener.AcceptTcpClientAsync(timeout.Token);
-        await first.GetStream().ReadExactlyAsync(new byte[1], timeout.Token);
+        var firstStream = first.GetStream();
+        await firstStream.ReadExactlyAsync(new byte[1], timeout.Token);
+
+        using (var probe = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token))
+        {
+            probe.CancelAfter(100);
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+            {
+                using var unexpected = await listener.AcceptTcpClientAsync(probe.Token);
+            });
+        }
+
+        first.Client.Shutdown(SocketShutdown.Send);
         using var second = await listener.AcceptTcpClientAsync(timeout.Token);
         await second.GetStream().ReadExactlyAsync(new byte[1], timeout.Token);
 
         stop.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => sending);
         Assert.True(run.LoopResult!.CompletedCycles >= 1);
-        await first.GetStream().CopyToAsync(Stream.Null, timeout.Token);
+        await firstStream.CopyToAsync(Stream.Null, timeout.Token);
         await second.GetStream().CopyToAsync(Stream.Null, timeout.Token);
     }
 }
