@@ -157,26 +157,49 @@ public partial class TcpStressIntegrationTests
         async Task<List<object[]>> ReceiveAsync()
         {
             var records = new List<object[]>();
-
-            for (int i = 0; i < expected; i++)
+            var clients = new List<TcpClient>();
+            try
             {
-                using var client = await listener.AcceptTcpClientAsync(timeout.Token);
-                Assert.Equal(IPAddress.IPv6Loopback, ((IPEndPoint)client.Client.RemoteEndPoint!).Address);
-                var stream = client.GetStream();
-                var header = new byte[8];
-                await stream.ReadExactlyAsync(header, timeout.Token);
-                var payload = new byte[BinaryPrimitives.ReadUInt16BigEndian(header.AsSpan(6))];
-                await stream.ReadExactlyAsync(payload, timeout.Token);
-                records.Add(DailyPushTests.Decode([.. header, .. payload]));
+                for (int i = 0; i < expected; i++)
+                {
+                    var client = await listener.AcceptTcpClientAsync(timeout.Token);
+                    clients.Add(client);
+                    Assert.Equal(IPAddress.IPv6Loopback, ((IPEndPoint)client.Client.RemoteEndPoint!).Address);
+                    var stream = client.GetStream();
+                    var header = new byte[8];
+                    await stream.ReadExactlyAsync(header, timeout.Token);
+                    var payload = new byte[BinaryPrimitives.ReadUInt16BigEndian(header.AsSpan(6))];
+                    await stream.ReadExactlyAsync(payload, timeout.Token);
+                    records.Add(DailyPushTests.Decode([.. header, .. payload]));
 
-                if (peerCloseWait == 0)
-                {
-                    Assert.Equal(0, await stream.ReadAsync(new byte[1], timeout.Token));
+                    if (peerCloseWait == 0)
+                    {
+                        Assert.Equal(0, await stream.ReadAsync(new byte[1], timeout.Token));
+                    }
                 }
-                else
+
+                // Every historical timestamp must arrive before HES closes any socket.
+                if (peerCloseWait > 0)
                 {
-                    // HES closes each frame; MAYA must observe EOF instead of its deadline.
-                    client.Client.Shutdown(SocketShutdown.Send);
+                    using var probe = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
+                    probe.CancelAfter(100);
+                    await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+                    {
+                        int read = await clients[0].GetStream().ReadAsync(new byte[1], probe.Token);
+                        Assert.Fail($"MAYA closed a held socket early: {read}");
+                    });
+
+                    foreach (var client in clients)
+                    {
+                        client.Client.Shutdown(SocketShutdown.Send);
+                    }
+                }
+            }
+            finally
+            {
+                foreach (var client in clients)
+                {
+                    client.Dispose();
                 }
             }
 
