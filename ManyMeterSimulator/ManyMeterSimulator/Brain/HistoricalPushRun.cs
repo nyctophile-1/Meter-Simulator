@@ -16,18 +16,47 @@ public sealed record HistoricalPushRequest
     public int RecordsPerSecond { get; init; }
     public int PublisherCount { get; init; } = MqttPushPool.MaximumPublisherCount;
     public int Qos { get; init; } = 1;
+    public DateTimeOffset? EndTimeUtc { get; init; }
 
     public void Validate()
     {
         if (BatchIds.Count == 0 || BatchIds.Distinct().Count() != BatchIds.Count)
+        {
             throw new ArgumentException("Select at least one batch, without duplicates.");
-        if (Days is < 1 or > 3650) throw new ArgumentException("Days must be 1 to 3650.");
-        if (InstantaneousIntervalMinutes is < 1 or > 1440) throw new ArgumentException("Instantaneous interval must be 1 to 1440 minutes.");
-        if (MaxConcurrency is < 1 or > 1024) throw new ArgumentException("Concurrency must be 1 to 1024.");
+        }
+
+        if (Days is < 1 or > 3650)
+        {
+            throw new ArgumentException("Days must be 1 to 3650.");
+        }
+
+        if (InstantaneousIntervalMinutes is < 1 or > 1440)
+        {
+            throw new ArgumentException("Instantaneous interval must be 1 to 1440 minutes.");
+        }
+
+        if (MaxConcurrency is < 1 or > 1024)
+        {
+            throw new ArgumentException("Concurrency must be 1 to 1024.");
+        }
+
+        if (RecordsPerSecond != 0)
+        {
+            MqttPublishRateLimiter.Validate(RecordsPerSecond);
+        }
+    }
+
+    internal void ValidateMqtt()
+    {
         if (PublisherCount is < 1 or > 256 || PublisherCount > MaxConcurrency)
+        {
             throw new ArgumentException("Publishers must be 1 to 256 and no more than concurrency.");
-        if (Qos is < 0 or > 2) throw new ArgumentException("QoS must be 0, 1 or 2.");
-        if (RecordsPerSecond != 0) MqttPublishRateLimiter.Validate(RecordsPerSecond);
+        }
+
+        if (Qos is < 0 or > 2)
+        {
+            throw new ArgumentException("QoS must be 0, 1 or 2.");
+        }
     }
 }
 
@@ -85,7 +114,13 @@ public sealed partial class PushCoordinator
         request = request with { BatchIds = request.BatchIds.ToArray() };
         request.Validate();
 
-        var end = resume?.Progress.To ?? _clock.GetUtcNow();
+        var now = _clock.GetUtcNow();
+        var end = resume?.Progress.To ?? request.EndTimeUtc?.ToUniversalTime() ?? now;
+        if (end > now)
+        {
+            throw new ArgumentException("The historical end time cannot be in the future.");
+        }
+
         var start = resume?.Progress.From ?? end.AddDays(-request.Days);
         var pools = new Dictionary<BrokerBinding, IMqttPushPool>();
         var sources = new List<HistoricalPushSource>();
@@ -99,6 +134,11 @@ public sealed partial class PushCoordinator
             if (batch.Status != BatchStatus.Running)
             {
                 throw new InvalidOperationException($"Start batch '{batch.Name}' first.");
+            }
+
+            if (batch.NicType != NicType.Tcp4G)
+            {
+                request.ValidateMqtt();
             }
 
             int blockSeconds;
