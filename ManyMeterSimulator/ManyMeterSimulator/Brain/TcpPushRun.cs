@@ -83,6 +83,7 @@ public sealed class TcpPushRun : IAsyncDisposable
     private readonly Action<Action> _unsubscribe;
     private readonly SimulatorMetrics? _metrics;
     private readonly IDisposable? _batchLease;
+    private readonly TcpPushConnectionGroup? _connections;
     private readonly object _sync = new();
     private PreparedMeter[]? _prepared;
     private int _state;
@@ -91,7 +92,7 @@ public sealed class TcpPushRun : IAsyncDisposable
     private string? _invalidReason;
 
     internal TcpPushRun(TcpPushSource[] sources, TcpPushRequest request, bool ciphering,
-        CancellationToken token, Action<Action> subscribe, Action<Action> unsubscribe, SimulatorMetrics? metrics = null, IDisposable? batchLease = null)
+        CancellationToken token, Action<Action> subscribe, Action<Action> unsubscribe, SimulatorMetrics? metrics = null, IDisposable? batchLease = null, TcpPushConnectionGroup? connections = null)
     {
         _sources = sources;
         _request = request;
@@ -100,6 +101,7 @@ public sealed class TcpPushRun : IAsyncDisposable
         _unsubscribe = unsubscribe;
         _metrics = metrics;
         _batchLease = batchLease;
+        _connections = connections;
         subscribe(CheckConfiguration);
         CheckConfiguration();
     }
@@ -196,17 +198,43 @@ public sealed class TcpPushRun : IAsyncDisposable
     private async Task<TcpPushSummary> SendAsync(bool prepared)
     {
         if (Interlocked.CompareExchange(ref _state, 3, prepared ? 2 : 0) != (prepared ? 2 : 0))
+        {
             throw new InvalidOperationException("This run is not ready or has already been consumed.");
-        try { return await SendPassAsync(prepared, _stop.Token); }
-        finally { _prepared = null; Volatile.Write(ref _state, 4); }
+        }
+
+        using var cancellation = _stop.Token.Register(() => _connections?.Cancel());
+        try
+        {
+            var result = await SendPassAsync(prepared, _stop.Token);
+            if (_connections is not null)
+            {
+                await _connections.DrainAsync(_stop.Token);
+            }
+
+            return result;
+        }
+        finally
+        {
+            _prepared = null;
+            Volatile.Write(ref _state, 4);
+        }
     }
 
     public async Task<TcpLoopSummary> SendLoopAsync(TcpLoopOptions options)
     {
         options.Validate();
-        if (Interlocked.CompareExchange(ref _state, 3, 0) != 0) throw new InvalidOperationException("This run has already been used.");
+        if (Interlocked.CompareExchange(ref _state, 3, 0) != 0)
+        {
+            throw new InvalidOperationException("This run has already been used.");
+        }
+
         using var duration = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token);
-        if (options.DurationMinutes > 0) duration.CancelAfter(TimeSpan.FromMinutes(options.DurationMinutes));
+        using var cancellation = duration.Token.Register(() => _connections?.Cancel());
+        if (options.DurationMinutes > 0)
+        {
+            duration.CancelAfter(TimeSpan.FromMinutes(options.DurationMinutes));
+        }
+
         var clock = Stopwatch.StartNew();
         long cycles = 0;
         var totals = new TcpPushSummary(0, 0, 0, 0, 0, TimeSpan.Zero, null);
@@ -217,23 +245,53 @@ public sealed class TcpPushRun : IAsyncDisposable
                 duration.Token.ThrowIfCancellationRequested();
                 LastPass = null;
                 TcpPushSummary pass;
-                try { pass = await SendPassAsync(false, duration.Token); cycles++; }
+                try
+                {
+                    pass = await SendPassAsync(false, duration.Token);
+                    cycles++;
+                }
                 finally
                 {
                     if (LastPass is { } done)
+                    {
                         totals = new(totals.MetersSent + done.MetersSent, totals.MetersFailed + done.MetersFailed,
                             totals.MetersSkipped + done.MetersSkipped, totals.MessagesSent + done.MessagesSent,
                             totals.MessagesFailed + done.MessagesFailed, clock.Elapsed, totals.Error ?? done.Error);
+                    }
+
                     LoopResult = new(cycles, totals with { SendTime = clock.Elapsed });
                 }
+
                 if (pass.MessagesSent == 0 && (pass.MetersFailed > 0 || pass.MetersSkipped == 0))
+                {
                     throw new InvalidOperationException(pass.Error ?? "No successful TCP writes. Loop stopped.");
-                if (pass.MessagesSent == 0 && options.CyclePauseSeconds == 0) await Task.Delay(100, duration.Token);
-                if (options.CyclePauseSeconds > 0) await Task.Delay(TimeSpan.FromSeconds(options.CyclePauseSeconds), duration.Token);
+                }
+
+                if (pass.MessagesSent == 0 && options.CyclePauseSeconds == 0)
+                {
+                    await Task.Delay(100, duration.Token);
+                }
+
+                if (options.CyclePauseSeconds > 0)
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(options.CyclePauseSeconds), duration.Token);
+                }
             }
         }
-        catch (OperationCanceledException) when (duration.IsCancellationRequested && !_stop.IsCancellationRequested) { }
-        finally { LoopResult = new(cycles, totals with { SendTime = clock.Elapsed }); Volatile.Write(ref _state, 4); }
+        catch (OperationCanceledException) when (duration.IsCancellationRequested && !_stop.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            if (_connections is not null)
+            {
+                await _connections.DrainAsync();
+            }
+
+            LoopResult = new(cycles, totals with { SendTime = clock.Elapsed });
+            Volatile.Write(ref _state, 4);
+        }
+
         return LoopResult;
     }
 
@@ -346,19 +404,28 @@ public sealed class TcpPushRun : IAsyncDisposable
         finally { foreach (var enumerator in enumerators) enumerator.Dispose(); }
     }
 
-    public ValueTask DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         lock (_sync)
         {
-            if (_disposed) return ValueTask.CompletedTask;
+            if (_disposed)
+            {
+                return;
+            }
+
             _disposed = true;
             _unsubscribe(CheckConfiguration);
             _stop.Cancel();
-            _stop.Dispose();
             _prepared = null;
-            _batchLease?.Dispose();
         }
-        return ValueTask.CompletedTask;
+
+        if (_connections is not null)
+        {
+            await _connections.DisposeAsync();
+        }
+
+        _stop.Dispose();
+        _batchLease?.Dispose();
     }
 
     private sealed record PreparedMeter(TcpPushSource Source, MeterRef Meter, byte[][]? Payloads);

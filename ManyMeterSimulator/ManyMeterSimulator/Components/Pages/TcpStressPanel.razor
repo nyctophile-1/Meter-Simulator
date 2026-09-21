@@ -84,6 +84,7 @@
         </MudButton>
     </div>
     <MudText Typo="Typo.caption" Class="mt-3">No concurrency or prepared-memory cap by default. A positive value applies only the limit you choose. After sending, MAYA waits for HES to close or for the selected wait to expire.</MudText>
+    <MudText Typo="Typo.caption">Written packets release their send slots immediately. Their sockets stay open independently until HES closes or the wait expires.</MudText>
     <TcpPushConnections />
     <MudDivider Class="my-4" />
     <MudText Typo="Typo.subtitle1">@_state.Phase</MudText>

@@ -130,62 +130,68 @@ public sealed partial class PushCoordinator
         var start = resume?.Progress.From ?? end.AddDays(-request.Days);
         var pools = new Dictionary<BrokerBinding, IMqttPushPool>();
         var sources = new List<HistoricalPushSource>();
-
-        foreach (int id in request.BatchIds)
-        {
-            token.ThrowIfCancellationRequested();
-            var batch = _registry.Batches.SingleOrDefault(b => b.Id == id)
-                ?? throw new InvalidOperationException($"Batch {id} no longer exists.");
-
-            if (batch.Status != BatchStatus.Running)
-            {
-                throw new InvalidOperationException($"Start batch '{batch.Name}' first.");
-            }
-
-            if (batch.NicType != NicType.Tcp4G)
-            {
-                request.ValidateMqtt();
-            }
-
-            int blockSeconds;
-            if (batch.NicType == NicType.MqttWirepas)
-            {
-                blockSeconds = checked(_customPullOptions.GetBlockPeriodMinutes(batch.HesTemplateId
-                    ?? throw new InvalidOperationException("Missing HES template.")) * 60);
-            }
-            else
-            {
-                var session = _sessions.GetOrCreate(new MeterRef(batch.StartIndex, batch.NicType));
-                lock (session)
-                {
-                    blockSeconds = session.BlockPushPeriodSeconds;
-                }
-            }
-
-            foreach (var (profile, seconds) in new[] { ("0.0.25.9.0.255", request.InstantaneousIntervalMinutes * 60), ("0.5.25.9.0.255", blockSeconds) })
-            {
-                if (batch.NicType == NicType.Tcp4G)
-                {
-                    var source = ResolveTcpSource(id, new TcpPushRequest { BatchIds = [id], PushSetupLogicalName = profile, WaitForPeerCloseSeconds = request.WaitForPeerCloseSeconds }, _options.UseCiphering);
-                    sources.Add(new(id, batch.StartIndex, batch.Count, batch.NicType, profile, seconds, source.IsCurrent,
-                        (meter, time, ct) => source.Send(meter, source.BuildAt!(meter, time), ct), batch.Name, HistoricalIdentity(batch, profile, seconds)));
-                }
-                else
-                {
-                    var source = ResolveMqttSource(id, new MqttPushRequest { BatchIds = [id], PushSetupLogicalName = profile });
-                    pools.TryAdd(source.Binding, null!);
-                    sources.Add(new(id, batch.StartIndex, batch.Count, batch.NicType, profile, seconds, source.IsCurrent,
-                        async (meter, time, ct) =>
-                        {
-                            var result = await pools[source.Binding].PublishMeterAsync(source.BuildAt!(meter, time), ct);
-                            return new(result.Sent, result.Failed, result.Error);
-                        }, batch.Name, HistoricalIdentity(batch, profile, seconds)));
-                }
-            }
-        }
+        var connections = new TcpPushConnectionGroup();
 
         try
         {
+            foreach (int id in request.BatchIds)
+            {
+                token.ThrowIfCancellationRequested();
+                var batch = _registry.Batches.SingleOrDefault(b => b.Id == id)
+                    ?? throw new InvalidOperationException($"Batch {id} no longer exists.");
+
+                if (batch.Status != BatchStatus.Running)
+                {
+                    throw new InvalidOperationException($"Start batch '{batch.Name}' first.");
+                }
+
+                if (batch.NicType != NicType.Tcp4G)
+                {
+                    request.ValidateMqtt();
+                }
+
+                int blockSeconds;
+                if (batch.NicType == NicType.MqttWirepas)
+                {
+                    blockSeconds = checked(_customPullOptions.GetBlockPeriodMinutes(batch.HesTemplateId
+                        ?? throw new InvalidOperationException("Missing HES template.")) * 60);
+                }
+                else
+                {
+                    var session = _sessions.GetOrCreate(new MeterRef(batch.StartIndex, batch.NicType));
+                    lock (session)
+                    {
+                        blockSeconds = session.BlockPushPeriodSeconds;
+                    }
+                }
+
+                foreach (var (profile, seconds) in new[] { ("0.0.25.9.0.255", request.InstantaneousIntervalMinutes * 60), ("0.5.25.9.0.255", blockSeconds) })
+                {
+                    if (batch.NicType == NicType.Tcp4G)
+                    {
+                        var source = ResolveTcpSource(id, new TcpPushRequest
+                        {
+                            BatchIds = [id],
+                            PushSetupLogicalName = profile,
+                            WaitForPeerCloseSeconds = request.WaitForPeerCloseSeconds
+                        }, _options.UseCiphering, connections);
+                        sources.Add(new(id, batch.StartIndex, batch.Count, batch.NicType, profile, seconds, source.IsCurrent,
+                            (meter, time, ct) => source.Send(meter, source.BuildAt!(meter, time), ct), batch.Name, HistoricalIdentity(batch, profile, seconds)));
+                    }
+                    else
+                    {
+                        var source = ResolveMqttSource(id, new MqttPushRequest { BatchIds = [id], PushSetupLogicalName = profile });
+                        pools.TryAdd(source.Binding, null!);
+                        sources.Add(new(id, batch.StartIndex, batch.Count, batch.NicType, profile, seconds, source.IsCurrent,
+                            async (meter, time, ct) =>
+                            {
+                                var result = await pools[source.Binding].PublishMeterAsync(source.BuildAt!(meter, time), ct);
+                                return new(result.Sent, result.Failed, result.Error);
+                            }, batch.Name, HistoricalIdentity(batch, profile, seconds)));
+                    }
+                }
+            }
+
             foreach (var binding in pools.Keys.ToArray())
             {
                 pools[binding] = await _mqtt.OpenPoolAsync(binding, request.PublisherCount, request.Qos, _options.PublishTimeoutSeconds, token);
@@ -193,10 +199,11 @@ public sealed partial class PushCoordinator
 
             token.ThrowIfCancellationRequested();
             return new HistoricalPushRun(sources.ToArray(), pools.Values.ToArray(), request, start, end,
-                (meter, ct) => AllowPushAsync(meter, ct, simulateNetworkDelay: false), _metrics, resume);
+                (meter, ct) => AllowPushAsync(meter, ct, simulateNetworkDelay: false), _metrics, resume, connections);
         }
         catch
         {
+            await connections.DisposeAsync();
             foreach (var pool in pools.Values.Where(p => p is not null))
             {
                 await pool.DisposeAsync();
@@ -209,7 +216,8 @@ public sealed partial class PushCoordinator
 
 internal sealed class HistoricalPushRun(HistoricalPushSource[] sources, IMqttPushPool[] pools,
     HistoricalPushRequest request, DateTimeOffset from, DateTimeOffset to,
-    Func<MeterRef, CancellationToken, Task<bool>> allow, Diagnostics.SimulatorMetrics metrics, HistoricalPushCheckpoint? resume = null) : IAsyncDisposable
+    Func<MeterRef, CancellationToken, Task<bool>> allow, Diagnostics.SimulatorMetrics metrics, HistoricalPushCheckpoint? resume = null,
+    TcpPushConnectionGroup? connections = null) : IAsyncDisposable
 {
     private int _used;
     private MqttPublishRateLimiter? _limiter = request.RecordsPerSecond == 0 ? null : new(request.RecordsPerSecond);
@@ -291,6 +299,7 @@ internal sealed class HistoricalPushRun(HistoricalPushSource[] sources, IMqttPus
             lastSaved = watch.Elapsed;
         }
 
+        using var closingCancellation = token.Register(() => connections?.Cancel());
         using var reporting = CancellationTokenSource.CreateLinkedTokenSource(token);
         progress(telemetry.Snapshot(previousElapsed + watch.Elapsed));
         var reporter = ReportAsync();
@@ -392,6 +401,11 @@ internal sealed class HistoricalPushRun(HistoricalPushSource[] sources, IMqttPus
                     SaveCheckpoint();
                 }
             }
+
+            if (connections is not null)
+            {
+                await connections.DrainAsync(token);
+            }
         }
         finally
         {
@@ -422,6 +436,14 @@ internal sealed class HistoricalPushRun(HistoricalPushSource[] sources, IMqttPus
 
     public async ValueTask DisposeAsync()
     {
-        foreach (var pool in pools) await pool.DisposeAsync();
+        if (connections is not null)
+        {
+            await connections.DisposeAsync();
+        }
+
+        foreach (var pool in pools)
+        {
+            await pool.DisposeAsync();
+        }
     }
 }
