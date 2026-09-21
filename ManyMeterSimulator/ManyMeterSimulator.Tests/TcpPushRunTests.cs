@@ -52,6 +52,56 @@ public class TcpPushRunTests
         Assert.Equal(1000, (await sending).MetersSent);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task UnlimitedPassExceedsOldCapBeforeAnySendFinishes(bool prepared)
+    {
+        const int count = 4096;
+        int entered = 0;
+        var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        await using var run = Run(count, _ => [[1]], async (_, _, ct) =>
+        {
+            if (Interlocked.Increment(ref entered) == count)
+            {
+                ready.TrySetResult();
+            }
+
+            await release.Task.WaitAsync(ct);
+            return new(1, 0);
+        }, new() { BatchIds = [1] }, stop.Token);
+
+        if (prepared)
+        {
+            await run.PrepareAsync();
+        }
+
+        var sending = prepared ? run.FireAsync() : run.SendLiveAsync();
+        try
+        {
+            await ready.Task.WaitAsync(stop.Token);
+            Assert.Equal(count, entered);
+        }
+        finally
+        {
+            release.TrySetResult();
+        }
+
+        Assert.Equal(count, (await sending).MetersSent);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(50000)]
+    [InlineData(int.MaxValue)]
+    public void OperatorConcurrencyHasNoFormerCeiling(int concurrency)
+    {
+        new TcpPushRequest { BatchIds = [1], MaxConcurrency = concurrency, PreparedMemoryMiB = 0 }.Validate();
+        new HistoricalPushRequest { BatchIds = [1], MaxConcurrency = concurrency }.Validate();
+    }
+
     [Fact]
     public async Task LoopRegeneratesPayloadsAndRetainsInterruptedPassTotals()
     {
@@ -102,8 +152,8 @@ public class TcpPushRunTests
     }
 
     [Theory]
-    [InlineData(0)]
-    [InlineData(1025)]
+    [InlineData(-1)]
+    [InlineData(int.MinValue)]
     public void InvalidConcurrencyIsRejected(int concurrency) =>
         Assert.Throws<ArgumentException>(() => new TcpPushRequest { BatchIds = [1], MaxConcurrency = concurrency }.Validate());
 }

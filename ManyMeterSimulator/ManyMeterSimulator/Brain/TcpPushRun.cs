@@ -9,23 +9,46 @@ namespace ManyMeterSimulator.Brain;
 public sealed record TcpPushRequest
 {
     public IReadOnlyList<int> BatchIds { get; init; } = [];
-    public int MaxConcurrency { get; init; } = 256;
+    public int MaxConcurrency { get; init; }
+    public int WaitForPeerCloseSeconds { get; init; }
     public int? MaximumMetersPerBatch { get; init; }
     public bool SelectRandomly { get; init; }
     public string? PushSetupLogicalName { get; init; }
     public int ChunkSize { get; init; }
     public int ChunkIntervalSeconds { get; init; }
-    public int PreparedMemoryMiB { get; init; } = 256;
+    public int PreparedMemoryMiB { get; init; }
 
     public void Validate()
     {
         if (BatchIds.Count == 0 || BatchIds.Distinct().Count() != BatchIds.Count)
+        {
             throw new ArgumentException("Select at least one batch, without duplicates.");
-        if (MaxConcurrency is < 1 or > 1024) throw new ArgumentException("Concurrent TCP connections must be 1 to 1024.");
-        if (MaximumMetersPerBatch is <= 0) throw new ArgumentException("Meter limit must be positive, or empty for all meters.");
-        if (ChunkSize is < 0 or > 1_000_000 || ChunkIntervalSeconds is < 0 or > 3600)
-            throw new ArgumentException("Wave size must be 0 to 1,000,000 and its pause 0 to 3600 seconds.");
-        if (PreparedMemoryMiB is < 1 or > 16_384) throw new ArgumentException("Prepared memory must be 1 to 16384 MiB.");
+        }
+
+        if (MaxConcurrency < 0)
+        {
+            throw new ArgumentException("Concurrency must be 0 (unlimited) or positive.");
+        }
+
+        if (WaitForPeerCloseSeconds < 0)
+        {
+            throw new ArgumentException("Peer-close wait must be 0 (close after sending) or positive.");
+        }
+
+        if (MaximumMetersPerBatch is <= 0)
+        {
+            throw new ArgumentException("Meter limit must be positive, or empty for all meters.");
+        }
+
+        if (ChunkSize < 0 || ChunkIntervalSeconds is < 0 or > 3600)
+        {
+            throw new ArgumentException("Wave size must be 0 (whole pass) or positive, and its pause 0 to 3600 seconds.");
+        }
+
+        if (PreparedMemoryMiB < 0)
+        {
+            throw new ArgumentException("Prepared memory must be 0 (unlimited) or positive.");
+        }
     }
 }
 
@@ -111,37 +134,60 @@ public sealed class TcpPushRun : IAsyncDisposable
 
     public async Task PrepareAsync()
     {
-        if (Interlocked.CompareExchange(ref _state, 1, 0) != 0) throw new InvalidOperationException("This run has already been used.");
+        if (Interlocked.CompareExchange(ref _state, 1, 0) != 0)
+        {
+            throw new InvalidOperationException("This run has already been used.");
+        }
+
         var clock = Stopwatch.StartNew();
         var generated = DateTimeOffset.UtcNow;
         try
         {
             CheckReady();
-            if (_ciphering) throw new InvalidOperationException("Prepared mode requires Push:UseCiphering=false. Use live sending for ciphered pushes.");
+            if (_ciphering)
+            {
+                throw new InvalidOperationException("Prepared mode requires Push:UseCiphering=false. Use live sending for ciphered pushes.");
+            }
+
             var prepared = new ConcurrentBag<PreparedMeter>();
             await Parallel.ForEachAsync(Meters(), new ParallelOptions
             {
-                MaxDegreeOfParallelism = Math.Min(_request.MaxConcurrency, Math.Max(1, Environment.ProcessorCount)),
+                MaxDegreeOfParallelism = Math.Min(
+                    _request.MaxConcurrency == 0 ? int.MaxValue : _request.MaxConcurrency,
+                    Math.Max(1, Environment.ProcessorCount)),
                 CancellationToken = _stop.Token,
             }, (item, ct) =>
             {
                 ct.ThrowIfCancellationRequested();
                 byte[][] payloads = item.Source.Build(item.Meter);
-                if (Interlocked.Add(ref _bytes, 160 + payloads.Sum(p => p.LongLength + 32)) > _request.PreparedMemoryMiB * 1024L * 1024L)
+                long bytes = Interlocked.Add(ref _bytes, 160 + payloads.Sum(p => p.LongLength + 32));
+                if (_request.PreparedMemoryMiB > 0 && bytes > _request.PreparedMemoryMiB * 1024L * 1024L)
+                {
                     throw new InvalidOperationException("Prepared dataset exceeded its memory budget.");
+                }
+
                 prepared.Add(new(item.Source, item.Meter, payloads));
                 Interlocked.Increment(ref _meters);
                 Interlocked.Add(ref _messages, payloads.Length);
                 return ValueTask.CompletedTask;
             });
             CheckReady();
-            if (PreparedMessages == 0) throw new InvalidOperationException("Selected profiles produced no TCP payloads.");
+            if (PreparedMessages == 0)
+            {
+                throw new InvalidOperationException("Selected profiles produced no TCP payloads.");
+            }
+
             _prepared = prepared.ToArray();
             PreparedAtUtc = generated;
             PreparationTime = clock.Elapsed;
             Volatile.Write(ref _state, 2);
         }
-        catch { _prepared = null; Volatile.Write(ref _state, 4); throw; }
+        catch
+        {
+            _prepared = null;
+            Volatile.Write(ref _state, 4);
+            throw;
+        }
     }
 
     public Task<TcpPushSummary> SendLiveAsync() => SendAsync(false);
@@ -196,33 +242,60 @@ public sealed class TcpPushRun : IAsyncDisposable
         long sent = 0, failed = 0, skipped = 0, messages = 0, rejected = 0;
         string? error = null;
         var clock = Stopwatch.StartNew();
+
         try
         {
             CheckReady();
             if (prepared && DateTimeOffset.UtcNow - PreparedAtUtc > TimeSpan.FromMinutes(5))
+            {
                 throw new InvalidOperationException("Prepared payloads are older than five minutes. Prepare again.");
+            }
+
             IEnumerable<PreparedMeter> work = prepared ? _prepared! : Meters().Select(x => new PreparedMeter(x.Source, x.Meter, null));
             IEnumerable<IEnumerable<PreparedMeter>> waves = !prepared && _request.ChunkSize > 0 ? work.Chunk(_request.ChunkSize) : [work];
             bool first = true;
+
             foreach (var wave in waves)
             {
-                if (!first && _request.ChunkIntervalSeconds > 0) await Task.Delay(TimeSpan.FromSeconds(_request.ChunkIntervalSeconds), token);
+                if (!first && _request.ChunkIntervalSeconds > 0)
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(_request.ChunkIntervalSeconds), token);
+                }
+
                 first = false;
-                await Parallel.ForEachAsync(wave, new ParallelOptions { MaxDegreeOfParallelism = _request.MaxConcurrency, CancellationToken = token }, async (item, ct) =>
+                await Parallel.ForEachAsync(wave, new ParallelOptions
+                {
+                    MaxDegreeOfParallelism = _request.MaxConcurrency == 0 ? int.MaxValue : _request.MaxConcurrency,
+                    CancellationToken = token
+                }, async (item, ct) =>
                 {
                     long started = Stopwatch.GetTimestamp();
                     try
                     {
                         ct.ThrowIfCancellationRequested();
                         byte[][] payloads = item.Payloads ?? item.Source.Build(item.Meter);
-                        if (payloads.Length == 0) { Interlocked.Increment(ref skipped); _metrics?.RecordPushSkipped(NicType.Tcp4G); return; }
+                        if (payloads.Length == 0)
+                        {
+                            Interlocked.Increment(ref skipped);
+                            _metrics?.RecordPushSkipped(NicType.Tcp4G);
+                            return;
+                        }
+
                         var result = await item.Source.Send(item.Meter, payloads, ct);
                         Interlocked.Add(ref messages, result.Sent);
                         Interlocked.Add(ref rejected, result.Failed);
                         _metrics?.RecordPushPayloads(NicType.Tcp4G, result.Sent, result.Failed);
                         _metrics?.RecordPushMeter(NicType.Tcp4G, result.Failed == 0, Stopwatch.GetElapsedTime(started));
-                        if (result.Failed == 0) Interlocked.Increment(ref sent);
-                        else { Interlocked.Increment(ref failed); Interlocked.CompareExchange(ref error, result.Error ?? "TCP connect/write failed.", null); }
+
+                        if (result.Failed == 0)
+                        {
+                            Interlocked.Increment(ref sent);
+                        }
+                        else
+                        {
+                            Interlocked.Increment(ref failed);
+                            Interlocked.CompareExchange(ref error, result.Error ?? "TCP connect/write failed.", null);
+                        }
                     }
                     catch (PushCanceledException ex)
                     {
@@ -233,7 +306,10 @@ public sealed class TcpPushRun : IAsyncDisposable
                         _metrics?.RecordPushMeter(NicType.Tcp4G, false, Stopwatch.GetElapsedTime(started));
                         throw;
                     }
-                    catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+                    catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                    {
+                        throw;
+                    }
                     catch (Exception ex)
                     {
                         Interlocked.Increment(ref failed);
@@ -242,9 +318,13 @@ public sealed class TcpPushRun : IAsyncDisposable
                     }
                 });
             }
+
             return new(sent, failed, skipped, messages, rejected, clock.Elapsed, error);
         }
-        finally { LastPass = new(sent, failed, skipped, messages, rejected, clock.Elapsed, error); }
+        finally
+        {
+            LastPass = new(sent, failed, skipped, messages, rejected, clock.Elapsed, error);
+        }
     }
 
     private IEnumerable<(TcpPushSource Source, MeterRef Meter)> Meters()

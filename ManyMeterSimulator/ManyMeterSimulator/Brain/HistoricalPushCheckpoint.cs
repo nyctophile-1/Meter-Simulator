@@ -99,7 +99,7 @@ internal sealed class HistoricalPushCursor(HistoricalPushSource source, DateTime
 
     public void Validate()
     {
-        if (_next < 0 || _next > Total || _completed.Count > 2048 ||
+        if (_next < 0 || _next > Total ||
             (saved is not null && saved.CompletedAhead.Length != _completed.Count) ||
             _completed.Any(value => value <= _next || value >= Total))
         {

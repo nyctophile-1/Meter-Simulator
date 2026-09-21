@@ -29,6 +29,7 @@ public partial class MqttPushRunTests
             BatchIds = [batch.Id],
             Days = 1,
             EndTimeUtc = end,
+            WaitForPeerCloseSeconds = 0,
             InstantaneousIntervalMinutes = 60,
             MaxConcurrency = 1,
             PublisherCount = 1
@@ -115,8 +116,10 @@ public partial class MqttPushRunTests
 
 public partial class TcpStressIntegrationTests
 {
-    [Fact]
-    public async Task HistoricalTcpUsesMeterSourceIpAndRealFramesForBothProfiles()
+    [Theory]
+    [InlineData(0)]
+    [InlineData(15)]
+    public async Task HistoricalTcpUsesMeterSourceIpAndRealFramesForBothProfiles(int peerCloseWait)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
         using var listener = new TcpListener(IPAddress.IPv6Loopback, 0);
@@ -133,6 +136,7 @@ public partial class TcpStressIntegrationTests
             BatchIds = [f.Batch.Id],
             Days = 1,
             EndTimeUtc = end,
+            WaitForPeerCloseSeconds = peerCloseWait,
             InstantaneousIntervalMinutes = 60,
             RecordsPerSecond = 300000,
             MaxConcurrency = 1,
@@ -158,9 +162,22 @@ public partial class TcpStressIntegrationTests
             {
                 using var client = await listener.AcceptTcpClientAsync(timeout.Token);
                 Assert.Equal(IPAddress.IPv6Loopback, ((IPEndPoint)client.Client.RemoteEndPoint!).Address);
-                using var bytes = new MemoryStream();
-                await client.GetStream().CopyToAsync(bytes, timeout.Token);
-                records.Add(DailyPushTests.Decode(bytes.ToArray()));
+                var stream = client.GetStream();
+                var header = new byte[8];
+                await stream.ReadExactlyAsync(header, timeout.Token);
+                var payload = new byte[BinaryPrimitives.ReadUInt16BigEndian(header.AsSpan(6))];
+                await stream.ReadExactlyAsync(payload, timeout.Token);
+                records.Add(DailyPushTests.Decode([.. header, .. payload]));
+
+                if (peerCloseWait == 0)
+                {
+                    Assert.Equal(0, await stream.ReadAsync(new byte[1], timeout.Token));
+                }
+                else
+                {
+                    // HES closes each frame; MAYA must observe EOF instead of its deadline.
+                    client.Client.Shutdown(SocketShutdown.Send);
+                }
             }
 
             return records;

@@ -12,7 +12,8 @@ public sealed record HistoricalPushRequest
     public IReadOnlyList<int> BatchIds { get; init; } = [];
     public int Days { get; init; } = 7;
     public int InstantaneousIntervalMinutes { get; init; } = 30;
-    public int MaxConcurrency { get; init; } = 256;
+    public int MaxConcurrency { get; init; }
+    public int WaitForPeerCloseSeconds { get; init; }
     public int RecordsPerSecond { get; init; }
     public int PublisherCount { get; init; } = MqttPushPool.MaximumPublisherCount;
     public int Qos { get; init; } = 1;
@@ -35,9 +36,14 @@ public sealed record HistoricalPushRequest
             throw new ArgumentException("Instantaneous interval must be 1 to 1440 minutes.");
         }
 
-        if (MaxConcurrency is < 1 or > 1024)
+        if (MaxConcurrency < 0)
         {
-            throw new ArgumentException("Concurrency must be 1 to 1024.");
+            throw new ArgumentException("Concurrency must be 0 (unlimited) or positive.");
+        }
+
+        if (WaitForPeerCloseSeconds < 0)
+        {
+            throw new ArgumentException("Peer-close wait must be 0 (close after sending) or positive.");
         }
 
         if (RecordsPerSecond != 0)
@@ -48,7 +54,7 @@ public sealed record HistoricalPushRequest
 
     internal void ValidateMqtt()
     {
-        if (PublisherCount is < 1 or > 256 || PublisherCount > MaxConcurrency)
+        if (PublisherCount is < 1 or > 256 || (MaxConcurrency > 0 && PublisherCount > MaxConcurrency))
         {
             throw new ArgumentException("Publishers must be 1 to 256 and no more than concurrency.");
         }
@@ -160,7 +166,7 @@ public sealed partial class PushCoordinator
             {
                 if (batch.NicType == NicType.Tcp4G)
                 {
-                    var source = ResolveTcpSource(id, new TcpPushRequest { BatchIds = [id], PushSetupLogicalName = profile }, _options.UseCiphering);
+                    var source = ResolveTcpSource(id, new TcpPushRequest { BatchIds = [id], PushSetupLogicalName = profile, WaitForPeerCloseSeconds = request.WaitForPeerCloseSeconds }, _options.UseCiphering);
                     sources.Add(new(id, batch.StartIndex, batch.Count, batch.NicType, profile, seconds, source.IsCurrent,
                         (meter, time, ct) => source.Send(meter, source.BuildAt!(meter, time), ct), batch.Name, HistoricalIdentity(batch, profile, seconds)));
                 }
@@ -296,7 +302,9 @@ internal sealed class HistoricalPushRun(HistoricalPushSource[] sources, IMqttPus
                 token.ThrowIfCancellationRequested();
                 var time = priority.Time;
                 var chunk = new List<(HistoricalPushCursor Cursor, long Ordinal)>();
-                int chunkSize = Math.Max(256, request.MaxConcurrency * 2);
+                int chunkSize = request.MaxConcurrency == 0
+                    ? int.MaxValue
+                    : (int)Math.Min(int.MaxValue, Math.Max(256L, request.MaxConcurrency * 2L));
                 while (chunk.Count < chunkSize && queue.TryPeek(out _, out var nextPriority) && nextPriority.Time == time)
                 {
                     var work = queue.Dequeue();
@@ -311,7 +319,7 @@ internal sealed class HistoricalPushRun(HistoricalPushSource[] sources, IMqttPus
                 telemetry.BeginSlots(chunk.Select(w => w.Cursor.Source).Distinct().ToArray(), time);
                 await Parallel.ForEachAsync(chunk, new ParallelOptions
                 {
-                    MaxDegreeOfParallelism = request.MaxConcurrency,
+                    MaxDegreeOfParallelism = request.MaxConcurrency == 0 ? int.MaxValue : request.MaxConcurrency,
                     CancellationToken = token
                 }, async (work, ct) =>
                 {

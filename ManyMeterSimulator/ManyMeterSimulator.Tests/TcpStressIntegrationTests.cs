@@ -160,7 +160,7 @@ public partial class TcpStressIntegrationTests
         public MeterBatch Batch { get; }
         public PushCoordinator Push { get; }
         public MeterSessionManager Sessions { get; }
-        public TcpPushRequest Request => new() { BatchIds = [Batch.Id] };
+        public TcpPushRequest Request => new() { BatchIds = [Batch.Id], WaitForPeerCloseSeconds = 0 };
         public Fixture(int port, string template = "SA1231166HP_values.xml", BadCommSettings? badComm = null, NetworkDelaySettings? networkDelay = null)
         {
             Network.AddPushTarget(new() { Key = "tcp", Address = "::1", Port = port }, true);

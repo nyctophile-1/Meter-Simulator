@@ -35,12 +35,16 @@
             </MudSelect>
             @if (_transport == "TCP" || HasTcpBatches)
             {
-                <MudText Typo="Typo.caption">TCP uses each batch's configured HES destination and each meter's own source IP. Each historical record connects, sends and disconnects; connections are not reused across records.</MudText>
+                <MudText Typo="Typo.caption">TCP uses each batch's configured HES destination and each meter's own source IP. Each historical record opens its own connection and waits for HES to close, up to the configured wait. Set the wait to 0 to close immediately after sending.</MudText>
             }
         </MudItem>
         <MudItem xs="12" sm="4"><MudNumericField T="int" Label="Last N days" @bind-Value="_days" Min="1" Max="3650" Disabled="@Locked" Variant="Variant.Outlined" /></MudItem>
         <MudItem xs="12" sm="4"><MudNumericField T="int" Label="Instantaneous interval (minutes)" @bind-Value="_interval" Min="1" Max="1440" Disabled="@Locked" Variant="Variant.Outlined" /></MudItem>
-        <MudItem xs="12" sm="4"><MudNumericField T="int" Label="Concurrent records (IP + LS)" @bind-Value="_concurrency" Min="1" Max="1024" Disabled="@Locked" Variant="Variant.Outlined" /></MudItem>
+        <MudItem xs="12" sm="4"><MudNumericField T="int" Label="Concurrent records (0 = unlimited)" @bind-Value="_concurrency" Min="0" Disabled="@Locked" Variant="Variant.Outlined" /></MudItem>
+        @if (_transport == "TCP" || HasTcpBatches)
+        {
+            <MudItem xs="12" sm="6"><MudNumericField T="int" Label="Wait for HES close (seconds, 0 = close after sending)" @bind-Value="_peerCloseWait" Min="0" Disabled="@Locked" Variant="Variant.Outlined" /></MudItem>
+        }
         @if (HasMqttBatches)
         {
             <MudItem xs="12" sm="4"><MudNumericField T="int" Label="MQTT publishers per broker/transport" @bind-Value="_publishers" Min="1" Max="256" Disabled="@Locked" Variant="Variant.Outlined" /></MudItem>
@@ -59,6 +63,11 @@
         }
     </MudGrid>
     <MudText Typo="Typo.caption" Class="my-3">Unthrottled by default: publish continuously as fast as generation and transport allow. An optional rate limit covers both profiles and all batches. DLMS replays template samples; custom Wirepas uses its timestamp-based readings. Continue last run retains its original dates and settled meter positions after Stop or restart. Failed and skipped records remain accounted for; Continue does not retry them. Unconfirmed deliveries can be retried after cancellation; a hard crash may replay deliveries since the last saved checkpoint.</MudText>
+    <MudText Typo="Typo.caption">Concurrency 0 has no application cap within each historical timestamp. Both profiles share any limit you choose. A timestamp finishes before advancing to the next; saved runs retain their original settings.</MudText>
+    @if (_transport == "TCP" || HasTcpBatches)
+    {
+        <TcpPushConnections />
+    }
     <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(Locked || !_batches.Any())" OnClick="Start">Start historical push</MudButton>
     <MudButton Class="ml-2" Variant="Variant.Outlined" Disabled="@(!History.State.IsActive)" OnClick="History.StopAsync">Stop</MudButton>
     <MudButton Class="ml-2" Variant="Variant.Filled" Color="Color.Secondary" Disabled="@(Locked || !History.CanContinue)" OnClick="Continue">Continue last run</MudButton>
@@ -77,7 +86,8 @@
     private bool Locked => Disabled || History.State.IsActive;
     private bool RateLocked => Disabled || History.State.Phase == "Stopping";
     private IReadOnlyCollection<int> _batches = [];
-    private int _days = 7, _interval = 30, _concurrency = 256, _rate = 1000, _publishers = 256, _qos = 1;
+    private int _days = 7, _interval = 30, _concurrency = 0, _rate = 1000, _publishers = 256, _qos = 1;
+    private int _peerCloseWait = 15;
     private bool _limitRate;
     private string _transport = "All";
     private bool _useFixedEnd;
@@ -120,6 +130,7 @@
             _days = request.Days;
             _interval = request.InstantaneousIntervalMinutes;
             _concurrency = request.MaxConcurrency;
+            _peerCloseWait = request.WaitForPeerCloseSeconds;
             _publishers = request.PublisherCount;
             _qos = request.Qos;
             _limitRate = request.RecordsPerSecond != 0;
@@ -225,6 +236,7 @@
                 Days = _days,
                 InstantaneousIntervalMinutes = _interval,
                 MaxConcurrency = _concurrency,
+                WaitForPeerCloseSeconds = _peerCloseWait,
                 RecordsPerSecond = _limitRate ? _rate : 0,
                 PublisherCount = _publishers,
                 Qos = _qos,

@@ -74,7 +74,7 @@ public sealed partial class PushCoordinator
         Task<PushDeliveryResult> Send(MeterRef meter, byte[][] payloads, CancellationToken token) =>
             _tcpPush.SendAsync(meter.Serial, _sessions.GetOrCreate(meter).SourceAddress,
                 destination, _options.DefaultPort, payloads, token,
-                deliveries.TryGetValue(payloads, out var delivery) ? delivery.Confirm : null);
+                deliveries.TryGetValue(payloads, out var delivery) ? delivery.Confirm : null, request.WaitForPeerCloseSeconds);
 
         bool IsCurrent() => ReferenceEquals(_registry.GetBatchForIndex(batch.StartIndex), batch)
             && batch.Status == BatchStatus.Running && batch.EnvironmentKey == environment
