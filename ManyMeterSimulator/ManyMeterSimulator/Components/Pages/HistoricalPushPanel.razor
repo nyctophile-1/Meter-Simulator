@@ -7,7 +7,7 @@
 
 <MudPaper Outlined="true" Class="pa-5">
     <MudText Typo="Typo.h6">N-day historical push</MudText>
-    <MudText Class="mb-4">Weave instantaneous (IP) and block-load / load-survey (LS) records for selected batches from N days ago to the start time of this run, then stop. BadComm and NonComm meters leave gaps; simulated network delays are bypassed. Block load follows each batch's capture interval.</MudText>
+    <MudText Class="mb-4">Replay historical instantaneous (IP) and block-load / load-survey (LS) records over TCP or MQTT. Weave both profiles chronologically for N days ending at the run start or a fixed time, then stop. BadComm and NonComm meters leave gaps; simulated network delays are bypassed. Block load follows each batch's capture interval.</MudText>
     <HistoricalPushStatus State="@History.State" />
     <MudGrid>
         <MudItem xs="12">
@@ -22,20 +22,41 @@
                 A record may use multiple transport messages. Already in-flight records may finish after a reduction; actual throughput may be lower.</MudText>
         </MudItem>
         <MudItem xs="12">
+            <MudSelect T="string" Label="Transport" Value="@_transport" ValueChanged="SetTransport" Disabled="@Locked" Variant="Variant.Outlined" Class="mb-3">
+                <MudSelectItem T="string" Value='@("All")'>All transports</MudSelectItem>
+                <MudSelectItem T="string" Value='@("TCP")'>TCP</MudSelectItem>
+                <MudSelectItem T="string" Value='@("MQTT")'>MQTT</MudSelectItem>
+            </MudSelect>
             <MudSelect T="int" Label="Running batches" MultiSelection="true" @bind-SelectedValues="_batches" Disabled="@Locked" Variant="Variant.Outlined">
-                @foreach (var batch in Meters.Batches.Where(b => b.Status == BatchStatus.Running))
+                @foreach (var batch in AvailableBatches)
                 {
                     <MudSelectItem T="int" Value="@batch.Id">@batch.Name (@batch.Count.ToString("N0") meters · @batch.NicType)</MudSelectItem>
                 }
             </MudSelect>
+            @if (_transport == "TCP" || HasTcpBatches)
+            {
+                <MudText Typo="Typo.caption">TCP uses each batch's configured HES destination and each meter's own source IP. Each historical record connects, sends and disconnects; connections are not reused across records.</MudText>
+            }
         </MudItem>
         <MudItem xs="12" sm="4"><MudNumericField T="int" Label="Last N days" @bind-Value="_days" Min="1" Max="3650" Disabled="@Locked" Variant="Variant.Outlined" /></MudItem>
         <MudItem xs="12" sm="4"><MudNumericField T="int" Label="Instantaneous interval (minutes)" @bind-Value="_interval" Min="1" Max="1440" Disabled="@Locked" Variant="Variant.Outlined" /></MudItem>
         <MudItem xs="12" sm="4"><MudNumericField T="int" Label="Concurrent records (IP + LS)" @bind-Value="_concurrency" Min="1" Max="1024" Disabled="@Locked" Variant="Variant.Outlined" /></MudItem>
-        <MudItem xs="12" sm="4"><MudNumericField T="int" Label="MQTT publishers per broker/transport" @bind-Value="_publishers" Min="1" Max="256" Disabled="@Locked" Variant="Variant.Outlined" /></MudItem>
-        <MudItem xs="12" sm="4"><MudSelect T="int" Label="MQTT QoS" @bind-Value="_qos" Disabled="@Locked" Variant="Variant.Outlined">
-            <MudSelectItem T="int" Value="0">0</MudSelectItem><MudSelectItem T="int" Value="1">1</MudSelectItem><MudSelectItem T="int" Value="2">2</MudSelectItem>
-        </MudSelect></MudItem>
+        @if (HasMqttBatches)
+        {
+            <MudItem xs="12" sm="4"><MudNumericField T="int" Label="MQTT publishers per broker/transport" @bind-Value="_publishers" Min="1" Max="256" Disabled="@Locked" Variant="Variant.Outlined" /></MudItem>
+            <MudItem xs="12" sm="4"><MudSelect T="int" Label="MQTT QoS" @bind-Value="_qos" Disabled="@Locked" Variant="Variant.Outlined">
+                <MudSelectItem T="int" Value="0">0</MudSelectItem><MudSelectItem T="int" Value="1">1</MudSelectItem><MudSelectItem T="int" Value="2">2</MudSelectItem>
+            </MudSelect></MudItem>
+        }
+        <MudItem xs="12">
+            <MudCheckBox T="bool" Label="Use a fixed history end time" @bind-Value="_useFixedEnd" Disabled="@Locked" />
+            <MudText Typo="Typo.caption">For a TCP/MQTT comparison, use the same end time, days, intervals and matching meter templates. Each batch uses its configured transport.</MudText>
+        </MudItem>
+        @if (_useFixedEnd)
+        {
+            <MudItem xs="12" sm="6"><MudDatePicker Label="History end date (IST)" @bind-Date="_endDate" Disabled="@Locked" DateFormat="dd MMM yyyy" Variant="Variant.Outlined" /></MudItem>
+            <MudItem xs="12" sm="6"><MudTimePicker Label="History end time (IST)" @bind-Time="_endTime" Disabled="@Locked" Variant="Variant.Outlined" /></MudItem>
+        }
     </MudGrid>
     <MudText Typo="Typo.caption" Class="my-3">Unthrottled by default: publish continuously as fast as generation and transport allow. An optional rate limit covers both profiles and all batches. DLMS replays template samples; custom Wirepas uses its timestamp-based readings. Continue last run retains its original dates and settled meter positions after Stop or restart. Failed and skipped records remain accounted for; Continue does not retry them. Unconfirmed deliveries can be retried after cancellation; a hard crash may replay deliveries since the last saved checkpoint.</MudText>
     <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(Locked || !_batches.Any())" OnClick="Start">Start historical push</MudButton>
@@ -45,7 +66,10 @@
     {
         <MudText Typo="Typo.caption" Class="mt-2">Last checkpoint: @saved.ToOffset(TimeSpan.FromHours(5.5)).ToString("dd MMM yyyy HH:mm:ss 'IST'"). Start historical push replaces the saved run once the new run is ready.</MudText>
     }
-    @if (History.State.Error is { } error) { <MudAlert Severity="Severity.Error">@error</MudAlert> }
+    @if (History.State.Error is { } error)
+    {
+        <MudAlert Severity="Severity.Error">@error</MudAlert>
+    }
 </MudPaper>
 
 @code {
@@ -55,7 +79,28 @@
     private IReadOnlyCollection<int> _batches = [];
     private int _days = 7, _interval = 30, _concurrency = 256, _rate = 1000, _publishers = 256, _qos = 1;
     private bool _limitRate;
+    private string _transport = "All";
+    private bool _useFixedEnd;
+    private DateTime? _endDate = DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(5.5)).Date;
+    private TimeSpan? _endTime = TimeSpan.Zero;
     private System.Threading.Timer? _timer;
+    private IEnumerable<MeterBatch> AvailableBatches => Meters.Batches.Where(batch =>
+        batch.Status == BatchStatus.Running && (_transport == "All" ||
+            (_transport == "TCP" ? batch.NicType == NicType.Tcp4G : batch.NicType != NicType.Tcp4G)));
+    private bool HasTcpBatches => Meters.Batches.Any(batch => _batches.Contains(batch.Id) && batch.NicType == NicType.Tcp4G);
+    private bool HasMqttBatches => Meters.Batches.Any(batch => _batches.Contains(batch.Id) && batch.NicType != NicType.Tcp4G);
+
+    private void SetTransport(string transport)
+    {
+        if (Locked)
+        {
+            return;
+        }
+
+        _transport = transport;
+        var available = AvailableBatches.Select(batch => batch.Id).ToHashSet();
+        _batches = _batches.Where(available.Contains).ToArray();
+    }
 
     protected override void OnInitialized()
     {
@@ -78,6 +123,14 @@
             _publishers = request.PublisherCount;
             _qos = request.Qos;
             _limitRate = request.RecordsPerSecond != 0;
+            _useFixedEnd = request.EndTimeUtc.HasValue;
+
+            if (request.EndTimeUtc is { } end)
+            {
+                var local = end.ToOffset(TimeSpan.FromHours(5.5));
+                _endDate = local.Date;
+                _endTime = local.TimeOfDay;
+            }
 
             if (_limitRate)
             {
@@ -91,36 +144,97 @@
         if (History.State is { IsActive: true, Request: { } request })
         {
             _limitRate = request.RecordsPerSecond != 0;
-            if (_limitRate) _rate = request.RecordsPerSecond;
+            if (_limitRate)
+            {
+                _rate = request.RecordsPerSecond;
+            }
         }
     }
+
     private void SetRate(int rate)
     {
-        if (RateLocked) return;
+        if (RateLocked)
+        {
+            return;
+        }
+
         try
         {
             Networking.Mqtt.MqttPublishRateLimiter.Validate(rate);
-            if (History.State.IsActive) History.SetRecordsPerSecond(_limitRate ? rate : 0);
+            if (History.State.IsActive)
+            {
+                History.SetRecordsPerSecond(_limitRate ? rate : 0);
+            }
+
             _rate = rate;
         }
-        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); ReadRate(); }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+            ReadRate();
+        }
     }
+
     private void SetLimitRate(bool enabled)
     {
-        if (RateLocked) return;
+        if (RateLocked)
+        {
+            return;
+        }
+
         try
         {
-            if (History.State.IsActive) History.SetRecordsPerSecond(enabled ? _rate : 0);
+            if (History.State.IsActive)
+            {
+                History.SetRecordsPerSecond(enabled ? _rate : 0);
+            }
+
             _limitRate = enabled;
         }
-        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); ReadRate(); }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+            ReadRate();
+        }
     }
+
     private void Start()
     {
-        if (Locked) return;
-        try { History.Start(new() { BatchIds = _batches.ToArray(), Days = _days, InstantaneousIntervalMinutes = _interval,
-            MaxConcurrency = _concurrency, RecordsPerSecond = _limitRate ? _rate : 0, PublisherCount = _publishers, Qos = _qos }); }
-        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        if (Locked)
+        {
+            return;
+        }
+
+        try
+        {
+            DateTimeOffset? end = null;
+            if (_useFixedEnd)
+            {
+                if (_endDate is null || _endTime is null)
+                {
+                    throw new ArgumentException("Choose the history end date and time.");
+                }
+
+                var local = DateTime.SpecifyKind(_endDate.Value.Date + _endTime.Value, DateTimeKind.Unspecified);
+                end = new DateTimeOffset(local, TimeSpan.FromHours(5.5)).ToUniversalTime();
+            }
+
+            History.Start(new()
+            {
+                BatchIds = _batches.ToArray(),
+                Days = _days,
+                InstantaneousIntervalMinutes = _interval,
+                MaxConcurrency = _concurrency,
+                RecordsPerSecond = _limitRate ? _rate : 0,
+                PublisherCount = _publishers,
+                Qos = _qos,
+                EndTimeUtc = end
+            });
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
     }
 
     private void Continue()

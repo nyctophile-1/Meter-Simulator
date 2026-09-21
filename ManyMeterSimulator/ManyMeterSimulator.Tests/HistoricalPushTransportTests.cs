@@ -15,6 +15,43 @@ namespace ManyMeterSimulator.Tests;
 
 public partial class MqttPushRunTests
 {
+    [Fact]
+    public async Task HistoricalMqttUsesFixedWindowAndStillValidatesPublisherSettings()
+    {
+        var now = new DateTimeOffset(2026, 9, 21, 12, 7, 23, TimeSpan.Zero);
+        var end = now.AddDays(-2);
+        var fixture = new Fixture(1, clock: new BlockClock(now));
+        var batch = fixture.Batches.AddBatch("history", "D1_Master.xml", 1, NicType.Mqtt4G, null, "local");
+        fixture.Batches.TryStart(batch.Id);
+
+        var request = new HistoricalPushRequest
+        {
+            BatchIds = [batch.Id],
+            Days = 1,
+            EndTimeUtc = end,
+            InstantaneousIntervalMinutes = 60,
+            MaxConcurrency = 1,
+            PublisherCount = 1
+        };
+
+        await Assert.ThrowsAsync<ArgumentException>(() => fixture.Push.OpenHistoricalRunAsync(
+            request with { PublisherCount = 2 }, default));
+        await Assert.ThrowsAsync<ArgumentException>(() => fixture.Push.OpenHistoricalRunAsync(
+            request with { Qos = 3 }, default));
+        await Assert.ThrowsAsync<ArgumentException>(() => fixture.Push.OpenHistoricalRunAsync(
+            request with { EndTimeUtc = now.AddSeconds(1) }, default));
+        Assert.Empty(fixture.Publisher.Pools);
+
+        await using var run = await fixture.Push.OpenHistoricalRunAsync(request, default);
+        var result = await run.SendAsync(_ => { }, default);
+
+        Assert.Equal(end, result.To);
+        Assert.Equal(end.AddDays(-1), result.From);
+        Assert.Equal(result.Total, result.Sent);
+        Assert.All(fixture.Publisher.Messages, message => Assert.InRange(
+            HistoricalPushTests.ReadTime(DailyPushTests.Decode(message.Payload)[2]), result.From, result.To));
+    }
+
     [Theory]
     [InlineData(15)]
     [InlineData(30)]
@@ -88,11 +125,26 @@ public partial class TcpStressIntegrationTests
             HistoricalPushTests.Impaired(CommClass.Healthy), StressDelay());
         int period = f.Sessions.GetOrCreate(new MeterRef(f.Batch.StartIndex, f.Batch.NicType)).BlockPushPeriodSeconds;
         int expected = 24 + 86400 / period;
+
         var received = ReceiveAsync();
-        await using var run = await f.Push.OpenHistoricalRunAsync(new() { BatchIds = [f.Batch.Id], Days = 1,
-            InstantaneousIntervalMinutes = 60, RecordsPerSecond = 300000 }, timeout.Token);
+        var end = new DateTimeOffset(2026, 1, 2, 12, 7, 23, TimeSpan.FromHours(5.5));
+        await using var run = await f.Push.OpenHistoricalRunAsync(new()
+        {
+            BatchIds = [f.Batch.Id],
+            Days = 1,
+            EndTimeUtc = end,
+            InstantaneousIntervalMinutes = 60,
+            RecordsPerSecond = 300000,
+            MaxConcurrency = 1,
+            PublisherCount = 0,
+            Qos = -1
+        }, timeout.Token);
         var result = await run.SendAsync(_ => { }, timeout.Token);
         var records = await received;
+
+        Assert.Equal(end.ToUniversalTime(), result.To);
+        Assert.Equal(TimeSpan.Zero, result.To.Offset);
+        Assert.Equal(end.AddDays(-1), result.From);
         Assert.Equal(expected, result.Sent);
         Assert.Equal(0, result.Failed);
         Assert.Equal(new byte[] { 0, 5 }, records.Select(r => ((byte[])r[1])[1]).Distinct().Order());
@@ -101,6 +153,7 @@ public partial class TcpStressIntegrationTests
         async Task<List<object[]>> ReceiveAsync()
         {
             var records = new List<object[]>();
+
             for (int i = 0; i < expected; i++)
             {
                 using var client = await listener.AcceptTcpClientAsync(timeout.Token);
@@ -109,6 +162,7 @@ public partial class TcpStressIntegrationTests
                 await client.GetStream().CopyToAsync(bytes, timeout.Token);
                 records.Add(DailyPushTests.Decode(bytes.ToArray()));
             }
+
             return records;
         }
     }
