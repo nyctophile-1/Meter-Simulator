@@ -47,20 +47,24 @@
                              Min="1" Disabled="@Locked" Variant="Variant.Outlined" />
         </MudItem>
         <MudItem xs="12" sm="6" md="4">
-            <MudNumericField T="int" Label="Concurrent TCP connections" @bind-Value="_concurrency"
-                             Min="1" Max="1024" Disabled="@Locked" Variant="Variant.Outlined" />
+            <MudNumericField T="int" Label="Concurrent TCP connections (0 = unlimited)" @bind-Value="_concurrency"
+                             Min="0" Disabled="@Locked" Variant="Variant.Outlined" />
         </MudItem>
         <MudItem xs="12" sm="6" md="4">
-            <MudNumericField T="int" Label="Prepared memory (MiB)" @bind-Value="_memoryMiB"
-                             Min="1" Max="16384" Disabled="@(Locked || _continuous)" Variant="Variant.Outlined" />
+            <MudNumericField T="int" Label="Prepared memory (MiB, 0 = unlimited)" @bind-Value="_memoryMiB"
+                             Min="0" Disabled="@(Locked || _continuous)" Variant="Variant.Outlined" />
         </MudItem>
         <MudItem xs="12" sm="6">
             <MudNumericField T="int" Label="Live wave size (0 = whole pass)" @bind-Value="_waveSize"
-                             Min="0" Max="1000000" Disabled="@Locked" Variant="Variant.Outlined" />
+                             Min="0" Disabled="@Locked" Variant="Variant.Outlined" />
         </MudItem>
         <MudItem xs="12" sm="6">
             <MudNumericField T="int" Label="Pause between live waves (seconds)" @bind-Value="_wavePause"
                              Min="0" Max="3600" Disabled="@Locked" Variant="Variant.Outlined" />
+        </MudItem>
+        <MudItem xs="12" sm="6">
+            <MudNumericField T="int" Label="Wait for HES close (seconds, 0 = close after sending)" @bind-Value="_peerCloseWait"
+                             Min="0" Disabled="@Locked" Variant="Variant.Outlined" />
         </MudItem>
     </MudGrid>
     <MudText Typo="Typo.caption" Class="mt-3 mb-3">
@@ -79,6 +83,8 @@
             @(_state.Phase == "Ready" ? "Discard prepared data" : "Stop")
         </MudButton>
     </div>
+    <MudText Typo="Typo.caption" Class="mt-3">No concurrency or prepared-memory cap by default. A positive value applies only the limit you choose. After sending, MAYA waits for HES to close or for the selected wait to expire.</MudText>
+    <TcpPushConnections />
     <MudDivider Class="my-4" />
     <MudText Typo="Typo.subtitle1">@_state.Phase</MudText>
     @if (_state.IsBusy) { <MudProgressLinear Indeterminate="true" Class="my-2" /> }
@@ -102,7 +108,8 @@
     [Parameter] public bool Disabled { get; set; }
     private IReadOnlyCollection<int> _batchIds = Array.Empty<int>();
     private string _profile = "all";
-    private int _concurrency = 256, _memoryMiB = 256, _waveSize, _wavePause;
+    private int _concurrency, _memoryMiB, _waveSize, _wavePause;
+    private int _peerCloseWait = 15;
     private int? _meterLimit;
     private bool _continuous;
     private int _duration, _cyclePause;
@@ -117,10 +124,15 @@
         _state = Stress.State;
         // The active run is shared across browsers and survives tab navigation; always display
         // its frozen settings before offering Fire, even in a newly mounted panel.
-        if (_state.Request is not { } request) return;
+        if (_state.Request is not { } request)
+        {
+            return;
+        }
+
         _batchIds = request.BatchIds;
         _profile = request.PushSetupLogicalName ?? "all";
         _concurrency = request.MaxConcurrency;
+        _peerCloseWait = request.WaitForPeerCloseSeconds;
         _memoryMiB = request.PreparedMemoryMiB;
         _meterLimit = request.MaximumMetersPerBatch;
         _waveSize = request.ChunkSize;
@@ -133,18 +145,28 @@
     {
         try
         {
-            if (Disabled) throw new InvalidOperationException("Finish the active test or push loop first.");
+            if (Disabled)
+            {
+                throw new InvalidOperationException("Finish the active test or push loop first.");
+            }
+
             var ids = _batchIds.ToArray();
             if (ids.Any(id => !Meters.Batches.Any(b => b.Id == id && b.Status == BatchStatus.Running)))
+            {
                 throw new InvalidOperationException("Every selected batch must still be running.");
+            }
+
             Stress.Start(new TcpPushRequest
             {
-                BatchIds = ids, MaxConcurrency = _concurrency,
+                BatchIds = ids, MaxConcurrency = _concurrency, WaitForPeerCloseSeconds = _peerCloseWait,
                 MaximumMetersPerBatch = _meterLimit, PushSetupLogicalName = _profile == "all" ? null : _profile,
                 PreparedMemoryMiB = _memoryMiB, ChunkSize = _waveSize, ChunkIntervalSeconds = _wavePause,
             }, prepare, _continuous ? new TcpLoopOptions { DurationMinutes = _duration, CyclePauseSeconds = _cyclePause } : null);
         }
-        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
     }
     private void Fire() { try { if (!Disabled) Stress.Fire(); } catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); } }
     public void Dispose() { _disposed = true; Stress.Changed -= OnChanged; }

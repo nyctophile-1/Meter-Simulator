@@ -32,6 +32,12 @@ public sealed class TcpPushSender
 {
     private readonly ILogger<TcpPushSender> _logger;
     private readonly PushOptions _options;
+    private long _connecting, _active, _peak, _opened, _connectFailures, _peerClosed, _waitExpired, _closeErrors, _payloadsWritten;
+
+    public TcpPushConnectionSnapshot Connections => new(
+        Interlocked.Read(ref _connecting), Interlocked.Read(ref _active), Interlocked.Read(ref _peak),
+        Interlocked.Read(ref _opened), Interlocked.Read(ref _connectFailures), Interlocked.Read(ref _peerClosed),
+        Interlocked.Read(ref _waitExpired), Interlocked.Read(ref _closeErrors), Interlocked.Read(ref _payloadsWritten));
 
     public TcpPushSender(ILogger<TcpPushSender> logger, IOptions<PushOptions> options)
     {
@@ -56,7 +62,8 @@ public sealed class TcpPushSender
         string destination,
         int defaultPort,
         IReadOnlyList<byte[]> payloads,
-        CancellationToken cancellationToken = default, Action<int>? deliveryConfirmed = null)
+        CancellationToken cancellationToken = default, Action<int>? deliveryConfirmed = null,
+        int waitForPeerCloseSeconds = 0)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (!TryParseDestination(destination, defaultPort, out string host, out int port))
@@ -70,23 +77,18 @@ public sealed class TcpPushSender
             return new PushDeliveryResult(0, 0);
         }
 
-        // ONE connection for all of this meter's payloads, not one per payload: a real meter opens a
-        // socket, sends what it has and hangs up. Reconnecting per payload multiplied both the
-        // connect cost and the number of sockets a fleet push lands on the HES by the push-object
-        // count — which is exactly the number the HES is being tested on.
-        //
-        // The meter's OWN assigned IP is the identity of a TCP push. Tried once, not per-retry: if
-        // that address cannot reach this destination it never will (it times out, it isn't transient).
+        // All frames for this meter share one source-bound connection.
         string? sourceError = source is null ? "The meter has no source IP assigned."
             : $"Meter source {source} cannot bind to destination {host}:{port} (address family mismatch or non-IP destination).";
         if (CanBindSource(source, host))
         {
             var bound = await TryConnectAndWriteAsync(
-                meterNo, source, host, port, payloads, bindSource: true, cancellationToken, deliveryConfirmed);
+                meterNo, source, host, port, payloads, bindSource: true, cancellationToken, deliveryConfirmed, waitForPeerCloseSeconds);
             if (bound.Connected)
             {
                 return bound.Result;
             }
+
             sourceError = bound.Result.Error;
         }
 
@@ -109,7 +111,7 @@ public sealed class TcpPushSender
         // Opt-in fallback: the sim server's default source. The push lands but carries no meter
         // identity, so it is warned on every meter, every time — this is a bring-up crutch only.
         var fallback = await TryConnectAndWriteAsync(
-            meterNo, source, host, port, payloads, bindSource: false, cancellationToken, deliveryConfirmed);
+            meterNo, source, host, port, payloads, bindSource: false, cancellationToken, deliveryConfirmed, waitForPeerCloseSeconds);
         if (fallback.Connected)
         {
             _logger.LogWarning(
@@ -129,7 +131,8 @@ public sealed class TcpPushSender
     /// </summary>
     private async Task<(PushDeliveryResult Result, bool Connected)> TryConnectAndWriteAsync(
         string meterNo, IPAddress? source, string host, int port,
-        IReadOnlyList<byte[]> payloads, bool bindSource, CancellationToken cancellationToken, Action<int>? deliveryConfirmed)
+        IReadOnlyList<byte[]> payloads, bool bindSource, CancellationToken cancellationToken,
+        Action<int>? deliveryConfirmed, int waitForPeerCloseSeconds)
     {
         TcpClient client;
         try
@@ -138,90 +141,153 @@ public sealed class TcpPushSender
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(
-                "Push {Meter}: could not open a {Which} socket for {Host}:{Port}: {Message}",
-                meterNo, bindSource ? "source-bound" : "default-source", host, port, ex.Message);
+            Interlocked.Increment(ref _connectFailures);
+            _logger.LogDebug("Push {Meter}: socket open failed: {Message}", meterNo, ex.Message);
             return (new(0, payloads.Count, $"TCP socket bind/open failed for {meterNo} from {source} to {host}:{port}: {ex.Message}"), false);
         }
 
-        using (client)
+        bool connected = false;
+        try
         {
-            // Socket.SendTimeout governs SYNCHRONOUS sends only — async socket operations are bounded
-            // by their cancellation token and nothing else. So both deadlines are linked CTSs, which
-            // is also what finally makes a caller's cancellation abort an in-flight connect: the old
-            // ConnectAsync(...).Wait(timeout) could not, it abandoned the connect task and left it
-            // running against a socket that had already been disposed.
-            try
+            using (client)
             {
-                using var connectCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                connectCts.CancelAfter(TimeSpan.FromSeconds(Math.Max(1, _options.ConnectTimeoutSeconds)));
-                await client.ConnectAsync(host, port, connectCts.Token);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
-            catch (Exception ex)
-            {
-                _logger.LogDebug(
-                    "Push {Meter}: {Which} connect to {Host}:{Port} failed: {Message}",
-                    meterNo, bindSource ? "source-bound" : "default-source", host, port, ex.Message);
-                string detail = ex is OperationCanceledException ? $"timed out after {_options.ConnectTimeoutSeconds}s" : ex.Message;
-                return (new(0, payloads.Count, $"TCP connect failed for {meterNo} from {(bindSource ? source?.ToString() : "default source")} to {host}:{port}: {detail}"), false);
-            }
-
-            var sendTimeout = TimeSpan.FromSeconds(Math.Max(1, _options.SendTimeoutSeconds));
-            NetworkStream stream = client.GetStream();
-
-            int sent = 0;
-            string? error = null;
-            for (int i = 0; i < payloads.Count; i++)
-            {
+                Interlocked.Increment(ref _connecting);
                 try
                 {
-                    using var writeCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                    writeCts.CancelAfter(sendTimeout);
+                    using var connectCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                    connectCts.CancelAfter(TimeSpan.FromSeconds(Math.Max(1, _options.ConnectTimeoutSeconds)));
+                    await client.ConnectAsync(host, port, connectCts.Token);
+                    connected = true;
+                    Interlocked.Increment(ref _opened);
+                    long active = Interlocked.Increment(ref _active);
+                    long peak = Interlocked.Read(ref _peak);
+                    while (active > peak)
+                    {
+                        long previous = Interlocked.CompareExchange(ref _peak, active, peak);
+                        if (previous == peak)
+                        {
+                            break;
+                        }
 
-                    await stream.WriteAsync(payloads[i], writeCts.Token);
-                    sent++;
-                    deliveryConfirmed?.Invoke(i);
+                        peak = previous;
+                    }
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
-                    throw new PushCanceledException(sent, payloads.Count - sent, cancellationToken);
+                    throw;
                 }
                 catch (Exception ex)
                 {
-                    string detail = ex is OperationCanceledException ? $"timed out after {_options.SendTimeoutSeconds}s" : ex.Message;
-                    error = $"TCP write {i + 1}/{payloads.Count} failed for {meterNo} to {host}:{port}: {detail}";
-                    // A HES that accepts the connection and then stops reading is the failure mode
-                    // this bounds: without the write deadline that Write blocked forever and leaked
-                    // the thread — and "HES slows down under load" is the scenario being tested.
-                    _logger.LogDebug(
-                        "Push {Meter}: write {Index}/{Total} to {Host}:{Port} failed: {Message}",
-                        meterNo, i + 1, payloads.Count, host, port, ex.Message);
-                    break;   // the socket is no longer trustworthy; the rest would fail too
+                    Interlocked.Increment(ref _connectFailures);
+                    string detail = ex is OperationCanceledException ? $"timed out after {_options.ConnectTimeoutSeconds}s" : ex.Message;
+                    _logger.LogDebug("Push {Meter}: connect failed: {Message}", meterNo, detail);
+                    return (new(0, payloads.Count, $"TCP connect failed for {meterNo} from {(bindSource ? source?.ToString() : "default source")} to {host}:{port}: {detail}"), false);
                 }
-            }
-
-            if (sent > 0)
-            {
-                // Half-close so the HES sees a clean end-of-push rather than having to infer it from
-                // a reset when the socket is disposed below.
-                try
+                finally
                 {
-                    client.Client.Shutdown(SocketShutdown.Send);
+                    Interlocked.Decrement(ref _connecting);
                 }
-                catch (Exception ex)
+
+                var result = await WritePayloadsAsync(client, meterNo, host, port, payloads, cancellationToken, deliveryConfirmed);
+                if (result.Sent > 0)
                 {
-                    _logger.LogDebug("Push {Meter}: shutdown after send failed: {Message}", meterNo, ex.Message);
+                    if (result.Failed == 0 && waitForPeerCloseSeconds > 0)
+                    {
+                        try
+                        {
+                            await WaitForPeerCloseAsync(client.GetStream(), waitForPeerCloseSeconds, cancellationToken);
+                        }
+                        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                        {
+                            throw new PushCanceledException(result.Sent, result.Failed, cancellationToken);
+                        }
+                    }
+                    else
+                    {
+                        try
+                        {
+                            client.Client.Shutdown(SocketShutdown.Send);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogDebug("Push {Meter}: shutdown after send failed: {Message}", meterNo, ex.Message);
+                        }
+                    }
                 }
 
-                _logger.LogDebug(
-                    "Push {Meter}: sent {Sent}/{Total} payload(s) to {Host}:{Port} {From}",
-                    meterNo, sent, payloads.Count, host, port,
-                    bindSource ? $"from {source}" : "from the host's default source");
+                return (result, true);
             }
-
-            return (new PushDeliveryResult(sent, payloads.Count - sent, error), true);
         }
+        finally
+        {
+            if (connected)
+            {
+                Interlocked.Decrement(ref _active);
+            }
+        }
+    }
+
+    private async Task<PushDeliveryResult> WritePayloadsAsync(TcpClient client, string meterNo, string host, int port,
+        IReadOnlyList<byte[]> payloads, CancellationToken cancellationToken, Action<int>? deliveryConfirmed)
+    {
+        var sendTimeout = TimeSpan.FromSeconds(Math.Max(1, _options.SendTimeoutSeconds));
+        var stream = client.GetStream();
+        int sent = 0;
+        string? error = null;
+
+        for (int i = 0; i < payloads.Count; i++)
+        {
+            try
+            {
+                using var writeCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                writeCts.CancelAfter(sendTimeout);
+                await stream.WriteAsync(payloads[i], writeCts.Token);
+                sent++;
+                Interlocked.Increment(ref _payloadsWritten);
+                deliveryConfirmed?.Invoke(i);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw new PushCanceledException(sent, payloads.Count - sent, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                string detail = ex is OperationCanceledException ? $"timed out after {_options.SendTimeoutSeconds}s" : ex.Message;
+                error = $"TCP write {i + 1}/{payloads.Count} failed for {meterNo} to {host}:{port}: {detail}";
+                _logger.LogDebug("Push {Meter}: write failed: {Message}", meterNo, detail);
+                break;
+            }
+        }
+
+        return new(sent, payloads.Count - sent, error);
+    }
+
+    private async Task WaitForPeerCloseAsync(NetworkStream stream, int seconds, CancellationToken cancellationToken)
+    {
+        using var wait = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        wait.CancelAfter(TimeSpan.FromSeconds(seconds));
+        var buffer = new byte[256];
+
+        try
+        {
+            while (await stream.ReadAsync(buffer, wait.Token) != 0)
+            {
+                // Drain any response while waiting for the peer's FIN.
+            }
+
+            Interlocked.Increment(ref _peerClosed);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            Interlocked.Increment(ref _waitExpired);
+        }
+        catch (IOException ex)
+        {
+            Interlocked.Increment(ref _closeErrors);
+            _logger.LogDebug("TCP peer-close wait ended with a socket error: {Message}", ex.Message);
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
     }
 
     /// <summary>
@@ -299,3 +365,6 @@ public sealed class TcpPushSender
 
 /// <summary>Outcome of sending one meter's push payloads.</summary>
 public readonly record struct PushDeliveryResult(int Sent, int Failed, string? Error = null);
+
+public sealed record TcpPushConnectionSnapshot(long Connecting, long Active, long PeakActive,
+    long Opened, long ConnectFailures, long PeerClosed, long WaitExpired, long CloseErrors, long PayloadsWritten);

@@ -84,4 +84,87 @@ public class TcpPushSenderTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => sender.SendAsync("one", IPAddress.IPv6Loopback,
             "[::1]:4059", 4059, [new byte[] { 1 }], stop.Token));
     }
+    [Fact]
+    public async Task WaitModeLeavesSendOpenAndCompletesWhenHesCloses()
+    {
+        using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var listener = new TcpListener(IPAddress.IPv6Loopback, 0);
+        listener.Start();
+        int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        var sender = new TcpPushSender(NullLogger<TcpPushSender>.Instance, Options.Create(new PushOptions()));
+        var sending = sender.SendAsync("one", IPAddress.IPv6Loopback, $"[::1]:{port}", port, [[1, 2, 3]],
+            stop.Token, waitForPeerCloseSeconds: 15);
+        using var peer = await listener.AcceptTcpClientAsync(stop.Token);
+        var bytes = new byte[3];
+        await peer.GetStream().ReadExactlyAsync(bytes, stop.Token);
+        Assert.Equal(new byte[] { 1, 2, 3 }, bytes);
+        Assert.Equal(1, sender.Connections.Active);
+        Assert.Equal(1, sender.Connections.Opened);
+        Assert.False(sending.IsCompleted);
+
+        using var probe = CancellationTokenSource.CreateLinkedTokenSource(stop.Token);
+        probe.CancelAfter(100);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+        {
+            int read = await peer.GetStream().ReadAsync(new byte[1], probe.Token);
+            Assert.Fail($"MAYA ended its send stream early (read returned {read}).");
+        });
+        await peer.GetStream().WriteAsync(new byte[] { 7 }, stop.Token);
+        peer.Client.Shutdown(SocketShutdown.Send);
+        var result = await sending;
+
+        Assert.Equal(new PushDeliveryResult(1, 0), result);
+        Assert.Equal(0, sender.Connections.Active);
+        Assert.Equal(0, sender.Connections.Connecting);
+        Assert.Equal(1, sender.Connections.PeerClosed);
+        Assert.Equal(0, sender.Connections.WaitExpired);
+        Assert.Equal(1, sender.Connections.PeakActive);
+    }
+
+    [Fact]
+    public async Task PeerWaitTimeoutClosesLocallyWithoutResendingWrittenPayload()
+    {
+        using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var listener = new TcpListener(IPAddress.IPv6Loopback, 0);
+        listener.Start();
+        int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        var sender = new TcpPushSender(NullLogger<TcpPushSender>.Instance, Options.Create(new PushOptions()));
+        var sending = sender.SendAsync("one", IPAddress.IPv6Loopback, $"[::1]:{port}", port, [[1]],
+            stop.Token, waitForPeerCloseSeconds: 1);
+        using var peer = await listener.AcceptTcpClientAsync(stop.Token);
+        using var received = new MemoryStream();
+        await peer.GetStream().CopyToAsync(received, stop.Token);
+        var result = await sending;
+
+        Assert.Equal(new byte[] { 1 }, received.ToArray());
+        Assert.Equal(new PushDeliveryResult(1, 0), result);
+        Assert.Equal(1, sender.Connections.WaitExpired);
+        Assert.Equal(0, sender.Connections.PeerClosed);
+        Assert.Equal(0, sender.Connections.Active);
+        Assert.Equal(1, sender.Connections.Opened);
+    }
+
+    [Fact]
+    public async Task CancellationDuringPeerWaitPreservesWrittenCountAndReleasesSocket()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var stop = new CancellationTokenSource();
+        using var listener = new TcpListener(IPAddress.IPv6Loopback, 0);
+        listener.Start();
+        int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        var sender = new TcpPushSender(NullLogger<TcpPushSender>.Instance, Options.Create(new PushOptions()));
+        var sending = sender.SendAsync("one", IPAddress.IPv6Loopback, $"[::1]:{port}", port, [[1]],
+            stop.Token, waitForPeerCloseSeconds: 15);
+        using var peer = await listener.AcceptTcpClientAsync(timeout.Token);
+        await peer.GetStream().ReadExactlyAsync(new byte[1], timeout.Token);
+        stop.Cancel();
+        var error = await Assert.ThrowsAsync<PushCanceledException>(() => sending);
+
+        Assert.Equal(1, error.Sent);
+        Assert.Equal(0, error.Failed);
+        Assert.Equal(0, sender.Connections.Active);
+        Assert.Equal(0, sender.Connections.WaitExpired);
+        Assert.Equal(0, await peer.GetStream().ReadAsync(new byte[1], timeout.Token));
+    }
+
 }

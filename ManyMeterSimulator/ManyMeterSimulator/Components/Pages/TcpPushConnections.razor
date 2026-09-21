@@ -1,0 +1,56 @@
+@using System.Diagnostics
+@using ManyMeterSimulator.Networking.Push
+@inject TcpPushSender Sender
+@implements IDisposable
+
+<MudPaper Outlined="true" Class="pa-3 my-3">
+    <MudText Typo="Typo.subtitle2">TCP connections · all MAYA pushes</MudText>
+    <MudText>Connecting: @_snapshot.Connecting.ToString("N0") · Active: @_snapshot.Active.ToString("N0") · Peak active: @_snapshot.PeakActive.ToString("N0")</MudText>
+    <MudText>New connections/sec: @_openedPerSecond.ToString("N1") · Opened: @_snapshot.Opened.ToString("N0") · Connect failures: @_snapshot.ConnectFailures.ToString("N0")</MudText>
+    <MudText>Local payload writes/sec: @_writesPerSecond.ToString("N1") · Payloads written: @_snapshot.PayloadsWritten.ToString("N0")</MudText>
+    <MudText>HES closed: @_snapshot.PeerClosed.ToString("N0") · Wait expired: @_snapshot.WaitExpired.ToString("N0") · Close/read errors: @_snapshot.CloseErrors.ToString("N0")</MudText>
+    <MudText Typo="Typo.caption">Counts cover this service process, including background pushes. Active means connected and not yet disposed by MAYA; kernel closing states are separate. Socket writes and closure do not confirm HES database persistence.</MudText>
+</MudPaper>
+
+@code {
+    private TcpPushConnectionSnapshot _snapshot = new(0, 0, 0, 0, 0, 0, 0, 0, 0);
+    private double _openedPerSecond, _writesPerSecond;
+    private long _lastSample;
+    private System.Threading.Timer? _timer;
+    private bool _disposed;
+
+    protected override void OnInitialized()
+    {
+        _snapshot = Sender.Connections;
+        _lastSample = Stopwatch.GetTimestamp();
+        _timer = new(_ =>
+        {
+            if (!_disposed)
+            {
+                _ = InvokeAsync(Update);
+            }
+        }, null, 1000, 1000);
+    }
+
+    private void Update()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        long now = Stopwatch.GetTimestamp();
+        var next = Sender.Connections;
+        _openedPerSecond = (next.Opened - _snapshot.Opened) / Stopwatch.GetElapsedTime(_lastSample, now).TotalSeconds;
+        _writesPerSecond = (next.PayloadsWritten - _snapshot.PayloadsWritten) / Stopwatch.GetElapsedTime(_lastSample, now).TotalSeconds;
+        _snapshot = next;
+        _lastSample = now;
+        StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        _timer?.Dispose();
+    }
+}
