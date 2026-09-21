@@ -15,6 +15,9 @@ public sealed class PushOptions
     /// </summary>
     public int DefaultPort { get; set; } = 4059;
 
+    /// <summary>Source port on each meter's own IP. Zero selects an OS-assigned port per connection.</summary>
+    public int TcpSourcePort { get; set; } = 40000;
+
     /// <summary>
     /// false → plaintext DataNotification (readable in Wireshark, good for bring-up).
     /// true  → general-glo-ciphering with the meter's keys.
