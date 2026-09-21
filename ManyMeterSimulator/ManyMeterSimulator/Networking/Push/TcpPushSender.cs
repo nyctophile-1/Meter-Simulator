@@ -45,6 +45,12 @@ public sealed class TcpPushSender
     {
         _logger = logger;
         _options = options.Value;
+
+        if (_options.TcpSourcePort is < 0 or > 65535)
+        {
+            throw new ArgumentOutOfRangeException(nameof(PushOptions.TcpSourcePort),
+                "TCP source port must be between 0 and 65535.");
+        }
     }
 
     /// <summary>
@@ -149,7 +155,7 @@ public sealed class TcpPushSender
 
             try
             {
-                client = bindSource ? new TcpClient(new IPEndPoint(source!, 0)) : NewDefaultClient(host);
+                client = bindSource ? NewSourceBoundClient(source!) : NewDefaultClient(host);
             }
             catch (Exception ex)
             {
@@ -157,7 +163,8 @@ public sealed class TcpPushSender
                 _logger.LogDebug("Push {Meter}: socket open failed: {Message}", meterNo, ex.Message);
 
                 return (new(0, payloads.Count,
-                    $"TCP socket bind/open failed for {meterNo} from {source} to {host}:{port}: {ex.Message}"), false);
+                    $"TCP socket bind/open failed for {meterNo} from {source} source port {_options.TcpSourcePort} " +
+                    $"to {host}:{port}: {ex.Message}"), false);
             }
 
             Interlocked.Increment(ref _connecting);
@@ -280,6 +287,28 @@ public sealed class TcpPushSender
             client.Dispose();
             Interlocked.Decrement(ref _active);
             meterConnection.Release();
+        }
+    }
+
+    private TcpClient NewSourceBoundClient(IPAddress source)
+    {
+        var client = new TcpClient(source.AddressFamily);
+
+        try
+        {
+            if (_options.TcpSourcePort != 0 && OperatingSystem.IsLinux())
+            {
+                // Allow rebinding after local close; the per-meter gate still owns the live socket.
+                client.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+            }
+
+            client.Client.Bind(new IPEndPoint(source, _options.TcpSourcePort));
+            return client;
+        }
+        catch
+        {
+            client.Dispose();
+            throw;
         }
     }
 

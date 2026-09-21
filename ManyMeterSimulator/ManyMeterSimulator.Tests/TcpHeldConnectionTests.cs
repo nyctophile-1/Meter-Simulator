@@ -19,7 +19,7 @@ public class TcpHeldConnectionTests
         using var listener = new TcpListener(IPAddress.IPv6Loopback, 0);
         listener.Start();
         int port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        var sender = new TcpPushSender(NullLogger<TcpPushSender>.Instance, Options.Create(new PushOptions()));
+        var sender = new TcpPushSender(NullLogger<TcpPushSender>.Instance, Options.Create(new PushOptions { TcpSourcePort = 0 }));
         await using var firstRun = new TcpPushConnectionGroup();
         await using var secondRun = new TcpPushConnectionGroup();
 
@@ -77,7 +77,7 @@ public class TcpHeldConnectionTests
         using var listener = new TcpListener(IPAddress.IPv6Loopback, 0);
         listener.Start();
         int port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        var sender = new TcpPushSender(NullLogger<TcpPushSender>.Instance, Options.Create(new PushOptions()));
+        var sender = new TcpPushSender(NullLogger<TcpPushSender>.Instance, Options.Create(new PushOptions { TcpSourcePort = 0 }));
 
         var sending = sender.SendAsync("one", IPAddress.IPv6Loopback, "::1", port, [[1]], stop.Token,
             waitForPeerCloseSeconds: 15);
@@ -102,7 +102,7 @@ public class TcpHeldConnectionTests
         listener.Start();
         int port = ((IPEndPoint)listener.LocalEndpoint).Port;
         listener.Stop();
-        var sender = new TcpPushSender(NullLogger<TcpPushSender>.Instance, Options.Create(new PushOptions()));
+        var sender = new TcpPushSender(NullLogger<TcpPushSender>.Instance, Options.Create(new PushOptions { TcpSourcePort = 0 }));
 
         Assert.Equal(1, (await sender.SendAsync("one", IPAddress.IPv6Loopback, "::1", port, [[1]], timeout.Token)).Failed);
 
@@ -120,7 +120,7 @@ public class TcpHeldConnectionTests
         using var listener = new TcpListener(IPAddress.IPv6Loopback, 0);
         listener.Start();
         int port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        var sender = new TcpPushSender(NullLogger<TcpPushSender>.Instance, Options.Create(new PushOptions()));
+        var sender = new TcpPushSender(NullLogger<TcpPushSender>.Instance, Options.Create(new PushOptions { TcpSourcePort = 0 }));
         await using var connections = new TcpPushConnectionGroup();
         var peers = new List<TcpClient>();
 
@@ -169,7 +169,7 @@ public class TcpHeldConnectionTests
         using var listener = new TcpListener(IPAddress.IPv6Loopback, 0);
         listener.Start();
         int port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        var sender = new TcpPushSender(NullLogger<TcpPushSender>.Instance, Options.Create(new PushOptions()));
+        var sender = new TcpPushSender(NullLogger<TcpPushSender>.Instance, Options.Create(new PushOptions { TcpSourcePort = 0 }));
         await using var connections = new TcpPushConnectionGroup();
         var result = await sender.SendAsync("one", IPAddress.IPv6Loopback, $"[::1]:{port}", port,
             [[1]], timeout.Token, waitForPeerCloseSeconds: peerCloses ? 15 : 1, connections: connections);

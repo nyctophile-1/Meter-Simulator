@@ -28,7 +28,7 @@ public class TcpPushSenderTests
             }
             await Task.WhenAll(readers);
         });
-        var sender = new TcpPushSender(NullLogger<TcpPushSender>.Instance, Options.Create(new PushOptions()));
+        var sender = new TcpPushSender(NullLogger<TcpPushSender>.Instance, Options.Create(new PushOptions { TcpSourcePort = 0 }));
         var results = await Task.WhenAll(Enumerable.Range(0, meters).Select(i => sender.SendAsync(i.ToString(),
             IPAddress.IPv6Loopback, $"[::1]:{port}", port, [new byte[] { 1, 2 }, new byte[] { 3, 4, 5 }], timeout.Token)));
         await receive;
@@ -52,7 +52,7 @@ public class TcpPushSenderTests
         using var listener = new TcpListener(IPAddress.IPv6Loopback, 0);
         listener.Start();
         int port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        var sender = new TcpPushSender(NullLogger<TcpPushSender>.Instance, Options.Create(new PushOptions()));
+        var sender = new TcpPushSender(NullLogger<TcpPushSender>.Instance, Options.Create(new PushOptions { TcpSourcePort = 0 }));
         var result = await sender.SendAsync("one", IPAddress.Loopback, $"[::1]:{port}", port, [new byte[] { 1 }]);
         Assert.Equal(0, result.Sent);
         Assert.Equal(1, result.Failed);
@@ -67,7 +67,7 @@ public class TcpPushSenderTests
         listener.Start();
         int port = ((IPEndPoint)listener.LocalEndpoint).Port;
         listener.Stop();
-        var sender = new TcpPushSender(NullLogger<TcpPushSender>.Instance, Options.Create(new PushOptions()));
+        var sender = new TcpPushSender(NullLogger<TcpPushSender>.Instance, Options.Create(new PushOptions { TcpSourcePort = 0 }));
         var result = await sender.SendAsync("one", IPAddress.IPv6Loopback, $"[::1]:{port}", port, [new byte[] { 1 }]);
         Assert.Equal(1, result.Failed);
         Assert.Contains("TCP connect failed", result.Error);
@@ -80,7 +80,7 @@ public class TcpPushSenderTests
     {
         using var stop = new CancellationTokenSource();
         stop.Cancel();
-        var sender = new TcpPushSender(NullLogger<TcpPushSender>.Instance, Options.Create(new PushOptions()));
+        var sender = new TcpPushSender(NullLogger<TcpPushSender>.Instance, Options.Create(new PushOptions { TcpSourcePort = 0 }));
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => sender.SendAsync("one", IPAddress.IPv6Loopback,
             "[::1]:4059", 4059, [new byte[] { 1 }], stop.Token));
     }
@@ -91,7 +91,7 @@ public class TcpPushSenderTests
         using var listener = new TcpListener(IPAddress.IPv6Loopback, 0);
         listener.Start();
         int port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        var sender = new TcpPushSender(NullLogger<TcpPushSender>.Instance, Options.Create(new PushOptions()));
+        var sender = new TcpPushSender(NullLogger<TcpPushSender>.Instance, Options.Create(new PushOptions { TcpSourcePort = 0 }));
         var sending = sender.SendAsync("one", IPAddress.IPv6Loopback, $"[::1]:{port}", port, [[1, 2, 3]],
             stop.Token, waitForPeerCloseSeconds: 15);
         using var peer = await listener.AcceptTcpClientAsync(stop.Token);
@@ -128,7 +128,7 @@ public class TcpPushSenderTests
         using var listener = new TcpListener(IPAddress.IPv6Loopback, 0);
         listener.Start();
         int port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        var sender = new TcpPushSender(NullLogger<TcpPushSender>.Instance, Options.Create(new PushOptions()));
+        var sender = new TcpPushSender(NullLogger<TcpPushSender>.Instance, Options.Create(new PushOptions { TcpSourcePort = 0 }));
         var sending = sender.SendAsync("one", IPAddress.IPv6Loopback, $"[::1]:{port}", port, [[1]],
             stop.Token, waitForPeerCloseSeconds: 1);
         using var peer = await listener.AcceptTcpClientAsync(stop.Token);
@@ -152,7 +152,7 @@ public class TcpPushSenderTests
         using var listener = new TcpListener(IPAddress.IPv6Loopback, 0);
         listener.Start();
         int port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        var sender = new TcpPushSender(NullLogger<TcpPushSender>.Instance, Options.Create(new PushOptions()));
+        var sender = new TcpPushSender(NullLogger<TcpPushSender>.Instance, Options.Create(new PushOptions { TcpSourcePort = 0 }));
         var sending = sender.SendAsync("one", IPAddress.IPv6Loopback, $"[::1]:{port}", port, [[1]],
             stop.Token, waitForPeerCloseSeconds: 15);
         using var peer = await listener.AcceptTcpClientAsync(timeout.Token);

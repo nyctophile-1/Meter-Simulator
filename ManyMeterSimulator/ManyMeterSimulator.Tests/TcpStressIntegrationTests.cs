@@ -170,7 +170,7 @@ public partial class TcpStressIntegrationTests
                 new Host(), NullLogger<TemplateRegistry>.Instance);
             Sessions = new MeterSessionManager(Batches, templates, Options.Create(new BrainOptions()),
                 Options.Create(new TcpOptions { AddressPrefix = "::/80" }), NullLogger<MeterSessionManager>.Instance);
-            var options = Options.Create(new PushOptions());
+            var options = Options.Create(new PushOptions { TcpSourcePort = 0 });
             Push = new(Batches, Sessions, Network, new TcpPushSender(NullLogger<TcpPushSender>.Instance, options),
                 new NoMqtt(), new NicCodecFactory(), options, Options.Create(new CustomPushOptions()),
                 new SimulatorMetrics(), NullLogger<PushCoordinator>.Instance, badComm: badComm, networkDelay: networkDelay);
