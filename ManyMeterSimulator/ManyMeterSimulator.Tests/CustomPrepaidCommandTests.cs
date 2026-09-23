@@ -32,6 +32,8 @@ public class CustomPrepaidCommandTests
                 Assert.NotNull(meter.GetValue($"0.0.94.96.{suffix}.255"));
                 Assert.NotNull(meter.GetValue($"0.0.94.91.{suffix}.255"));
             }
+            foreach (int suffix in new[] { 21, 23, 24 })
+                Assert.NotEqual(0, Convert.ToInt32(meter.GetValue($"0.0.94.96.{suffix}.255")));
             foreach (int suffix in new[] { 22, 25 })
             {
                 var wrapper = Assert.IsType<GXDateTime>(meter.GetValue($"0.0.94.96.{suffix}.255"));
@@ -61,6 +63,37 @@ public class CustomPrepaidCommandTests
             Assert.Equal(4321, Convert.ToInt32(meter.GetValue("0.0.94.96.24.255")));
         }
         finally { server.Reset(); }
+    }
+
+    [Fact]
+    public void TransparentDlms_ReplacesPkg9StyleZeroByteDates()
+    {
+        string source = Path.Combine(AppContext.BaseDirectory, "Templates", "SA1231166HP_values.xml");
+        string folder = Path.Combine(Path.GetTempPath(), $"maya-prepaid-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(folder);
+        string template = Path.Combine(folder, "PKG9-zero-byte-dates.xml");
+        const string wildcard = "<Value Type=\"9\" UIType=\"25\">*/*/* 00:00:00</Value>";
+        const string zeroBytes = "<Value Type=\"9\">00 00 00 00 00 00 00 00 00 00 00 00</Value>";
+        File.WriteAllText(template, File.ReadAllText(source).Replace(wildcard, zeroBytes));
+
+        var meter = new DLMSMeter(42, "1.0.0.0.0.255", 16, 1);
+        var server = new DLMSServerSession(meter, template);
+        server.Initialize(true);
+        try
+        {
+            foreach (int suffix in new[] { 22, 25 })
+            {
+                var value = Assert.IsType<GXDateTime>(meter.GetValue($"0.0.94.96.{suffix}.255"));
+                DateTimeSkips required = DateTimeSkips.Year | DateTimeSkips.Month | DateTimeSkips.Day |
+                                         DateTimeSkips.Hour | DateTimeSkips.Minute | DateTimeSkips.Second;
+                Assert.Equal(0, (int)(value.Skip & required));
+            }
+        }
+        finally
+        {
+            server.Reset();
+            Directory.Delete(folder, true);
+        }
     }
 
     [Fact]
@@ -105,6 +138,31 @@ public class CustomPrepaidCommandTests
         Assert.Equal(5000, BinaryPrimitives.ReadInt32LittleEndian(packet.AsSpan(41)));
         Assert.Equal(-375, BinaryPrimitives.ReadInt32LittleEndian(packet.AsSpan(45)));
         Assert.Equal(Epoch(balanceTime), BinaryPrimitives.ReadUInt32LittleEndian(packet.AsSpan(49)));
+    }
+
+    [Fact]
+    public void Command70_SeedsEmptyTemplateValuesBeforeBuildingResponse()
+    {
+        var registry = Registry();
+        var templates = new TemplateRegistry(
+            Options.Create(new TemplateOptions { Folder = Path.Combine(AppContext.BaseDirectory, "Templates") }),
+            new TestEnvironment(), NullLogger<TemplateRegistry>.Instance);
+        var sessions = new MeterSessionManager(registry, templates, Options.Create(new BrainOptions()),
+            Options.Create(new TcpOptions()), NullLogger<MeterSessionManager>.Instance);
+        var model = new HesDataModelLoader(NullLogger<HesDataModelLoader>.Instance)
+            .Load(Path.Combine(AppContext.BaseDirectory, "Fixtures", "CustomPull"));
+        var options = new CustomPullOptions { MeterCategories = new() { [93] = "1P" } };
+        var meter = new MeterRef(42, NicType.MqttWirepas);
+
+        byte[] packet = new CustomPrepaidCommand(sessions, model, Options.Create(options))
+            .Execute(Request(registry, meter), CancellationToken.None);
+
+        Assert.Equal(53, packet.Length);
+        Assert.NotEqual(0, BinaryPrimitives.ReadInt32LittleEndian(packet.AsSpan(33)));
+        Assert.NotEqual(0u, BinaryPrimitives.ReadUInt32LittleEndian(packet.AsSpan(37)));
+        Assert.NotEqual(0, BinaryPrimitives.ReadInt32LittleEndian(packet.AsSpan(41)));
+        Assert.NotEqual(0, BinaryPrimitives.ReadInt32LittleEndian(packet.AsSpan(45)));
+        Assert.NotEqual(0u, BinaryPrimitives.ReadUInt32LittleEndian(packet.AsSpan(49)));
     }
 
     [Fact]

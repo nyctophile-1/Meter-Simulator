@@ -239,15 +239,11 @@ namespace MeterSimulator.DLMS
             {
                 string wrapperObis = $"0.0.94.96.{parameter.Suffix}.255";
                 string hdlcObis = $"0.0.94.91.{parameter.Suffix}.255";
-                object defaultValue = parameter.IsTime
-                    ? new GXDateTime(parameter.Suffix == 22 ? now.AddDays(-1) : now)
-                    : 0;
-
                 if (initializeValues)
                 {
                     object? sourceValue = _meter.GetValue(wrapperObis) ?? _meter.GetValue(hdlcObis);
-                    if (sourceValue is GXDateTime gx && HasWildcardDateTime(gx)) sourceValue = null;
-                    sourceValue ??= defaultValue;
+                    if (NeedsPrepaidSeed(sourceValue, parameter.IsTime))
+                        sourceValue = SeedPrepaidValue(parameter.Suffix, parameter.IsTime, now);
                     _meter.SetValue(wrapperObis, sourceValue);
                     _meter.SetValue(hdlcObis, sourceValue);
                 }
@@ -272,6 +268,64 @@ namespace MeterSimulator.DLMS
         private static bool HasWildcardDateTime(GXDateTime value) =>
             (value.Skip & (DateTimeSkips.Year | DateTimeSkips.Month | DateTimeSkips.Day |
                            DateTimeSkips.Hour | DateTimeSkips.Minute | DateTimeSkips.Second)) != 0;
+
+        private static bool NeedsPrepaidSeed(object? value, bool isTime)
+        {
+            if (!isTime)
+            {
+                try { return value is null || Convert.ToInt32(value) == 0; }
+                catch (Exception ex) when (ex is FormatException or InvalidCastException or OverflowException)
+                { return true; }
+            }
+
+            try
+            {
+                GXDateTime date = value switch
+                {
+                    GXDateTime gx => gx,
+                    DateTime dateTime => new GXDateTime(dateTime),
+                    DateTimeOffset offset => new GXDateTime(offset.UtcDateTime),
+                    byte[] bytes when bytes.Length > 0 =>
+                        (GXDateTime)GXDLMSClient.ChangeType(bytes, DataType.DateTime),
+                    _ => new GXDateTime { Skip = DateTimeSkips.Year },
+                };
+                return HasWildcardDateTime(date);
+            }
+            catch
+            {
+                return true;
+            }
+        }
+
+        private object SeedPrepaidValue(int suffix, bool isTime, DateTime now)
+        {
+            uint seed = Mix(unchecked((uint)_meter.Index) ^ unchecked((uint)suffix * 0x9E3779B9u));
+            if (isTime)
+            {
+                int minutes = 1 + (int)(seed % 1440);
+                DateTime value = suffix == 22
+                    ? now.AddDays(-(1 + (seed % 30))).AddMinutes(-minutes)
+                    : now.AddMinutes(-minutes);
+                return new GXDateTime(value);
+            }
+
+            return suffix switch
+            {
+                21 => 100 + (int)(seed % 4_901),
+                23 => 500 + (int)(seed % 19_501),
+                24 => 50 + (int)(seed % 9_951),
+                _ => 1,
+            };
+        }
+
+        private static uint Mix(uint value)
+        {
+            value ^= value >> 16;
+            value *= 0x7FEB352Du;
+            value ^= value >> 15;
+            value *= 0x846CA68Bu;
+            return value ^ (value >> 16);
+        }
 
         private static string? PrepaidAlias(string obis)
         {
