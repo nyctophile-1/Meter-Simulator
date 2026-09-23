@@ -159,6 +159,13 @@ namespace MeterSimulator.DLMS
                 ApplyDeviceIdOverride();
             }
 
+            // Submit Prepaid Parameters is transported as five ordinary DLMS writes on the
+            // transparent NICs. HES uses the .91 OBIS family for HDLC/RF-1 and .96 for wrapper
+            // transports, while real meter exports commonly contain only one family. Register
+            // both aliases against this meter's private value store so every transparent route
+            // sees the same five values without mutating the shared template object graph.
+            InitializePrepaidParameters(initializeValues);
+
             // InitializeObjects() (legacy, pre-template hardcoded object set) must stay disabled:
             // it registers its own Clock/registers/Daily Load Profile at the SAME OBIS the XML
             // template uses, and since it runs before the XML merge loop below, that loop's
@@ -214,6 +221,67 @@ namespace MeterSimulator.DLMS
             // Safety net: if any CaptureObject key somehow still points to an instance
             // not in Items, re-wire it now.  With a clean load this is a no-op.
             RewireProfileCaptureObjects();
+        }
+
+        private static readonly (int Suffix, DataType Type, bool IsTime)[] PrepaidParameters =
+        {
+            (21, DataType.Int32, false), // Last recharge amount
+            (22, DataType.OctetString, true), // Last recharge time
+            (23, DataType.Int32, false), // Total amount at last recharge
+            (24, DataType.Int32, false), // Current balance amount
+            (25, DataType.OctetString, true), // Current balance time
+        };
+
+        private void InitializePrepaidParameters(bool initializeValues)
+        {
+            DateTime now = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Utc);
+            foreach (var parameter in PrepaidParameters)
+            {
+                string wrapperObis = $"0.0.94.96.{parameter.Suffix}.255";
+                string hdlcObis = $"0.0.94.91.{parameter.Suffix}.255";
+                object defaultValue = parameter.IsTime
+                    ? new GXDateTime(parameter.Suffix == 22 ? now.AddDays(-1) : now)
+                    : 0;
+
+                if (initializeValues)
+                {
+                    object? sourceValue = _meter.GetValue(wrapperObis) ?? _meter.GetValue(hdlcObis);
+                    if (sourceValue is GXDateTime gx && HasWildcardDateTime(gx)) sourceValue = null;
+                    sourceValue ??= defaultValue;
+                    _meter.SetValue(wrapperObis, sourceValue);
+                    _meter.SetValue(hdlcObis, sourceValue);
+                }
+
+                AddPrepaidAliasIfMissing(wrapperObis, parameter.Type);
+                AddPrepaidAliasIfMissing(hdlcObis, parameter.Type);
+            }
+        }
+
+        private void AddPrepaidAliasIfMissing(string obis, DataType type)
+        {
+            if (_objectsFromFile.FindByLN(ObjectType.Data, obis) is not null ||
+                _objects.Any(item => item.ObjectType == ObjectType.Data && item.LogicalName == obis))
+                return;
+
+            var data = new GXDLMSData(obis);
+            data.SetDataType(2, type);
+            data.SetAccess(2, AccessMode.ReadWrite);
+            _objects.Add(data);
+        }
+
+        private static bool HasWildcardDateTime(GXDateTime value) =>
+            (value.Skip & (DateTimeSkips.Year | DateTimeSkips.Month | DateTimeSkips.Day |
+                           DateTimeSkips.Hour | DateTimeSkips.Minute | DateTimeSkips.Second)) != 0;
+
+        private static string? PrepaidAlias(string obis)
+        {
+            const string wrapper = "0.0.94.96.";
+            const string hdlc = "0.0.94.91.";
+            if (obis.StartsWith(wrapper, StringComparison.Ordinal))
+                return hdlc + obis[wrapper.Length..];
+            if (obis.StartsWith(hdlc, StringComparison.Ordinal))
+                return wrapper + obis[hdlc.Length..];
+            return null;
         }
 
         #region Push (outbound DataNotification)
@@ -1355,6 +1423,11 @@ namespace MeterSimulator.DLMS
                 if ((arg.Target is GXDLMSRegister || arg.Target is GXDLMSData) && arg.Index == 2)
                 {
                     _meter.SetValue(arg.Target.LogicalName, arg.Value);
+                    if (PrepaidAlias(arg.Target.LogicalName) is string alias &&
+                        PrepaidParameters.Any(parameter => arg.Target.LogicalName.EndsWith($".{parameter.Suffix}.255", StringComparison.Ordinal)))
+                    {
+                        _meter.SetValue(alias, arg.Value);
+                    }
                     arg.Handled = true;
                     CoreLog.Debug(
                         $"[Write] {_meter.MeterNo}: {arg.Target.ObjectType} {arg.Target.LogicalName} = {arg.Value}");

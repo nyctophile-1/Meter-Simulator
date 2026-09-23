@@ -52,6 +52,7 @@ public sealed class MqttNicListenerService : BackgroundService, IMqttPushPublish
     private readonly NicCodecFactory _codecs;
     private readonly CustomPullIngress _customPullIngress;
     private readonly CustomRtcCommand _customRtc;
+    private readonly CustomPrepaidCommand _customPrepaid;
     private readonly CustomProfileCommand _customProfiles;
     private readonly ConcurrentDictionary<BrokerBinding, BoundBrokerClient> _clients = new();
 
@@ -78,6 +79,7 @@ public sealed class MqttNicListenerService : BackgroundService, IMqttPushPublish
         NicCodecFactory codecs,
         CustomPullIngress customPullIngress,
         CustomRtcCommand customRtc,
+        CustomPrepaidCommand customPrepaid,
         CustomProfileCommand customProfiles)
     {
         _logger = logger;
@@ -93,6 +95,7 @@ public sealed class MqttNicListenerService : BackgroundService, IMqttPushPublish
         _codecs = codecs;
         _customPullIngress = customPullIngress;
         _customRtc = customRtc;
+        _customPrepaid = customPrepaid;
         _customProfiles = customProfiles;
     }
 
@@ -503,7 +506,8 @@ public sealed class MqttNicListenerService : BackgroundService, IMqttPushPublish
             }
 
             CustomPullInbound inbound = custom.Inbound!.Value;
-            if (inbound.Intent.Command != CustomCommandType.GetRealtimeClock && !CustomProfileCommand.Supports(inbound.Intent.Command))
+            if (inbound.Intent.Command is not (CustomCommandType.GetRealtimeClock or CustomCommandType.GetAllPrepaidParameters) &&
+                !CustomProfileCommand.Supports(inbound.Intent.Command))
             {
                 _logger.LogDebug("Meter {Meter}: custom command {Command} is not implemented", item.Meter, inbound.Intent.Command);
                 return;
@@ -515,9 +519,12 @@ public sealed class MqttNicListenerService : BackgroundService, IMqttPushPublish
             WarnIfCrossBroker(item);
             try
             {
-                IReadOnlyList<byte[]> responses = inbound.Intent.Command == CustomCommandType.GetRealtimeClock
-                    ? [_customRtc.Execute(inbound, cancellationToken)]
-                    : _customProfiles.Execute(inbound, cancellationToken);
+                IReadOnlyList<byte[]> responses = inbound.Intent.Command switch
+                {
+                    CustomCommandType.GetRealtimeClock => [_customRtc.Execute(inbound, cancellationToken)],
+                    CustomCommandType.GetAllPrepaidParameters => [_customPrepaid.Execute(inbound, cancellationToken)],
+                    _ => _customProfiles.Execute(inbound, cancellationToken),
+                };
                 foreach (byte[] framed in responses)
                 {
                     NicPublish publish = ManyMeterSimulator.Networking.CustomPush.WirepasCustomPushEnvelope.Create(

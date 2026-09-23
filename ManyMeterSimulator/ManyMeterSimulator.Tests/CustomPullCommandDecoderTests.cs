@@ -15,6 +15,7 @@ public class CustomPullCommandDecoderTests
     [InlineData(90, CustomPullWireSelector.GetWithoutData, CustomCommandType.GetDiData)]
     [InlineData(83, CustomPullWireSelector.GetWithoutData, CustomCommandType.GetDiData)]
     [InlineData(24, CustomPullWireSelector.GetWithoutData, CustomCommandType.GetNamePlate)]
+    [InlineData(70, CustomPullWireSelector.GetWithoutData, CustomCommandType.GetAllPrepaidParameters)]
     public void MapsExplicitWireCommandsAndAliases(
         byte rawCommand,
         CustomPullWireSelector selector,
@@ -32,6 +33,7 @@ public class CustomPullCommandDecoderTests
     [InlineData(24, CustomPullWireSelector.SetWithData)]
     [InlineData(4, CustomPullWireSelector.SetWithDate)]
     [InlineData(127, CustomPullWireSelector.GetWithoutData)]
+    [InlineData(70, CustomPullWireSelector.SetWithData)]
     public void RejectsUnsupportedCommandsAndSelectorPairs(byte rawCommand, CustomPullWireSelector selector)
     {
         Assert.False(CustomPullCommandDecoder.TryDecode(Meter, Request(rawCommand, selector), out _, out string error));

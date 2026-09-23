@@ -118,6 +118,30 @@ public sealed class HesDataModel
     /// <summary>Where a field's value comes from in the meter — the smart NIC's read plan.</summary>
     public bool TryGetAttribute(int profile, string category, string parameter, out AttributeMapping mapping) =>
         _attributes.TryGetValue((profile, category, parameter), out mapping!);
+
+    /// <summary>
+    /// Resolves a command attribute without assuming its HES profile number. Command fields are
+    /// exported under profile 7 today, but the profile is metadata and must not become a protocol
+    /// constant in the simulator. Ambiguous or blank mappings are rejected.
+    /// </summary>
+    public bool TryGetUniqueAttribute(string category, string parameter, out AttributeMapping mapping)
+    {
+        AttributeMapping[] matches = _attributes
+            .Where(entry => string.Equals(entry.Key.Category, category, StringComparison.Ordinal) &&
+                            string.Equals(entry.Key.Parameter, parameter, StringComparison.Ordinal) &&
+                            !string.IsNullOrWhiteSpace(entry.Value.ObisCode) &&
+                            entry.Value.AttributeIndex > 0)
+            .Select(entry => entry.Value)
+            .Distinct()
+            .ToArray();
+        if (matches.Length == 1)
+        {
+            mapping = matches[0];
+            return true;
+        }
+        mapping = default;
+        return false;
+    }
 }
 
 /// <summary>

@@ -62,6 +62,7 @@ public enum CustomCommandType
     GetRealtimeClock = 48,
     GetStoredInstantaneousProfile = 50,
     GetESWF = 66,
+    GetAllPrepaidParameters = 70,
     GetDiData = 83,
 }
 

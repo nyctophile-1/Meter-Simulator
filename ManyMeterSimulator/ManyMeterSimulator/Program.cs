@@ -131,6 +131,7 @@ builder.Services.AddSingleton<HesDataModel>(sp =>
 builder.Services.AddSingleton<CustomPullProtocolResolver>();
 builder.Services.AddSingleton<CustomPullIngress>();
 builder.Services.AddSingleton<CustomRtcCommand>();
+builder.Services.AddSingleton<CustomPrepaidCommand>();
 builder.Services.AddSingleton<CustomProfileCommand>();
 
 // ── Network registry ─────────────────────────────────────────────────────────────────────────
