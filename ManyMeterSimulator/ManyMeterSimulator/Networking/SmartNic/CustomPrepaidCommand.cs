@@ -96,7 +96,6 @@ public sealed class CustomPrepaidCommand(
         writer.Write(rtcEpoch);
         writer.Write((byte)4); // HES NonDLMSDataParser: four-byte RTC payload
         writer.Write((byte)6); // HES custom UInt32 epoch type
-        writer.Write(rtcEpoch);
         writer.Write(lastRechargeAmount);
         writer.Write(Epoch(lastRechargeTime, "last recharge time"));
         writer.Write(totalAmountAtLastRecharge);

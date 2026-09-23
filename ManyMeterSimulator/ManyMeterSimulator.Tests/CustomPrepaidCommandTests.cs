@@ -122,7 +122,7 @@ public class CustomPrepaidCommandTests
         byte[] packet = new CustomPrepaidCommand(sessions, model, Options.Create(options))
             .Execute(inbound, CancellationToken.None);
 
-        Assert.Equal(53, packet.Length);
+        Assert.Equal(49, packet.Length);
         Assert.Equal(1050946u, BinaryPrimitives.ReadUInt32LittleEndian(packet));
         Assert.Equal((ushort)packet.Length, BinaryPrimitives.ReadUInt16LittleEndian(packet.AsSpan(4)));
         Assert.Equal(5415u, BinaryPrimitives.ReadUInt32LittleEndian(packet.AsSpan(8)));
@@ -132,12 +132,11 @@ public class CustomPrepaidCommandTests
         uint rtcPrefix = BinaryPrimitives.ReadUInt32LittleEndian(packet.AsSpan(23));
         Assert.Equal((byte)4, packet[27]);
         Assert.Equal((byte)6, packet[28]);
-        Assert.Equal(rtcPrefix, BinaryPrimitives.ReadUInt32LittleEndian(packet.AsSpan(29)));
-        Assert.Equal(1250, BinaryPrimitives.ReadInt32LittleEndian(packet.AsSpan(33)));
-        Assert.Equal(Epoch(lastRecharge), BinaryPrimitives.ReadUInt32LittleEndian(packet.AsSpan(37)));
-        Assert.Equal(5000, BinaryPrimitives.ReadInt32LittleEndian(packet.AsSpan(41)));
-        Assert.Equal(-375, BinaryPrimitives.ReadInt32LittleEndian(packet.AsSpan(45)));
-        Assert.Equal(Epoch(balanceTime), BinaryPrimitives.ReadUInt32LittleEndian(packet.AsSpan(49)));
+        Assert.Equal(1250, BinaryPrimitives.ReadInt32LittleEndian(packet.AsSpan(29)));
+        Assert.Equal(Epoch(lastRecharge), BinaryPrimitives.ReadUInt32LittleEndian(packet.AsSpan(33)));
+        Assert.Equal(5000, BinaryPrimitives.ReadInt32LittleEndian(packet.AsSpan(37)));
+        Assert.Equal(-375, BinaryPrimitives.ReadInt32LittleEndian(packet.AsSpan(41)));
+        Assert.Equal(Epoch(balanceTime), BinaryPrimitives.ReadUInt32LittleEndian(packet.AsSpan(45)));
     }
 
     [Fact]
@@ -157,12 +156,12 @@ public class CustomPrepaidCommandTests
         byte[] packet = new CustomPrepaidCommand(sessions, model, Options.Create(options))
             .Execute(Request(registry, meter), CancellationToken.None);
 
-        Assert.Equal(53, packet.Length);
-        Assert.NotEqual(0, BinaryPrimitives.ReadInt32LittleEndian(packet.AsSpan(33)));
-        Assert.NotEqual(0u, BinaryPrimitives.ReadUInt32LittleEndian(packet.AsSpan(37)));
+        Assert.Equal(49, packet.Length);
+        Assert.NotEqual(0, BinaryPrimitives.ReadInt32LittleEndian(packet.AsSpan(29)));
+        Assert.NotEqual(0u, BinaryPrimitives.ReadUInt32LittleEndian(packet.AsSpan(33)));
+        Assert.NotEqual(0, BinaryPrimitives.ReadInt32LittleEndian(packet.AsSpan(37)));
         Assert.NotEqual(0, BinaryPrimitives.ReadInt32LittleEndian(packet.AsSpan(41)));
-        Assert.NotEqual(0, BinaryPrimitives.ReadInt32LittleEndian(packet.AsSpan(45)));
-        Assert.NotEqual(0u, BinaryPrimitives.ReadUInt32LittleEndian(packet.AsSpan(49)));
+        Assert.NotEqual(0u, BinaryPrimitives.ReadUInt32LittleEndian(packet.AsSpan(45)));
     }
 
     [Fact]
