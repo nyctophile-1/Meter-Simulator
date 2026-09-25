@@ -160,7 +160,11 @@ public sealed partial class PushCoordinator
                 if (customProfiles.Any(p => p.Kind == "ESW"))
                 {
                     var eswSession = _sessions.GetOrCreate(meter);
-                    lock (eswSession) esw = eswSession.GetEventStatusWord();
+                    lock (eswSession)
+                    {
+                        ApplyEventStatusWord(meter, eswSession);
+                        esw = eswSession.GetEventStatusWord();
+                    }
                 }
                 var now = readingTime ?? _clock.GetUtcNow();
                 foreach (var profile in customProfiles)

@@ -64,6 +64,17 @@ public class BatchTrafficTests
     }
 
     [Theory]
+    [InlineData("2026-08-31T18:29:59Z", "2026-08-31T18:30:00Z")]
+    [InlineData("2026-09-01T18:30:00Z", "2026-09-30T18:30:00Z")]
+    [InlineData("2026-09-02T00:00:00Z", "2026-09-30T18:30:00Z")]
+    public void BillingWindowRunsOnlyOnTheFirstLocalDay(string at, string expected)
+    {
+        var window = BatchTrafficSchedule.Window(DateTimeOffset.Parse(at), BatchTrafficKind.Billing, India);
+        Assert.Equal(DateTimeOffset.Parse(expected), window.Start);
+        Assert.Equal(TimeSpan.FromMinutes(30), window.End - window.Start);
+    }
+
+    [Theory]
     [InlineData(BatchTrafficKind.Routing)]
     [InlineData(BatchTrafficKind.Instantaneous)]
     [InlineData(BatchTrafficKind.BlockLoad)]

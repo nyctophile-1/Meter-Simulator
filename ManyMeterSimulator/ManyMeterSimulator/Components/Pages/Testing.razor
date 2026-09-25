@@ -537,6 +537,23 @@
         }
     </MudSelect>
 
+    <MudPaper Outlined="true" Class="pa-4 mb-4">
+        <MudText Typo="Typo.subtitle2">Manual ESW bits</MudText>
+        <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-2">
+            Set a 128-bit Event Status Word for a batch, then choose ESW above and Send. The override stays active until restart.
+        </MudText>
+        <div class="d-flex align-center flex-wrap gap-2">
+            <MudSelect T="int" Label="Batch" @bind-Value="_eswBatchId" Dense="true" Variant="Variant.Outlined" Style="min-width:220px">
+                @foreach (var batch in _batches)
+                {
+                    <MudSelectItem T="int" Value="@batch.Id">@batch.Name</MudSelectItem>
+                }
+            </MudSelect>
+            <MudTextField T="string" Label="128 bits" @bind-Value="_eswBits" Dense="true" Variant="Variant.Outlined" Style="min-width:520px" />
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="ApplyEswAsync">Apply bits</MudButton>
+        </div>
+    </MudPaper>
+
     @if (_scheduleState.IntervalMinutes > 0)
     {
         <MudAlert Severity="@(_scheduleState.IsRunning ? Severity.Info : Severity.Normal)" Variant="Variant.Outlined" Dense="true" Class="mb-3">
@@ -1355,6 +1372,24 @@
     }
 
     private string? _pushProfileFilter = "0.0.25.9.0.255";
+    private int _eswBatchId;
+    private string _eswBits = new string('0', 128);
+
+    private Task ApplyEswAsync()
+    {
+        if (_eswBatchId == 0)
+        {
+            Snackbar.Add("Select a batch first.", Severity.Warning);
+            return Task.CompletedTask;
+        }
+        try
+        {
+            Push.SetEventStatusWord(_eswBatchId, _eswBits);
+            Snackbar.Add("ESW bits applied to the batch.", Severity.Success);
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        return Task.CompletedTask;
+    }
 
     private async Task SendPushAsync(int batchId)
     {

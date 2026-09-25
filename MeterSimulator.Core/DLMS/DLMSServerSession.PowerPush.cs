@@ -40,7 +40,7 @@ public partial class DLMSServerSession
         return index < 0 ? null : profile!.Buffer.LastOrDefault(row => row.Length > index)?[index];
     }
 
-    private byte[] BuildPowerPush(bool ciphering, ushort eventId, DateTimeOffset timestamp)
+    private byte[] BuildPowerPush(bool ciphering, ushort eventId, DateTimeOffset? timestamp)
     {
         if (eventId is not (101 or 102)) throw new ArgumentOutOfRangeException(nameof(eventId));
         if (!CanBuildPowerPush(_objectsFromFile)) throw new NotSupportedException("Template has no supported power-event capture definition.");
@@ -48,7 +48,12 @@ public partial class DLMSServerSession
         var identity = new GXDLMSData(DeviceIdLN) { Value = _meter.GetValue(DeviceIdLN) ?? _meter.MeterNo };
         push.PushObjectList.Add(new(identity, new GXDLMSCaptureObject(2, 0)));
         push.PushObjectList.Add(new(push, new GXDLMSCaptureObject(1, 0)));
-        var clock = new GXDLMSClock(PowerClockLogicalName) { Time = new GXDateTime(timestamp.UtcDateTime) };
+        // Live event packets carry the current meter wall clock. An explicit reading timestamp
+        // is retained for historical/replay pushes. Both are emitted with zero DLMS deviation.
+        DateTime eventRtc = timestamp is null
+            ? CurrentMeterRtcWallClock()
+            : DateTime.SpecifyKind(timestamp.Value.UtcDateTime, DateTimeKind.Utc);
+        var clock = new GXDLMSClock(PowerClockLogicalName) { Time = new GXDateTime(eventRtc) };
         var code = new GXDLMSData(PowerEventLogicalName) { Value = eventId };
         code.SetDataType(2, DataType.UInt16);
         push.PushObjectList.Add(new(clock, new GXDLMSCaptureObject(2, 0)));
@@ -64,7 +69,7 @@ public partial class DLMSServerSession
         lock (PushEncodeLock)
         {
             ConfigureNotifyCiphering(ciphering);
-            return Concat(Notify.GeneratePushSetupMessages(timestamp.UtcDateTime, push));
+            return Concat(Notify.GeneratePushSetupMessages(timestamp?.UtcDateTime ?? DateTime.UtcNow, push));
         }
     }
 }

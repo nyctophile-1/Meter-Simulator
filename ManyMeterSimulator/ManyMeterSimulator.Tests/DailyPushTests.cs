@@ -43,16 +43,47 @@ public class DailyPushTests
         Assert.Equal("CRY" + MeterIdentity.Serial(999), values[0]);
         Assert.Equal(new byte[] { 0, 6, 25, 9, 0, 255 }, Assert.IsType<byte[]>(values[1]));
         var rtc = Assert.IsType<byte[]>(values[2]);
-        var expected = ((GXDateTime)row[0]).Value;
+        DateTime before = DateTime.UtcNow.AddMinutes(330).AddSeconds(-2);
+        DateTime after = DateTime.UtcNow.AddMinutes(330).AddSeconds(2);
+        int year = BinaryPrimitives.ReadUInt16BigEndian(rtc);
+        var actual = new DateTime(year, rtc[2], rtc[3], rtc[5], rtc[6], rtc[7], DateTimeKind.Utc);
         Assert.Equal(0, BinaryPrimitives.ReadInt16BigEndian(rtc.AsSpan(9, 2)));
-        Assert.Equal(expected.Year, BinaryPrimitives.ReadUInt16BigEndian(rtc));
-        Assert.Equal(new[] { expected.Month, expected.Day, expected.Hour, expected.Minute, expected.Second },
-            new[] { (int)rtc[2], rtc[3], rtc[5], rtc[6], rtc[7] });
+        Assert.InRange(actual, before, after);
         for (int i = 1; i < 5; i++) Assert.Equal(Convert.ToDouble(row[i]), Convert.ToDouble(values[i + 2]));
         var again = Assert.Single(session.BuildPushPayloads(ciphering, MqttPushProfiles.Daily));
         if (ciphering) Assert.NotEqual(frame, again);
         Assert.Equal(originalTime, (capturedTime.Value, capturedTime.Skip, capturedTime.Extra, capturedTime.Status, capturedTime.DayOfWeek));
         Assert.Equal(profiles, session.GetPushSetupLogicalNames());
+    }
+
+    [Fact]
+    public void DailyPushRtcDoesNotCarryProfileOffsetIntoPacket()
+    {
+        string source = Path.Combine(AppContext.BaseDirectory, "Templates", "SA1231166HP_values.xml");
+        string path = Path.Combine(Path.GetTempPath(), "daily-rtc-" + Guid.NewGuid().ToString("N") + ".xml");
+        File.Copy(source, path);
+        try
+        {
+            var model = TemplateModelCache.Shared.Get(path);
+            var profile = Assert.IsType<GXDLMSProfileGeneric>(model.FindByLN(ObjectType.ProfileGeneric, "1.0.99.2.0.255"));
+            var row = profile.Buffer.OrderByDescending(r => ((GXDateTime)r[0]).Value).First();
+            var captured = (GXDateTime)row[0];
+            DateTime wallClock = captured.Value.DateTime;
+            captured.Value = new DateTimeOffset(wallClock, TimeSpan.FromHours(5.5));
+
+            var session = new DLMSServerSession(new DLMSMeter(999, "1.0.0.0.0.255", 16, 1), path);
+            session.Initialize(true);
+            byte[] rtc = Assert.IsType<byte[]>(Decode(
+                Assert.Single(session.BuildPushPayloads(false, DLMSServerSession.DailyPushLogicalName)))[2]);
+
+            Assert.Equal(0, BinaryPrimitives.ReadInt16BigEndian(rtc.AsSpan(9, 2)));
+            DateTime actual = new(BinaryPrimitives.ReadUInt16BigEndian(rtc), rtc[2], rtc[3], rtc[5], rtc[6], rtc[7], DateTimeKind.Utc);
+            Assert.InRange(actual, DateTime.UtcNow.AddMinutes(330).AddSeconds(-2), DateTime.UtcNow.AddMinutes(330).AddSeconds(2));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
     }
 
     [Theory]

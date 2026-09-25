@@ -498,7 +498,7 @@ namespace MeterSimulator.DLMS
             }
 
             if (includeDaily) payloads.AddRange(BuildDailyPush(useCiphering));
-            if (includePower) payloads.Add(BuildPowerPush(useCiphering, powerEventId, readingTime ?? DateTimeOffset.UtcNow));
+            if (includePower) payloads.Add(BuildPowerPush(useCiphering, powerEventId, readingTime));
             return payloads;
         }
 
@@ -531,6 +531,13 @@ namespace MeterSimulator.DLMS
             string? value = _meter.GetValue(EventStatusWord.LogicalName)?.ToString();
             EventStatusWord.Validate(value);
             return value!;
+        }
+
+        /// <summary>Overrides the simulated meter's ESW for subsequent push packets.</summary>
+        public void SetEventStatusWord(string value)
+        {
+            EventStatusWord.Validate(value);
+            _meter.SetValue(EventStatusWord.LogicalName, value);
         }
 
         private GXDLMSPushSetup PrepareBasicPushIdentity(GXDLMSPushSetup push)
@@ -676,7 +683,11 @@ namespace MeterSimulator.DLMS
                         // wins when set; otherwise a Clock in a push list means "the time of this
                         // push", so it defaults to now.
                         var clockOverride = _meter.GetValue(clk.LogicalName);
-                        clk.Time = clockOverride is GXDateTime gClockOverride ? gClockOverride : new GXDateTime(DateTime.UtcNow);
+                        clk.Time = clockOverride is GXDateTime gClockOverride
+                            ? gClockOverride
+                            : new GXDateTime(clk.LogicalName == SharedPushRtcLN
+                                ? CurrentMeterRtcWallClock()
+                                : DateTime.UtcNow);
                         break;
                 }
             }
@@ -691,6 +702,16 @@ namespace MeterSimulator.DLMS
         /// encoded immediately, one at a time (see the loop in <see cref="BuildPushPayloads"/>).
         /// </summary>
         private const string ProfileBackedPushRtcLN = "0.0.1.0.1.255";
+        private const string SharedPushRtcLN = "0.0.1.0.0.255";
+        private static readonly TimeSpan MeterTimeZoneOffset = TimeSpan.FromMinutes(330);
+
+        private static DateTime CurrentMeterRtcWallClock()
+        {
+            // The HES displays the notification timestamp in IST. The inner
+            // Instantaneous RTC is a meter wall-clock value, so preserve those
+            // digits while suppressing DLMS timezone deviation.
+            return DateTime.SpecifyKind(DateTime.UtcNow.Add(MeterTimeZoneOffset), DateTimeKind.Utc);
+        }
 
         /// <summary>
         /// Copies the LATEST row of whichever profile buffer feeds this PushSetup onto this meter's
@@ -781,15 +802,12 @@ namespace MeterSimulator.DLMS
             // value it actually is. Force Kind=Utc so the digits transmit with offset 0 regardless
             // of what timezone the process happens to run in.
             //
-            // Always rounds to the nearest half hour, unconditionally — NOT derived from the
-            // profile's own CapturePeriod (Block Load's is 900s/15min in at least one real template,
-            // not 30min as its own capture cadence would suggest; the half-hour grid is an RTC wire
-            // convention independent of it). This is a pure carry-over of the original Block-Load-only
-            // behavior, generalized to whichever profile is found rather than changed: a calendar
-            // boundary (Daily's midnight, Billing's month-start) is already exactly on a half-hour
-            // grid, so rounding it is a no-op — nothing here needed to change for those to work.
-            DateTime rounded = DateTime.SpecifyKind(RoundToNearestPeriod(rowTime.Value.DateTime, TimeSpan.FromMinutes(30)), DateTimeKind.Utc);
-            _meter.SetValue(ProfileBackedPushRtcLN, new GXDateTime(rounded));
+            // The profile row supplies the measurements, but its RTC is a historical capture time.
+            // HES expects LS/Daily/Billing push packets to carry the meter's current Indian wall
+            // clock, with no DLMS deviation; otherwise it displays an old row time or applies an
+            // extra +05:30. Keep the row timestamp only for selecting the latest values.
+            DateTime current = CurrentMeterRtcWallClock();
+            _meter.SetValue(ProfileBackedPushRtcLN, new GXDateTime(current));
 
             // Column 0 is the row's own timestamp (already consumed above) — everything after it
             // lines up 1:1, in order, with CaptureObjects[1..].
@@ -799,7 +817,7 @@ namespace MeterSimulator.DLMS
                 _meter.SetValue(captureObjects[i].Key.LogicalName, latestRow[i]);
             }
 
-            CoreLog.Debug($"[Push] {_meter.MeterNo}: {profile.LogicalName} synced from row {rowTime.Value:O} -> {rounded:O}");
+            CoreLog.Debug($"[Push] {_meter.MeterNo}: {profile.LogicalName} synced latest values from row {rowTime.Value:O} with RTC {current:O}");
         }
 
         /// <summary>

@@ -3,18 +3,38 @@ using ManyMeterSimulator.Networking;
 using ManyMeterSimulator.Networking.Nic;
 using ManyMeterSimulator.Settings;
 using MeterSimulator.DLMS;
+using MeterSimulator.Models;
+using System.Collections.Concurrent;
 
 namespace ManyMeterSimulator.Brain;
 
 public sealed partial class PushCoordinator
 {
+    private readonly ConcurrentDictionary<int, string> _eventStatusWordOverrides = new();
     private readonly BadCommSettings? _badComm;
     private readonly NetworkDelaySettings? _networkDelay;
 
     private byte[][] BuildDlms(MeterRef meter, bool ciphering, string? profile, DateTimeOffset? timestamp = null, ushort powerEventId = 101)
     {
         var session = _sessions.GetOrCreate(meter);
-        lock (session) return session.BuildPushPayloads(ciphering, profile, timestamp, powerEventId).ToArray();
+        lock (session)
+        {
+            ApplyEventStatusWord(meter, session);
+            return session.BuildPushPayloads(ciphering, profile, timestamp, powerEventId).ToArray();
+        }
+    }
+
+    public void SetEventStatusWord(int batchId, string value)
+    {
+        EventStatusWord.Validate(value);
+        _eventStatusWordOverrides[batchId] = value;
+    }
+
+    private void ApplyEventStatusWord(MeterRef meter, DLMSServerSession session)
+    {
+        var batch = _registry.GetBatchForIndex(meter.Index);
+        if (batch is not null && _eventStatusWordOverrides.TryGetValue(batch.Id, out string? value))
+            session.SetEventStatusWord(value);
     }
 
     private Task<bool> AllowPushAsync(MeterRef meter, CancellationToken token) => AllowPushAsync(meter, token, true);

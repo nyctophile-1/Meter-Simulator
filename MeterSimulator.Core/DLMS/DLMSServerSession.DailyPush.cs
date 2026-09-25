@@ -35,14 +35,10 @@ public partial class DLMSServerSession
         var identity = new GXDLMSData(DeviceIdLN) { Value = _meter.GetValue(DeviceIdLN) ?? _meter.MeterNo };
         push.PushObjectList.Add(new(identity, new GXDLMSCaptureObject(2, 0)));
         push.PushObjectList.Add(new(push, new GXDLMSCaptureObject(1, 0)));
-        var capturedTime = (GXDateTime)row[0];
-        var pushTime = new GXDateTime(capturedTime.Value)
-        {
-            Skip = capturedTime.Skip & ~DateTimeSkips.Deviation,
-            Extra = capturedTime.Extra,
-            Status = capturedTime.Status,
-            DayOfWeek = capturedTime.DayOfWeek
-        };
+        // The row supplies the daily measurements, but the RTC in a live push must be the
+        // current Indian meter wall clock. Emit it as UTC-kind digits with deviation 0 so HES
+        // does not subtract/apply another 5:30 offset.
+        var pushTime = new GXDateTime(CurrentMeterRtcWallClock());
         var rtc = new GXDLMSClock(DailyColumns[0]) { Time = pushTime };
         push.PushObjectList.Add(new(rtc, new GXDLMSCaptureObject(2, 0)));
         for (int i = 1; i < row.Length; i++)

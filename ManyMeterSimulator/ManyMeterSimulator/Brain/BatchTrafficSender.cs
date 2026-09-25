@@ -64,6 +64,10 @@ public sealed partial class PushCoordinator
             BatchTrafficKind.Instantaneous => "0.0.25.9.0.255",
             BatchTrafficKind.BlockLoad => "0.5.25.9.0.255",
             BatchTrafficKind.Daily => "0.6.25.9.0.255",
+            BatchTrafficKind.Events => MeterSimulator.DLMS.DLMSServerSession.PowerPushLogicalName,
+            BatchTrafficKind.Esw => MeterSimulator.Models.EventStatusWord.PushLogicalName,
+            BatchTrafficKind.Billing => "0.7.25.9.0.255",
+            BatchTrafficKind.Rtc => "0.0.25.9.0.255",
             _ => throw new ArgumentOutOfRangeException(nameof(kind)),
         };
         if (batch.NicType == NicType.Tcp4G)

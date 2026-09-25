@@ -16,6 +16,8 @@ public static class MqttPushProfiles
     public const string CustomRtc = "custom:rtc";
     public const string Esw = MeterSimulator.Models.EventStatusWord.PushLogicalName;
     public const string Daily = MeterSimulator.DLMS.DLMSServerSession.DailyPushLogicalName;
+    public const string Billing = "0.7.25.9.0.255";
+    public const string Rtc = "rtc:push";
 
     public static string Label(string? logicalName) => logicalName switch
     {
@@ -28,7 +30,8 @@ public static class MqttPushProfiles
         Esw => "ESW (Event Status Word)",
         "0.0.25.9.0.255" => "Instantaneous",
         "0.5.25.9.0.255" => "Block load",
-        "0.7.25.9.0.255" => "Billing",
+        Billing => "Billing",
+        Rtc => "RTC push",
         _ => logicalName,
     };
 
@@ -43,7 +46,8 @@ public static class MqttPushProfiles
             Daily => CustomDaily,
             Esw => CustomEsw,
             Power => CustomPower,
-            "0.7.25.9.0.255" => "custom:bill",
+            Billing => "custom:bill",
+            Rtc => CustomRtc,
             _ => selection
         };
     }
@@ -56,7 +60,8 @@ public static class MqttPushProfiles
         CustomDaily or "custom:93:daily" => Daily,
         CustomEsw => Esw,
         CustomPower => Power,
-        "custom:bill" => "0.7.25.9.0.255",
+        "custom:bill" => Billing,
+        CustomRtc => Rtc,
         _ => selection
     };
 

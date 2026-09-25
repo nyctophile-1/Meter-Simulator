@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Text;
 using Gurux.DLMS;
 using Gurux.DLMS.Enums;
@@ -107,7 +108,7 @@ public class PushBlockLoadProfileTests
     /// </para>
     /// </summary>
     [Fact]
-    public void BuildPushPayloads_BlockLoad_UsesTheLatestRow_WithRtcRoundedToNearestHalfHour()
+    public void BuildPushPayloads_BlockLoad_UsesLatestRowValues_WithCurrentIndianRtc()
     {
         DLMSServerSession session = BuildSession();
 
@@ -135,24 +136,11 @@ public class PushBlockLoadProfileTests
         int minute = rtcBytes[6];
         int second = rtcBytes[7];
 
-        // Round the SAME way DLMSServerSession does before comparing — the raw row time can sit in
-        // the last ~15 minutes of an hour (e.g. 16:52), which rounds UP into the next hour (17:00).
-        // Comparing rounded fields (hour/day/month/year) against the row's unrounded fields would
-        // then fail exactly at that boundary despite the push being correct — round the expectation
-        // first so the assertion reflects what the row is actually supposed to produce.
-        DateTimeOffset expectedTime = ((GXDateTime)expectedRow[0]).Value;
-        long blockTicks = TimeSpan.FromMinutes(30).Ticks;
-        long remainder = expectedTime.Ticks % blockTicks;
-        long roundedTicks = remainder < blockTicks / 2 ? expectedTime.Ticks - remainder : expectedTime.Ticks + (blockTicks - remainder);
-        DateTimeOffset expectedRounded = new(roundedTicks, expectedTime.Offset);
-
-        Assert.Equal(expectedRounded.Year, year);
-        Assert.Equal(expectedRounded.Month, month);
-        Assert.Equal(expectedRounded.Day, day);
-        Assert.Equal(expectedRounded.Hour, hour);
-        Assert.Equal(expectedRounded.Minute, minute);
-        Assert.True(minute == 0 || minute == 30, $"Expected the rounded minute to be :00 or :30, was :{minute:D2}");
-        Assert.Equal(0, second); // rounding to the half-hour must also zero the seconds
+        DateTime before = DateTime.UtcNow.AddMinutes(330).AddSeconds(-2);
+        DateTime after = DateTime.UtcNow.AddMinutes(330).AddSeconds(2);
+        var actual = new DateTime(year, month, day, hour, minute, second, DateTimeKind.Utc);
+        Assert.InRange(actual, before, after);
+        Assert.Equal(0, BinaryPrimitives.ReadInt16BigEndian(rtcBytes.AsSpan(9, 2)));
 
         Assert.Equal(Convert.ToDouble(expectedRow[1]), Convert.ToDouble(parsed[3]), precision: 3); // AverageVoltage
         Assert.Equal(Convert.ToDouble(expectedRow[2]), Convert.ToDouble(parsed[4]), precision: 3); // CumulativeEnergyKwhImport

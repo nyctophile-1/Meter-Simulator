@@ -18,8 +18,14 @@ public static class BatchTrafficSchedule
     {
         var local = TimeZoneInfo.ConvertTime(now, zone).DateTime;
         var start = kind == BatchTrafficKind.Daily ? local.Date
+            : kind == BatchTrafficKind.Billing ? new DateTime(local.Year, local.Month, 1)
             : new DateTime(local.Year, local.Month, local.Day, local.Hour, local.Minute / 30 * 30, 0);
         if (kind == BatchTrafficKind.Daily && local >= start.AddMinutes(30)) start = start.AddDays(1);
+        if (kind == BatchTrafficKind.Billing && local >= start.AddMinutes(30))
+        {
+            var next = start.AddMonths(1);
+            start = new DateTime(next.Year, next.Month, 1);
+        }
         var utc = new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(start, zone), TimeSpan.Zero);
         return new(utc, utc.AddMinutes(30));
     }

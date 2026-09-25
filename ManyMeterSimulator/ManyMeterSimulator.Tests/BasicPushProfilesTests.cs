@@ -41,6 +41,25 @@ public class BasicPushProfilesTests
     }
 
     [Fact]
+    public void InstantaneousPushRtcUsesMeterWallClockDigitsWithoutDeviation()
+    {
+        string path = Path.Combine(AppContext.BaseDirectory, "Templates", "SA1231166HP_values.xml");
+        var session = new DLMSServerSession(new DLMSMeter(700, "1.0.0.0.0.255", 16, 1), path);
+        session.Initialize(true);
+
+        DateTime before = DateTime.UtcNow.AddMinutes(330);
+        var values = DailyPushTests.Decode(Assert.Single(
+            session.BuildPushPayloads(false, DLMSServerSession.InstantDispatchLN)));
+        DateTime after = DateTime.UtcNow.AddMinutes(330);
+        byte[] rtc = Assert.IsType<byte[]>(values[2]);
+
+        int year = BinaryPrimitives.ReadUInt16BigEndian(rtc);
+        var actual = new DateTime(year, rtc[2], rtc[3], rtc[5], rtc[6], rtc[7], DateTimeKind.Utc);
+        Assert.InRange(actual, before.AddSeconds(-1), after.AddSeconds(1));
+        Assert.Equal(0, BinaryPrimitives.ReadInt16BigEndian(rtc.AsSpan(9, 2)));
+    }
+
+    [Fact]
     public void MissingPushDeclarationsStillProduceBasicAndPowerProfiles()
     {
         var xml = XDocument.Load(Path.Combine(AppContext.BaseDirectory, "Templates", "SA1231166HP_values.xml"));

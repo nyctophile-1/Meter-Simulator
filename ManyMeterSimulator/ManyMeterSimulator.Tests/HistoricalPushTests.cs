@@ -46,7 +46,7 @@ public class HistoricalPushTests
             Assert.All(values, v => Assert.Equal(v.Value, session.Meter.GetValue(v.Key)));
         }
         var live = DailyPushTests.Decode(Assert.Single(session.BuildPushPayloads(ciphering, "0.0.25.9.0.255")));
-        Assert.InRange(ReadTime(live[2]), DateTimeOffset.UtcNow.AddMinutes(-1), DateTimeOffset.UtcNow.AddMinutes(1));
+        Assert.InRange(ReadTime(live[2]), DateTimeOffset.UtcNow.AddMinutes(329), DateTimeOffset.UtcNow.AddMinutes(331));
     }
 
     internal static DateTimeOffset ReadTime(object value) =>
