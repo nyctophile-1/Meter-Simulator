@@ -38,7 +38,8 @@ public sealed partial class PushCoordinator
         }
     }
 
-    private TcpPushSource ResolveTcpSource(int batchId, TcpPushRequest request, bool ciphering, TcpPushConnectionGroup? connections = null)
+    private TcpPushSource ResolveTcpSource(int batchId, TcpPushRequest request, bool ciphering,
+        TcpPushConnectionGroup? connections = null, DateTimeOffset? scheduledBlockSlot = null)
     {
         var batch = _registry.Batches.FirstOrDefault(b => b.Id == batchId)
             ?? throw new InvalidOperationException($"Batch {batchId} no longer exists.");
@@ -101,7 +102,7 @@ public sealed partial class PushCoordinator
 
         byte[][] BuildAt(MeterRef meter, DateTimeOffset? timestamp)
         {
-            var delivery = BuildTrackedDlms(meter, ciphering, selection, powerSequence, timestamp);
+            var delivery = BuildTrackedDlms(meter, ciphering, selection, powerSequence, timestamp, scheduledBlockSlot);
             if (delivery.Confirm is not null)
             {
                 deliveries.Add(delivery.Payloads, delivery);

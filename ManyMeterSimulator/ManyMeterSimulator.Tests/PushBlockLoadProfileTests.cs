@@ -28,8 +28,8 @@ namespace ManyMeterSimulator.Tests;
 /// Block Load profile's buffer (DLMSServerSession.SyncProfileBackedPushValues — generalized to
 /// find whichever profile's CaptureObjects overlap a PushSetup's own object list, not hardcoded
 /// to Block Load specifically), because a push represents one captured block, not a live
-/// instantaneous reading. The row's own timestamp is rounded to the nearest 30-minute block
-/// (Block Load's own CapturePeriod) rather than sent verbatim.
+/// instantaneous reading. Block Load's RTC uses its profile capture-period boundary;
+/// a scheduled cycle keeps that boundary even if transmission takes time.
 /// </para>
 /// </summary>
 public class PushBlockLoadProfileTests
@@ -42,11 +42,11 @@ public class PushBlockLoadProfileTests
 
     private static byte[] Key16() => Encoding.ASCII.GetBytes("AAAAAAAAAAAAAAAA");
 
-    private static DLMSServerSession BuildSession(long meterIndex = 508)
+    private static DLMSServerSession BuildSession(long meterIndex = 508, string? templatePath = null)
     {
         var meter = new DLMSMeter(meterIndex, "1.0.0.0.0.255", clientAddress: 16, serverAddress: 1);
         var session = new DLMSServerSession(
-            meter, Path.Combine(AppContext.BaseDirectory, "Templates", "SA1231166HP_values.xml"));
+            meter, templatePath ?? Path.Combine(AppContext.BaseDirectory, "Templates", "SA1231166HP_values.xml"));
         session.Initialize(true);
         return session;
     }
@@ -136,8 +136,9 @@ public class PushBlockLoadProfileTests
         int minute = rtcBytes[6];
         int second = rtcBytes[7];
 
-        DateTime before = DateTime.UtcNow.AddMinutes(330).AddSeconds(-2);
-        DateTime after = DateTime.UtcNow.AddMinutes(330).AddSeconds(2);
+        TimeSpan period = TimeSpan.FromSeconds(profile.CapturePeriod);
+        DateTime before = FloorToPeriod(DateTime.UtcNow.AddMinutes(330).AddSeconds(-2), period);
+        DateTime after = FloorToPeriod(DateTime.UtcNow.AddMinutes(330).AddSeconds(2), period);
         var actual = new DateTime(year, month, day, hour, minute, second, DateTimeKind.Utc);
         Assert.InRange(actual, before, after);
         Assert.Equal(0, BinaryPrimitives.ReadInt16BigEndian(rtcBytes.AsSpan(9, 2)));
@@ -153,6 +154,51 @@ public class PushBlockLoadProfileTests
         // And explicitly: the values must NOT match the stray last-array-slot row (unless it were
         // ever coincidentally the same, which it isn't for this template).
         Assert.NotEqual(Convert.ToDouble(lastArrayRow[1]), Convert.ToDouble(parsed[3]));
+    }
+
+    [Theory]
+    [InlineData(900, 14, 45)]
+    [InlineData(1800, 14, 30)]
+    public void ScheduledBlockLoadRtcUsesProfilePeriodAndFrozenIndianSlot(int captureSeconds, int hour, int minute)
+    {
+        string path = CreateTemplateWithBlockPeriod(captureSeconds);
+        try
+        {
+            var session = BuildSession(templatePath: path);
+            var slot = DateTimeOffset.Parse("2026-09-25T09:15:00Z");
+            var fields = DecodePush(Assert.Single(session.BuildPushPayloads(true, BlockLoadPushSetupLN,
+                scheduledBlockSlot: slot)));
+            var rtc = Assert.IsType<byte[]>(fields[2]);
+            Assert.Equal(2026, BinaryPrimitives.ReadUInt16BigEndian(rtc.AsSpan(0, 2)));
+            Assert.Equal(9, rtc[2]);
+            Assert.Equal(25, rtc[3]);
+            Assert.Equal(hour, rtc[5]);
+            Assert.Equal(minute, rtc[6]);
+            Assert.Equal(0, rtc[7]);
+            Assert.Equal(0, BinaryPrimitives.ReadInt16BigEndian(rtc.AsSpan(9, 2)));
+        }
+        finally { File.Delete(path); }
+    }
+
+    private static string CreateTemplateWithBlockPeriod(int seconds)
+    {
+        string source = Path.Combine(AppContext.BaseDirectory, "Templates", "SA1231166HP_values.xml");
+        string xml = File.ReadAllText(source);
+        int profile = xml.IndexOf("<LN>1.0.99.1.0.255</LN>", StringComparison.Ordinal);
+        Assert.True(profile >= 0);
+        const string open = "<CapturePeriod>";
+        int start = xml.IndexOf(open, profile, StringComparison.Ordinal);
+        int end = xml.IndexOf("</CapturePeriod>", start, StringComparison.Ordinal);
+        Assert.True(start >= 0 && end > start);
+        string changed = xml[..(start + open.Length)] + seconds + xml[end..];
+        string path = Path.Combine(Path.GetTempPath(), $"maya-block-period-{Guid.NewGuid():N}.xml");
+        File.WriteAllText(path, changed);
+        return path;
+    }
+
+    private static DateTime FloorToPeriod(DateTime value, TimeSpan period)
+    {
+        return value.AddTicks(-(value.TimeOfDay.Ticks % period.Ticks));
     }
 
     /// <summary>

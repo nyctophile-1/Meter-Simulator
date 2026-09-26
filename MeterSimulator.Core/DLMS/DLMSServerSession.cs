@@ -442,8 +442,10 @@ namespace MeterSimulator.DLMS
         /// </para>
         /// </param>
         /// <returns>One byte[] per PushSetup — each a complete DLMS wrapper DataNotification frame.</returns>
-        public IReadOnlyList<byte[]> BuildPushPayloads(bool useCiphering, string? pushSetupLogicalName = null, DateTimeOffset? readingTime = null, ushort powerEventId = 101)
+        public IReadOnlyList<byte[]> BuildPushPayloads(bool useCiphering, string? pushSetupLogicalName = null, DateTimeOffset? readingTime = null, ushort powerEventId = 101, DateTimeOffset? scheduledBlockSlot = null)
         {
+            if (readingTime is not null && scheduledBlockSlot is not null)
+                throw new ArgumentException("Historical reading time and a scheduled Block Load slot cannot be combined.");
             bool includePower = (pushSetupLogicalName is null or PowerPushLogicalName) && CanBuildPowerPush(_objectsFromFile);
             if (pushSetupLogicalName == PowerPushLogicalName && !includePower) throw new NotSupportedException("Template has no supported power-event capture definition.");
             var pushObjects = _objects.OfType<GXDLMSPushSetup>()
@@ -483,7 +485,7 @@ namespace MeterSimulator.DLMS
                 {
                     var encodingPush = PrepareBasicPushIdentity(push);
                     if (push.LogicalName == EventStatusWord.PushLogicalName) encodingPush = PrepareEswPush(encodingPush);
-                    if (readingTime is null) SyncProfileBackedPushValues(encodingPush);
+                    if (readingTime is null) SyncProfileBackedPushValues(encodingPush, scheduledBlockSlot);
                     SyncPushValues(encodingPush);
                     if (readingTime is { } timestamp) ProjectPushReading(encodingPush, timestamp);
                     ConfigureNotifyCiphering(useCiphering);
@@ -696,10 +698,10 @@ namespace MeterSimulator.DLMS
         /// <summary>
         /// OBIS of a Clock dedicated to a profile-backed push's own RTC slot. Deliberately NOT the
         /// shared Clock ("0.0.1.0.0.255") that a non-profile push (e.g. Instant) uses to mean "now"
-        /// — this one must carry the captured row's own time instead, rounded to the source
-        /// profile's own capture period, not whatever moment the operator happened to click "Send
-        /// Push". Shared by every profile-backed push in turn — safe because each is synced and
-        /// encoded immediately, one at a time (see the loop in <see cref="BuildPushPayloads"/>).
+        /// — Block Load uses this slot for its capture-period boundary, while other profile-backed
+        /// pushes retain their existing wall-clock behavior. Shared by every profile-backed push
+        /// in turn — safe because each is synced and encoded immediately, one at a time (see the
+        /// loop in <see cref="BuildPushPayloads"/>).
         /// </summary>
         private const string ProfileBackedPushRtcLN = "0.0.1.0.1.255";
         private const string SharedPushRtcLN = "0.0.1.0.0.255";
@@ -751,7 +753,7 @@ namespace MeterSimulator.DLMS
         /// way, via Max() — this matches it instead of a second, weaker assumption.
         /// </para>
         /// </summary>
-        private void SyncProfileBackedPushValues(GXDLMSPushSetup push)
+        private void SyncProfileBackedPushValues(GXDLMSPushSetup push, DateTimeOffset? scheduledBlockSlot)
         {
             bool isProfileBacked = push.PushObjectList
                 .Any(kv => kv.Key is GXDLMSClock && kv.Key.LogicalName == ProfileBackedPushRtcLN);
@@ -802,11 +804,19 @@ namespace MeterSimulator.DLMS
             // value it actually is. Force Kind=Utc so the digits transmit with offset 0 regardless
             // of what timezone the process happens to run in.
             //
-            // The profile row supplies the measurements, but its RTC is a historical capture time.
-            // HES expects LS/Daily/Billing push packets to carry the meter's current Indian wall
-            // clock, with no DLMS deviation; otherwise it displays an old row time or applies an
-            // extra +05:30. Keep the row timestamp only for selecting the latest values.
+            // The profile row supplies the measurements. Block Load RTC names its capture slot,
+            // using this profile's actual cadence; a scheduled cycle keeps its start slot even
+            // when a large batch takes time to transmit. Other profile clocks are unchanged.
             DateTime current = CurrentMeterRtcWallClock();
+            if (push.LogicalName == "0.5.25.9.0.255")
+            {
+                if (profile.CapturePeriod == 0)
+                    throw new InvalidOperationException("Block Load profile requires a positive capture period.");
+                DateTime wallClock = scheduledBlockSlot is { } slot
+                    ? DateTime.SpecifyKind(slot.ToOffset(MeterTimeZoneOffset).DateTime, DateTimeKind.Utc)
+                    : current;
+                current = FloorToPeriod(wallClock, TimeSpan.FromSeconds(profile.CapturePeriod));
+            }
             _meter.SetValue(ProfileBackedPushRtcLN, new GXDateTime(current));
 
             // Column 0 is the row's own timestamp (already consumed above) — everything after it
@@ -994,13 +1004,10 @@ namespace MeterSimulator.DLMS
             }
         }
 
-        /// <summary>Rounds to the nearest multiple of <paramref name="period"/>, half-up on an exact tie.</summary>
-        private static DateTime RoundToNearestPeriod(DateTime value, TimeSpan period)
+        private static DateTime FloorToPeriod(DateTime value, TimeSpan period)
         {
-            long blockTicks = period.Ticks;
-            long remainder = value.Ticks % blockTicks;
-            long rounded = remainder < blockTicks / 2 ? value.Ticks - remainder : value.Ticks + (blockTicks - remainder);
-            return new DateTime(rounded, value.Kind);
+            if (period <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(period));
+            return value.AddTicks(-(value.TimeOfDay.Ticks % period.Ticks));
         }
 
         /// <summary>

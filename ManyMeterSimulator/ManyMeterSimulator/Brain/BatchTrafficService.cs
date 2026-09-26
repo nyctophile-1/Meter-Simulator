@@ -12,7 +12,8 @@ public interface IBatchTrafficSession : IAsyncDisposable
 
 public interface IBatchTrafficSender
 {
-    Task<IBatchTrafficSession> OpenAsync(MeterBatch batch, BatchTrafficKind kind, CancellationToken token);
+    int BlockCapturePeriodSeconds(MeterBatch batch);
+    Task<IBatchTrafficSession> OpenAsync(MeterBatch batch, BatchTrafficKind kind, DateTimeOffset? captureSlot, CancellationToken token);
 }
 
 public sealed record BatchTrafficState(string Status, long Sent = 0, long Failed = 0, long Skipped = 0,
@@ -107,10 +108,25 @@ public sealed class BatchTrafficService : BackgroundService
             while (true)
             {
                 token.ThrowIfCancellationRequested();
-                var window = BatchTrafficSchedule.Window(_clock.GetUtcNow(), job.Kind, _zone);
+                int blockPeriod;
+                BatchTrafficWindow window;
+                try
+                {
+                    blockPeriod = job.Kind == BatchTrafficKind.BlockLoad
+                        ? _sender.BlockCapturePeriodSeconds(job.Batch) : BatchTrafficSchedule.WindowSeconds;
+                    window = BatchTrafficSchedule.Window(_clock.GetUtcNow(), job.Kind, _zone, blockPeriod);
+                }
+                catch (Exception ex)
+                {
+                    _states[key] = new("Waiting for valid profile", Error: ex.Message);
+                    _logger.LogWarning(ex, "Batch {BatchId} Block Load has no valid capture period", job.Batch.Id);
+                    await Task.Delay(TimeSpan.FromSeconds(30), _clock, token);
+                    continue;
+                }
                 _states[key] = new("Scheduled", NextWindow: window.Start);
                 Changed?.Invoke();
                 if (window.Start > _clock.GetUtcNow()) await Task.Delay(window.Start - _clock.GetUtcNow(), _clock, token);
+                if (_clock.GetUtcNow() >= window.End) continue;
                 long sent = 0, failed = 0, skipped = 0, cursor = 0;
                 using var deadline = new CancellationTokenSource(TimeSpan.FromTicks(Math.Max(1, (window.End - _clock.GetUtcNow()).Ticks)), _clock);
                 using var windowStop = CancellationTokenSource.CreateLinkedTokenSource(token, deadline.Token);
@@ -118,7 +134,8 @@ public sealed class BatchTrafficService : BackgroundService
                 {
                     try
                     {
-                        await using var session = await _sender.OpenAsync(job.Batch, job.Kind, windowStop.Token);
+                        await using var session = await _sender.OpenAsync(job.Batch, job.Kind,
+                            job.Kind == BatchTrafficKind.BlockLoad ? window.Start : null, windowStop.Token);
                         _states[key] = new("Sending", sent, failed, skipped, window.Start);
                         Changed?.Invoke();
                         await Parallel.ForEachAsync(DueMeters(windowStop.Token), new ParallelOptions
@@ -152,6 +169,15 @@ public sealed class BatchTrafficService : BackgroundService
 
                 async IAsyncEnumerable<long> DueMeters([EnumeratorCancellation] CancellationToken ct)
                 {
+                    if (job.Kind == BatchTrafficKind.BlockLoad)
+                    {
+                        while (cursor < job.Batch.Count && _clock.GetUtcNow() < window.End)
+                        {
+                            ct.ThrowIfCancellationRequested();
+                            yield return job.Batch.StartIndex + cursor++;
+                        }
+                        yield break;
+                    }
                     while (cursor < job.Batch.Count && _clock.GetUtcNow() < window.End)
                     {
                         ct.ThrowIfCancellationRequested();

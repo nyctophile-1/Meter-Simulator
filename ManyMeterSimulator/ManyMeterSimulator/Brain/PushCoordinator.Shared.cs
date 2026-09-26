@@ -1,6 +1,7 @@
 using ManyMeterSimulator.BadComm;
 using ManyMeterSimulator.Networking;
 using ManyMeterSimulator.Networking.Nic;
+using ManyMeterSimulator.Provisioning;
 using ManyMeterSimulator.Settings;
 using MeterSimulator.DLMS;
 using MeterSimulator.Models;
@@ -14,13 +15,22 @@ public sealed partial class PushCoordinator
     private readonly BadCommSettings? _badComm;
     private readonly NetworkDelaySettings? _networkDelay;
 
-    private byte[][] BuildDlms(MeterRef meter, bool ciphering, string? profile, DateTimeOffset? timestamp = null, ushort powerEventId = 101)
+    internal int BlockCapturePeriodSeconds(MeterBatch batch)
+    {
+        if (batch.NicType == NicType.MqttWirepas)
+            return checked(_customPullOptions.GetBlockPeriodMinutes(batch.HesTemplateId
+                ?? throw new InvalidOperationException("Wirepas Block Load needs a HES template mapping.")) * 60);
+        return _sessions.GetOrCreate(new MeterRef(batch.StartIndex, batch.NicType)).BlockPushPeriodSeconds;
+    }
+
+    private byte[][] BuildDlms(MeterRef meter, bool ciphering, string? profile, DateTimeOffset? timestamp = null,
+        ushort powerEventId = 101, DateTimeOffset? scheduledBlockSlot = null)
     {
         var session = _sessions.GetOrCreate(meter);
         lock (session)
         {
             ApplyEventStatusWord(meter, session);
-            return session.BuildPushPayloads(ciphering, profile, timestamp, powerEventId).ToArray();
+            return session.BuildPushPayloads(ciphering, profile, timestamp, powerEventId, scheduledBlockSlot).ToArray();
         }
     }
 
