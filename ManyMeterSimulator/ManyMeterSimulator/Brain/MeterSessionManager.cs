@@ -33,6 +33,7 @@ public sealed class MeterSessionManager
     private readonly TcpOptions _tcpOptions;
     private readonly ILogger<MeterSessionManager> _logger;
     private readonly ProfileSimulationStateStore? _profileStateStore;
+    private readonly Fota.FotaService? _fota;
 
     // Lazy so each meter's session is constructed exactly once even under concurrent first-touch.
     private ConcurrentDictionary<long, Lazy<DLMSServerSession>> _sessions = new();
@@ -52,7 +53,8 @@ public sealed class MeterSessionManager
         IOptions<BrainOptions> options,
         IOptions<TcpOptions> tcpOptions,
         ILogger<MeterSessionManager> logger,
-        ProfileSimulationStateStore? profileStateStore = null)
+        ProfileSimulationStateStore? profileStateStore = null,
+        Fota.FotaService? fota = null)
     {
         _meterRegistry = meterRegistry;
         _templates = templates;
@@ -60,6 +62,7 @@ public sealed class MeterSessionManager
         _tcpOptions = tcpOptions.Value;
         _logger = logger;
         _profileStateStore = profileStateStore;
+        _fota = fota;
         _meterRegistry.Changed += CancelInactiveStarts;
     }
 
@@ -182,6 +185,7 @@ public sealed class MeterSessionManager
             sourceAddress: sourceAddress,
             shiftProfileTimestamps: shiftProfileTimestamps);
         session.Initialize(true);
+        session.Fota = _fota?.Bind(batch, meterRef.Index);
 
         _logger.LogDebug(
             "Built meter session {Meter} (index {Index}, serial {Serial}, template {Template})",

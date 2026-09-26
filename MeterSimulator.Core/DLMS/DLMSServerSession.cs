@@ -1288,6 +1288,11 @@ namespace MeterSimulator.DLMS
         {
             foreach (var arg in args)
             {
+                if (ReadFota(arg))
+                {
+                    continue;
+                }
+
                 try
                 {
                     CoreLog.Debug($"PreRead: {arg.Target.ObjectType} - {arg.Target.LogicalName}, Attr={arg.Index}");
@@ -1483,6 +1488,11 @@ namespace MeterSimulator.DLMS
         {
             foreach (var arg in args)
             {
+                if (DenyFotaWrite(arg))
+                {
+                    continue;
+                }
+
                 // The invocation counter is mirrored onto a different object (…43.1.0.255) than the
                 // one the client writes (…43.1.3.255), so it keeps its own mapping.
                 if (arg.Target.LogicalName == "0.0.43.1.3.255" && arg.Index == 2)
@@ -1561,6 +1571,11 @@ namespace MeterSimulator.DLMS
         {
             foreach (var arg in args)
             {
+                if (ActionFota(arg))
+                {
+                    continue;
+                }
+
                 if (arg.Target is not GXDLMSDisconnectControl disconnectControl)
                 {
                     continue;
