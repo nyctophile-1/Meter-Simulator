@@ -166,6 +166,8 @@ builder.Services.AddSingleton<ConfigBundleService>();
 builder.Services.AddSingleton<FleetCompositionCache>();
 builder.Services.AddSingleton<TemplateRegistry>();
 builder.Services.AddSingleton<ProfileSimulationStateStore>();
+builder.Services.Configure<MeterSimulator.Fota.FotaLimits>(builder.Configuration.GetSection("Fota"));
+builder.Services.AddSingleton<ManyMeterSimulator.Fota.FotaService>();
 builder.Services.AddSingleton<MeterSessionManager>();
 builder.Services.AddSingleton<ProfileSimulationService>();
 builder.Services.AddSingleton<TcpPushSender>();

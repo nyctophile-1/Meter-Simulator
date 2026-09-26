@@ -1,0 +1,190 @@
+@page "/fota"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Authorization
+@using ManyMeterSimulator.Auth
+@using ManyMeterSimulator.Fota
+@using ManyMeterSimulator.Provisioning
+@using MeterSimulator.Fota
+@inject MeterRegistry Registry
+@inject FotaService Fota
+
+<PageTitle>MAYA - Meter FOTA</PageTitle>
+<MudText Typo="Typo.h5" Class="mb-3">Meter firmware simulation</MudText>
+<MudText Class="mb-4">Simulate standard DLMS image transfer and immediate activation. Verification checks block completeness and sizes; firmware signatures are not validated. Activation changes the reported version without interrupting communications.</MudText>
+
+<MudSelect T="int" Label="Batch" Value="_batchId" ValueChanged="SelectBatch" Class="mb-3">
+    @foreach (MeterBatch batch in Registry.Batches)
+    {
+        <MudSelectItem T="int" Value="batch.Id">@batch.Name (@batch.StartIndex–@batch.EndIndex)</MudSelectItem>
+    }
+</MudSelect>
+
+@if (_batch is not null)
+{
+    <MudText Class="mb-3">@(_supported ? "Template supports FOTA." : "Unsupported template: image-transfer and firmware-version objects are required.")</MudText>
+    <AuthorizeView Roles="@AppRoles.Admin">
+        <Authorized>
+            <MudPaper Class="pa-4 mb-4">
+                <MudNumericField T="long?" Label="Override meter index (blank for batch defaults)" @bind-Value="_overrideIndex" />
+                <MudButton OnClick="LoadSettings">Load settings</MudButton>
+                <MudButton OnClick="RemoveOverride" Disabled="@(!_overrideIndex.HasValue)">Use batch defaults</MudButton>
+                <MudCheckBox T="bool" @bind-Value="_settings.Enabled" Label="Enable FOTA" />
+                <MudTextField T="string" @bind-Value="_settings.TargetVersion" Label="Target firmware version" />
+                <MudNumericField T="int" @bind-Value="_settings.BlockSize" Label="Block size (32–4096 bytes)" Min="32" Max="4096" />
+                <MudNumericField T="int" @bind-Value="_settings.RejectBlock" Label="Block to reject (zero-based; -1 disables)" Min="-1" />
+                <MudNumericField T="int" @bind-Value="_settings.RejectAttempts" Label="Number of rejection attempts" Min="0" Max="1000" />
+                <MudCheckBox T="bool" @bind-Value="_settings.FailVerification" Label="Fail verification" />
+                <MudCheckBox T="bool" @bind-Value="_settings.FailActivation" Label="Fail activation" />
+                <MudText Typo="Typo.caption">Settings are frozen when a transfer begins. Changes apply on the next initiation.</MudText>
+                <MudButton OnClick="Save" Color="Color.Primary" Variant="Variant.Filled" Class="mt-3">Save settings</MudButton>
+            </MudPaper>
+        </Authorized>
+    </AuthorizeView>
+
+    <div class="d-flex align-center mb-3" style="gap:12px">
+        <MudTextField T="string" @bind-Value="_search" Label="Find meter by index or serial" />
+        <MudButton OnClick="Search">Find</MudButton>
+        <MudButton OnClick="Refresh">Refresh</MudButton>
+        <MudButton OnClick="Previous" Disabled="@(_first <= _batch.StartIndex)">Previous</MudButton>
+        <MudButton OnClick="Next" Disabled="@(_first + 50 > _batch.EndIndex)">Next</MudButton>
+    </div>
+    <MudTable T="FotaProgress" Items="_rows" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm">
+        <HeaderContent>
+            <MudTh>Meter</MudTh><MudTh>Image identifier (hex)</MudTh><MudTh>Blocks</MudTh>
+            <MudTh>Status</MudTh><MudTh>Current / target</MudTh><MudTh>Last failure</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Meter">@context.Serial (@context.Index)</MudTd>
+            <MudTd DataLabel="Image" Style="max-width:220px;overflow-wrap:anywhere">@context.Image</MudTd>
+            <MudTd DataLabel="Blocks">@context.Received / @context.Total</MudTd>
+            <MudTd DataLabel="Status">@context.Status</MudTd>
+            <MudTd DataLabel="Version">@context.CurrentVersion / @context.TargetVersion</MudTd>
+            <MudTd DataLabel="Failure">
+                @context.LastFailure
+                <AuthorizeView Roles="@AppRoles.Admin" Context="auth">
+                    <Authorized>
+                        <MudButton Size="Size.Small" OnClick="@(() => _resetIndex = context.Index)">Reset pending transfer</MudButton>
+                    </Authorized>
+                </AuthorizeView>
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+    @if (_resetIndex is long resetIndex)
+    {
+        <AuthorizeView Roles="@AppRoles.Admin">
+            <Authorized>
+                <MudAlert Severity="Severity.Warning" Class="mt-3">
+                    Clear pending transfer for meter @resetIndex? The active firmware version is preserved.
+                    <MudButton OnClick="Reset" Color="Color.Warning">Confirm reset</MudButton>
+                    <MudButton OnClick="@(() => _resetIndex = null)">Cancel</MudButton>
+                </MudAlert>
+            </Authorized>
+        </AuthorizeView>
+    }
+}
+
+@if (!string.IsNullOrEmpty(_message))
+{
+    <MudAlert Severity="@(_error ? Severity.Error : Severity.Success)" Class="mt-3">@_message</MudAlert>
+}
+
+@code {
+    private int _batchId;
+    private MeterBatch? _batch;
+    private bool _supported;
+    private long? _overrideIndex;
+    private long? _resetIndex;
+    private long _first;
+    private string _search = "";
+    private string _message = "";
+    private bool _error;
+    private FotaSettings _settings = new();
+    private IReadOnlyList<FotaProgress> _rows = Array.Empty<FotaProgress>();
+
+    private void SelectBatch(int id)
+    {
+        Run(() =>
+        {
+            _batchId = id;
+            _batch = Registry.Batches.First(batch => batch.Id == id);
+            _supported = Fota.Supported(_batch);
+            _overrideIndex = null;
+            _resetIndex = null;
+            _first = _batch.StartIndex;
+            _settings = Fota.Settings(_batch);
+            _rows = Fota.Progress(_batch, _first);
+        });
+    }
+
+    private void LoadSettings() => Run(() => _settings = Fota.Settings(_batch!, _overrideIndex));
+    private void Save() => Run(() => Fota.SaveSettings(_batch!, _overrideIndex, _settings), "Settings saved for subsequent transfers.");
+
+    private void RemoveOverride()
+    {
+        Run(() =>
+        {
+            Fota.RemoveOverride(_batch!, _overrideIndex!.Value);
+            _settings = Fota.Settings(_batch!, _overrideIndex);
+        }, "Meter now uses batch defaults for subsequent transfers.");
+    }
+
+    private void Reset()
+    {
+        Run(() =>
+        {
+            Fota.Reset(_batch!, _resetIndex!.Value);
+            _resetIndex = null;
+            _rows = Fota.Progress(_batch!, _first);
+        }, "Pending transfer reset; active firmware preserved.");
+    }
+
+    private void Refresh() => Run(() => _rows = Fota.Progress(_batch!, _first));
+
+    private void Previous()
+    {
+        _first = Math.Max(_batch!.StartIndex, _first - 50);
+        Refresh();
+    }
+
+    private void Next()
+    {
+        _first = Math.Min(_batch!.EndIndex, _first + 50);
+        Refresh();
+    }
+
+    private void Search()
+    {
+        Run(() =>
+        {
+            string value = _search.Trim();
+            if (value.StartsWith("MY", StringComparison.OrdinalIgnoreCase))
+            {
+                value = value[2..];
+            }
+
+            if (!long.TryParse(value, out long index) || index < _batch!.StartIndex || index > _batch.EndIndex)
+            {
+                throw new ArgumentException("Enter a meter index or MY serial belonging to this batch.");
+            }
+
+            _first = index;
+            _rows = Fota.Progress(_batch, _first);
+        });
+    }
+
+    private void Run(Action action, string message = "")
+    {
+        try
+        {
+            action();
+            _message = message;
+            _error = false;
+        }
+        catch (Exception exception) when (exception is ArgumentException or IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            _message = exception.Message;
+            _error = true;
+        }
+    }
+}
