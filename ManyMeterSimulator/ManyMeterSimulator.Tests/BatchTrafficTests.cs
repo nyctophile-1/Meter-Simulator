@@ -124,6 +124,33 @@ public class BatchTrafficTests
         }
     }
 
+    [Fact]
+    public async Task BlockLoadReportsMetersNotSentWhenCaptureWindowEnds()
+    {
+        var f = new Fixture("2026-09-13T18:30:00Z", 3, BatchTrafficKind.BlockLoad,
+            blockPeriodSeconds: 900, concurrency: 2);
+        f.Sender.BlockIndex = f.Batch.StartIndex + 1;
+        await f.Service.StartAsync(default);
+        try
+        {
+            await Until(() => f.Sender.Sent.Count == 2 && f.Sender.Blocked);
+            f.Clock.Advance(TimeSpan.FromMinutes(15));
+            await Until(() => f.Service.State(f.Batch, BatchTrafficKind.BlockLoad).LastBlockLoadWindow is not null);
+            var report = f.Service.State(f.Batch, BatchTrafficKind.BlockLoad).LastBlockLoadWindow!;
+            Assert.Equal(DateTimeOffset.Parse("2026-09-13T18:30:00Z"), report.Slot);
+            Assert.Equal(3, report.Expected);
+            Assert.Equal(2, report.Sent);
+            Assert.Equal(1, report.Unsent);
+            Assert.Equal([f.Batch.StartIndex + 1], report.UnsentMeterIndexes());
+            Assert.True(f.Sender.Canceled);
+        }
+        finally
+        {
+            await f.Service.StopAsync(default);
+            f.Service.Dispose();
+        }
+    }
+
     [Theory]
     [InlineData(900, "2026-09-13T18:45:00Z")]
     [InlineData(1800, "2026-09-13T19:00:00Z")]
@@ -236,7 +263,7 @@ public class BatchTrafficTests
         public Clock Clock { get; }
         public Sender Sender { get; } = new();
         public BatchTrafficService Service { get; }
-        public Fixture(string at, int count, BatchTrafficKind kind, int blockPeriodSeconds = 900)
+        public Fixture(string at, int count, BatchTrafficKind kind, int blockPeriodSeconds = 900, int concurrency = 32)
         {
             Clock = new Clock(DateTimeOffset.Parse(at));
             Sender.BlockPeriodSeconds = blockPeriodSeconds;
@@ -244,7 +271,7 @@ public class BatchTrafficTests
             Registry.SetTraffic(Batch.Id, BatchTrafficKind.Routing, false);
             Registry.SetTraffic(Batch.Id, kind, true);
             Registry.TryStart(Batch.Id);
-            Service = new(Registry, Sender, Clock, Options.Create(new BatchTrafficOptions()), NullLogger<BatchTrafficService>.Instance);
+            Service = new(Registry, Sender, Clock, Options.Create(new BatchTrafficOptions { MaxConcurrency = concurrency }), NullLogger<BatchTrafficService>.Instance);
         }
     }
 
@@ -253,7 +280,8 @@ public class BatchTrafficTests
         public ConcurrentQueue<long> Sent { get; } = new();
         public ConcurrentQueue<DateTimeOffset?> Slots { get; } = new();
         public int BlockPeriodSeconds { get; set; }
-        public bool Block, Entered, Canceled;
+        public bool Block, Entered, Blocked, Canceled;
+        public long BlockIndex { get; set; } = -1;
         public int BlockCapturePeriodSeconds(MeterBatch batch) => BlockPeriodSeconds;
         public Task<IBatchTrafficSession> OpenAsync(MeterBatch batch, BatchTrafficKind kind,
             DateTimeOffset? captureSlot, CancellationToken token) =>
@@ -261,7 +289,14 @@ public class BatchTrafficTests
             {
                 Slots.Enqueue(captureSlot);
                 Entered = true;
-                try { if (Block) await Task.Delay(Timeout.Infinite, ct); }
+                try
+                {
+                    if (Block || index == BlockIndex)
+                    {
+                        Blocked = true;
+                        await Task.Delay(Timeout.Infinite, ct);
+                    }
+                }
                 catch (OperationCanceledException) { Canceled = true; throw; }
                 Sent.Enqueue(index);
             }, () => ValueTask.CompletedTask));

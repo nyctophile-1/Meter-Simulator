@@ -262,6 +262,7 @@ public partial class MqttPushRunTests
     {
         public ConcurrentQueue<NicPublish> Messages { get; } = new();
         public List<RecordingPool> Pools { get; } = [];
+        public List<(int Publishers, int Qos)> PoolSettings { get; } = [];
         public bool Reject { get; set; }
         public Func<CancellationToken, Task>? BeforePublish { get; set; }
         public Action? AfterPublish { get; set; }
@@ -271,6 +272,7 @@ public partial class MqttPushRunTests
         public Task<IMqttPushPool> OpenPoolAsync(BrokerBinding binding, int publisherCount, int qos,
             int publishTimeoutSeconds, CancellationToken cancellationToken)
         {
+            PoolSettings.Add((publisherCount, qos));
             var pool = new RecordingPool(this);
             Pools.Add(pool);
             return Task.FromResult<IMqttPushPool>(pool);

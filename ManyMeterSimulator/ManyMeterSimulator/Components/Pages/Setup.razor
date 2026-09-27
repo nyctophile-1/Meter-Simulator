@@ -368,7 +368,7 @@ else
 
                                 <div class="my-3" style="white-space:normal">
                                     <MudText Typo="Typo.subtitle2">Automatic routing and push</MudText>
-                                    <MudText Typo="Typo.caption">Routing, Instantaneous, Block Load, Events, ESW and RTC: every 30 minutes. Daily: 00:00–00:30; Billing: the 1st, 00:00–00:30 (@Traffic.TimeZoneId). Meters are spread across each window. Settings are saved; the batch must be running.</MudText>
+                                    <MudText Typo="Typo.caption">Block Load starts at its profile capture boundary (15 or 30 minutes) and stops at the next boundary. Routing, Instantaneous, Events, ESW and RTC use 30-minute windows; Daily uses 00:00–00:30 and Billing uses the 1st, 00:00–00:30 (@Traffic.TimeZoneId). Settings are saved; the batch must be running.</MudText>
                                     @foreach (var kind in Enum.GetValues<BatchTrafficKind>())
                                     {
                                         var trafficState = Traffic.State(batch, kind);
@@ -382,7 +382,14 @@ else
                                                     @(batch.Traffic.Enabled(kind) ? "Stop" : "Start")
                                                 </MudButton>
                                             }
-                                            <MudText Typo="Typo.caption">@trafficState.Status · @trafficState.Sent.ToString("N0") sent · @trafficState.Failed.ToString("N0") failures · @trafficState.Skipped.ToString("N0") elapsed slots skipped</MudText>
+                                            <MudText Typo="Typo.caption">@trafficState.Status · @trafficState.Sent.ToString("N0") sent · @trafficState.Failed.ToString("N0") failures · @trafficState.Skipped.ToString("N0") @(kind == BatchTrafficKind.BlockLoad ? "meter pushes skipped" : "elapsed slots skipped")</MudText>
+                                            @if (kind == BatchTrafficKind.BlockLoad && trafficState.LastBlockLoadWindow is { } lastBlock)
+                                            {
+                                                <MudText Typo="Typo.caption">Last capture window @(lastBlock.Slot.ToOffset(TimeSpan.FromMinutes(330)).ToString("yyyy-MM-dd HH:mm")) IST: @lastBlock.Sent.ToString("N0")/@lastBlock.Expected.ToString("N0") sent by MAYA; @lastBlock.Unsent.ToString("N0") unsent. HES receipt is separate.</MudText>
+                                                <MudButton Size="Size.Small" Variant="Variant.Text" Disabled="@(lastBlock.Unsent == 0)"
+                                                           StartIcon="@Icons.Material.Filled.Download"
+                                                           OnClick="() => DownloadUnsentCsv(batch.Id)">Download unsent meter IDs (CSV)</MudButton>
+                                            }
                                             @if (trafficState.Error is { } trafficError)
                                             {
                                                 <MudText Typo="Typo.caption" Color="Color.Error">@trafficError</MudText>
@@ -805,6 +812,9 @@ else
 
     private async Task DownloadCsv(int batchId) =>
         await JS.InvokeVoidAsync("mayaDownload", $"/batches/{batchId}/meters.csv");
+
+    private async Task DownloadUnsentCsv(int batchId) =>
+        await JS.InvokeVoidAsync("mayaDownload", $"/batches/{batchId}/block-load-unsent.csv");
 
     private async Task ResetAll()
     {

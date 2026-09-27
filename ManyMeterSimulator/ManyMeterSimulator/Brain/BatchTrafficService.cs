@@ -17,7 +17,23 @@ public interface IBatchTrafficSender
 }
 
 public sealed record BatchTrafficState(string Status, long Sent = 0, long Failed = 0, long Skipped = 0,
-    DateTimeOffset? NextWindow = null, string? Error = null);
+    DateTimeOffset? NextWindow = null, string? Error = null,
+    BlockLoadWindowReport? LastBlockLoadWindow = null);
+
+public sealed class BlockLoadWindowReport(DateTimeOffset slot, long startIndex, long expected, long sent, long[] completedWords)
+{
+    public DateTimeOffset Slot { get; } = slot;
+    public long Expected { get; } = expected;
+    public long Sent { get; } = sent;
+    public long Unsent => Expected - Sent;
+
+    public IEnumerable<long> UnsentMeterIndexes()
+    {
+        for (long offset = 0; offset < Expected; offset++)
+            if ((completedWords[offset / 64] & (1L << (int)(offset % 64))) == 0)
+                yield return startIndex + offset;
+    }
+}
 
 public sealed class BatchTrafficService : BackgroundService
 {
@@ -29,6 +45,7 @@ public sealed class BatchTrafficService : BackgroundService
     private readonly ILogger<BatchTrafficService> _logger;
     private readonly ConcurrentDictionary<(int, BatchTrafficKind), Job> _jobs = new();
     private readonly ConcurrentDictionary<(int, BatchTrafficKind), BatchTrafficState> _states = new();
+    private readonly ConcurrentDictionary<int, BlockLoadWindowReport> _lastBlockLoadWindows = new();
     public event Action? Changed;
     public string TimeZoneId => _zone.Id;
 
@@ -43,9 +60,13 @@ public sealed class BatchTrafficService : BackgroundService
         _logger = logger;
     }
 
-    public BatchTrafficState State(MeterBatch batch, BatchTrafficKind kind) =>
-        !batch.Traffic.Enabled(kind) ? new("Stopped") : batch.Status != BatchStatus.Running
+    public BatchTrafficState State(MeterBatch batch, BatchTrafficKind kind)
+    {
+        BatchTrafficState state = !batch.Traffic.Enabled(kind) ? new("Stopped") : batch.Status != BatchStatus.Running
             ? new("Waiting for batch") : _states.GetValueOrDefault((batch.Id, kind), new("Starting"));
+        return kind == BatchTrafficKind.BlockLoad && _lastBlockLoadWindows.TryGetValue(batch.Id, out var report)
+            ? state with { LastBlockLoadWindow = report } : state;
+    }
 
     private bool Eligible(Job job) => job.Batch.Status == BatchStatus.Running
         && job.Batch.Traffic.Enabled(job.Kind)
@@ -84,6 +105,8 @@ public sealed class BatchTrafficService : BackgroundService
                     }
                 foreach (var key in _states.Keys)
                     if (!_registry.Batches.Any(b => b.Id == key.Item1)) _states.TryRemove(key, out _);
+                foreach (int batchId in _lastBlockLoadWindows.Keys)
+                    if (!_registry.Batches.Any(b => b.Id == batchId)) _lastBlockLoadWindows.TryRemove(batchId, out _);
                 Changed?.Invoke();
                 await Task.Delay(TimeSpan.FromSeconds(1), _clock, stoppingToken);
             }
@@ -128,6 +151,8 @@ public sealed class BatchTrafficService : BackgroundService
                 if (window.Start > _clock.GetUtcNow()) await Task.Delay(window.Start - _clock.GetUtcNow(), _clock, token);
                 if (_clock.GetUtcNow() >= window.End) continue;
                 long sent = 0, failed = 0, skipped = 0, cursor = 0;
+                long[]? completedWords = job.Kind == BatchTrafficKind.BlockLoad
+                    ? new long[checked((int)((job.Batch.Count + 63) / 64))] : null;
                 using var deadline = new CancellationTokenSource(TimeSpan.FromTicks(Math.Max(1, (window.End - _clock.GetUtcNow()).Ticks)), _clock);
                 using var windowStop = CancellationTokenSource.CreateLinkedTokenSource(token, deadline.Token);
                 while (_clock.GetUtcNow() < window.End)
@@ -146,6 +171,11 @@ public sealed class BatchTrafficService : BackgroundService
                             try
                             {
                                 await session.SendAsync(index, ct);
+                                if (completedWords is not null)
+                                {
+                                    long offset = index - job.Batch.StartIndex;
+                                    Interlocked.Or(ref completedWords[checked((int)(offset / 64))], 1L << (int)(offset % 64));
+                                }
                                 Interlocked.Increment(ref sent);
                             }
                             catch (PushSkippedException) { Interlocked.Increment(ref skipped); }
@@ -162,6 +192,19 @@ public sealed class BatchTrafficService : BackgroundService
                         try { await Task.Delay(TimeSpan.FromSeconds(30), _clock, windowStop.Token); }
                         catch (OperationCanceledException) when (windowStop.IsCancellationRequested) { break; }
                     }
+                }
+                if (job.Kind == BatchTrafficKind.BlockLoad && !token.IsCancellationRequested)
+                {
+                    long completed = Interlocked.Read(ref sent);
+                    var report = new BlockLoadWindowReport(window.Start, job.Batch.StartIndex, job.Batch.Count,
+                        completed, completedWords!);
+                    _lastBlockLoadWindows[job.Batch.Id] = report;
+                    if (report.Unsent > 0)
+                        _logger.LogWarning("Batch {BatchId} Block Load slot {Slot}: {Sent}/{Expected} meter pushes completed; {Unsent} unsent at capture boundary",
+                            job.Batch.Id, report.Slot, report.Sent, report.Expected, report.Unsent);
+                    else
+                        _logger.LogInformation("Batch {BatchId} Block Load slot {Slot}: all {Expected} meter pushes completed",
+                            job.Batch.Id, report.Slot, report.Expected);
                 }
                 _states[key] = new("Waiting for next window", sent, failed, skipped, window.End);
                 Changed?.Invoke();

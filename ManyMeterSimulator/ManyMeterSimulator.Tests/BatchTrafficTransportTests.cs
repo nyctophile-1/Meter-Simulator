@@ -85,7 +85,12 @@ public partial class MqttPushRunTests
         var fields = Assert.IsAssignableFrom<IEnumerable>(notification.Value ?? response.Value).Cast<object>().ToArray();
         Assert.Equal(new byte[] { 0, channel, 25, 9, 0, 255 }, Assert.IsType<byte[]>(fields[1]));
         if (kind == BatchTrafficKind.BlockLoad)
+        {
             Assert.Equal(new byte[] { 14, 45, 0 }, Assert.IsType<byte[]>(fields[2])[5..8]);
+            Assert.Equal(0, Assert.Single(f.Publisher.PoolSettings).Qos);
+        }
+        else
+            Assert.Equal(2, Assert.Single(f.Publisher.PoolSettings).Qos);
         Assert.All(f.Publisher.Pools, p => Assert.True(p.Disposed));
     }
 
@@ -96,6 +101,18 @@ public partial class MqttPushRunTests
         await using (var session = await f.Push.OpenBatchTrafficAsync(f.Batch, BatchTrafficKind.Daily, default))
             await session.SendAsync(f.Batch.StartIndex, default);
         Assert.Single(f.Publisher.Messages);
+        Assert.All(f.Publisher.Pools, p => Assert.True(p.Disposed));
+    }
+
+    [Fact]
+    public async Task ScheduledCustomBlockLoadUsesQosZero()
+    {
+        var f = new Fixture(1, encoder: CustomPushFixtureModel.BlockEncoder());
+        var slot = DateTimeOffset.Parse("2026-09-25T09:15:00Z");
+        await using (var session = await f.Push.OpenBatchTrafficAsync(f.Batch, BatchTrafficKind.BlockLoad, slot, default))
+            await session.SendAsync(f.Batch.StartIndex, default);
+        Assert.Single(f.Publisher.Messages);
+        Assert.Equal(0, Assert.Single(f.Publisher.PoolSettings).Qos);
         Assert.All(f.Publisher.Pools, p => Assert.True(p.Disposed));
     }
 }

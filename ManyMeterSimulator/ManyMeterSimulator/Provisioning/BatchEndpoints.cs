@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text;
+using ManyMeterSimulator.Brain;
 using ManyMeterSimulator.Networking;
 using ManyMeterSimulator.Networking.Nic;
 using MeterSimulator.Models;
@@ -18,6 +19,25 @@ public static class BatchEndpoints
 {
     public static void MapBatchEndpoints(this WebApplication app)
     {
+        app.MapGet("/batches/{id:int}/block-load-unsent.csv",
+            (int id, MeterRegistry registry, BatchTrafficService traffic) =>
+            {
+                MeterBatch? batch = registry.Batches.FirstOrDefault(b => b.Id == id);
+                BlockLoadWindowReport? report = batch is null
+                    ? null : traffic.State(batch, BatchTrafficKind.BlockLoad).LastBlockLoadWindow;
+                if (report is null) return Results.NotFound();
+
+                string fileName = $"batch-{id}-block-load-unsent-{report.Slot:yyyyMMddTHHmmssZ}.csv";
+                return Results.Stream(async stream =>
+                {
+                    await using var writer = new StreamWriter(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+                    await writer.WriteLineAsync("\"index\",\"serial\"");
+                    foreach (long index in report.UnsentMeterIndexes())
+                        await writer.WriteLineAsync($"\"{index}\",\"{MeterRegistry.FormatSerial(index)}\"");
+                }, "text/csv", fileName);
+            })
+            .RequireAuthorization();
+
         app.MapGet("/batches/{id:int}/meters.csv",
             (int id, MeterRegistry registry, IOptions<TcpOptions> tcp) =>
             {
