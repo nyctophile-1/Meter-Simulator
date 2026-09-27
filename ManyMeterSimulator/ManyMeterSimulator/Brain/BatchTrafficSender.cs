@@ -10,11 +10,17 @@ namespace ManyMeterSimulator.Brain;
 public sealed class BatchTrafficSender(PushCoordinator push, NetworkRegistry network,
     IMqttRoutingPublisher routing) : IBatchTrafficSender
 {
-    public async Task<IBatchTrafficSession> OpenAsync(MeterBatch batch, BatchTrafficKind kind, CancellationToken token)
+    public int BlockCapturePeriodSeconds(MeterBatch batch) => push.BlockCapturePeriodSeconds(batch);
+
+    public Task<IBatchTrafficSession> OpenAsync(MeterBatch batch, BatchTrafficKind kind, CancellationToken token)
+        => OpenAsync(batch, kind, null, token);
+
+    public async Task<IBatchTrafficSession> OpenAsync(MeterBatch batch, BatchTrafficKind kind,
+        DateTimeOffset? captureSlot, CancellationToken token)
     {
         if (kind != BatchTrafficKind.Routing)
         {
-            return await push.OpenBatchTrafficAsync(batch, kind, token);
+            return await push.OpenBatchTrafficAsync(batch, kind, captureSlot, token);
         }
 
         var endpoint = batch.BrokerKey is { } key ? network.Broker(key) : null;
@@ -57,7 +63,11 @@ internal sealed class BatchTrafficSession(Func<long, CancellationToken, Task> se
 
 public sealed partial class PushCoordinator
 {
-    internal async Task<IBatchTrafficSession> OpenBatchTrafficAsync(MeterBatch batch, BatchTrafficKind kind, CancellationToken token)
+    internal Task<IBatchTrafficSession> OpenBatchTrafficAsync(MeterBatch batch, BatchTrafficKind kind, CancellationToken token)
+        => OpenBatchTrafficAsync(batch, kind, null, token);
+
+    internal async Task<IBatchTrafficSession> OpenBatchTrafficAsync(MeterBatch batch, BatchTrafficKind kind,
+        DateTimeOffset? captureSlot, CancellationToken token)
     {
         string profile = kind switch
         {
@@ -72,7 +82,8 @@ public sealed partial class PushCoordinator
         };
         if (batch.NicType == NicType.Tcp4G)
         {
-            var source = ResolveTcpSource(batch.Id, new TcpPushRequest { BatchIds = [batch.Id], PushSetupLogicalName = profile }, _options.UseCiphering);
+            var source = ResolveTcpSource(batch.Id, new TcpPushRequest { BatchIds = [batch.Id], PushSetupLogicalName = profile },
+                _options.UseCiphering, scheduledBlockSlot: kind == BatchTrafficKind.BlockLoad ? captureSlot : null);
             return new BatchTrafficSession(async (index, ct) =>
             {
                 ct.ThrowIfCancellationRequested();
@@ -93,7 +104,8 @@ public sealed partial class PushCoordinator
                 if (result.Failed > 0 || result.Sent == 0) throw new IOException(result.Error ?? "TCP push produced no payloads.");
             }, () => ValueTask.CompletedTask);
         }
-        var mqtt = ResolveMqttSource(batch.Id, new MqttPushRequest { BatchIds = [batch.Id], PushSetupLogicalName = profile });
+        var mqtt = ResolveMqttSource(batch.Id, new MqttPushRequest { BatchIds = [batch.Id], PushSetupLogicalName = profile },
+            scheduledBlockSlot: kind == BatchTrafficKind.BlockLoad ? captureSlot : null);
         var pool = await _mqtt.OpenPoolAsync(mqtt.Binding, _options.PublisherCount, _options.PublishQos, _options.PublishTimeoutSeconds, token);
         return new BatchTrafficSession(async (index, ct) =>
         {

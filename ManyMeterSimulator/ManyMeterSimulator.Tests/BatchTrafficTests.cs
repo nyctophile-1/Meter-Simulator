@@ -77,7 +77,6 @@ public class BatchTrafficTests
     [Theory]
     [InlineData(BatchTrafficKind.Routing)]
     [InlineData(BatchTrafficKind.Instantaneous)]
-    [InlineData(BatchTrafficKind.BlockLoad)]
     public async Task EachStreamSendsOnePassSpreadAcrossWindowAndRepeats(BatchTrafficKind kind)
     {
         var f = new Fixture("2026-09-13T18:30:00Z", 3, kind);
@@ -98,6 +97,55 @@ public class BatchTrafficTests
             await f.Service.StopAsync(default);
             f.Service.Dispose();
         }
+    }
+
+    [Theory]
+    [InlineData(900, "2026-09-13T18:45:00Z")]
+    [InlineData(1800, "2026-09-13T19:00:00Z")]
+    public async Task BlockLoadWaitsForNextCaptureBoundaryThenSendsCycleWithThatSlot(int period, string expected)
+    {
+        var f = new Fixture("2026-09-13T18:36:00Z", 3, BatchTrafficKind.BlockLoad, period);
+        await f.Service.StartAsync(default);
+        try
+        {
+            await Until(() => f.Service.State(f.Batch, BatchTrafficKind.BlockLoad).Status == "Scheduled");
+            Assert.Empty(f.Sender.Sent); // no 00:06 IST push from a cycle already in progress
+            Assert.Equal(DateTimeOffset.Parse(expected), f.Service.State(f.Batch, BatchTrafficKind.BlockLoad).NextWindow);
+            f.Clock.Advance(DateTimeOffset.Parse(expected) - f.Clock.GetUtcNow());
+            await Until(() => f.Sender.Sent.Count == 3);
+            Assert.All(f.Sender.Slots, slot => Assert.Equal(DateTimeOffset.Parse(expected), slot));
+            f.Clock.Advance(TimeSpan.FromSeconds(period));
+            await Until(() => f.Sender.Sent.Count == 6);
+        }
+        finally
+        {
+            await f.Service.StopAsync(default);
+            f.Service.Dispose();
+        }
+    }
+
+    [Theory]
+    [InlineData(900, "2026-09-13T18:45:00Z")]
+    [InlineData(1800, "2026-09-13T19:00:00Z")]
+    public void BlockLoadWindowUsesItsProfileCapturePeriod(int period, string expected)
+    {
+        var window = BatchTrafficSchedule.Window(DateTimeOffset.Parse("2026-09-13T18:36:00Z"),
+            BatchTrafficKind.BlockLoad, India, period);
+        Assert.Equal(DateTimeOffset.Parse(expected), window.Start);
+        Assert.Equal(TimeSpan.FromSeconds(period), window.End - window.Start);
+    }
+
+    [Theory]
+    [InlineData(900, "2026-09-25T14:55:00+05:30", "2026-09-25T15:00:00+05:30")]
+    [InlineData(1800, "2026-09-25T14:55:00+05:30", "2026-09-25T15:00:00+05:30")]
+    [InlineData(1800, "2026-09-25T01:28:00+05:30", "2026-09-25T01:30:00+05:30")]
+    [InlineData(900, "2026-09-25T11:31:00+05:30", "2026-09-25T11:45:00+05:30")]
+    [InlineData(1800, "2026-09-25T11:31:00+05:30", "2026-09-25T12:00:00+05:30")]
+    public void BlockLoadWaitsForTheNextBoundaryInIndianTime(int period, string now, string expected)
+    {
+        var window = BatchTrafficSchedule.Window(DateTimeOffset.Parse(now), BatchTrafficKind.BlockLoad,
+            India, period);
+        Assert.Equal(DateTimeOffset.Parse(expected), window.Start);
     }
 
     [Fact]
@@ -188,9 +236,10 @@ public class BatchTrafficTests
         public Clock Clock { get; }
         public Sender Sender { get; } = new();
         public BatchTrafficService Service { get; }
-        public Fixture(string at, int count, BatchTrafficKind kind)
+        public Fixture(string at, int count, BatchTrafficKind kind, int blockPeriodSeconds = 900)
         {
             Clock = new Clock(DateTimeOffset.Parse(at));
+            Sender.BlockPeriodSeconds = blockPeriodSeconds;
             Batch = Registry.AddBatch("batch", "template", count);
             Registry.SetTraffic(Batch.Id, BatchTrafficKind.Routing, false);
             Registry.SetTraffic(Batch.Id, kind, true);
@@ -202,10 +251,15 @@ public class BatchTrafficTests
     private sealed class Sender : IBatchTrafficSender
     {
         public ConcurrentQueue<long> Sent { get; } = new();
+        public ConcurrentQueue<DateTimeOffset?> Slots { get; } = new();
+        public int BlockPeriodSeconds { get; set; }
         public bool Block, Entered, Canceled;
-        public Task<IBatchTrafficSession> OpenAsync(MeterBatch batch, BatchTrafficKind kind, CancellationToken token) =>
+        public int BlockCapturePeriodSeconds(MeterBatch batch) => BlockPeriodSeconds;
+        public Task<IBatchTrafficSession> OpenAsync(MeterBatch batch, BatchTrafficKind kind,
+            DateTimeOffset? captureSlot, CancellationToken token) =>
             Task.FromResult<IBatchTrafficSession>(new BatchTrafficSession(async (index, ct) =>
             {
+                Slots.Enqueue(captureSlot);
                 Entered = true;
                 try { if (Block) await Task.Delay(Timeout.Infinite, ct); }
                 catch (OperationCanceledException) { Canceled = true; throw; }

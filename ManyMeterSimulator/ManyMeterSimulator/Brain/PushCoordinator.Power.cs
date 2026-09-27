@@ -19,15 +19,15 @@ public sealed partial class PushCoordinator
     private sealed record DlmsPowerDelivery(byte[][] Payloads, Action<int>? Confirm);
 
     private DlmsPowerDelivery BuildTrackedDlms(MeterRef meter, bool ciphering, string? selection,
-        PowerEventSequence sequence, DateTimeOffset? timestamp = null)
+        PowerEventSequence sequence, DateTimeOffset? timestamp = null, DateTimeOffset? scheduledBlockSlot = null)
     {
         if (selection is not (null or MqttPushProfiles.Power))
-            return new(BuildDlms(meter, ciphering, selection, timestamp), null);
+            return new(BuildDlms(meter, ciphering, selection, timestamp, scheduledBlockSlot: scheduledBlockSlot), null);
         var session = _sessions.GetOrCreate(meter);
         bool power;
         lock (session) power = (selection is null or MqttPushProfiles.Power) && session.GetPushSetupLogicalNames().Contains(MqttPushProfiles.Power);
         ushort eventId = power ? sequence.Next(meter.Index) : (ushort)101;
-        var payloads = BuildDlms(meter, ciphering, selection, timestamp, eventId);
+        var payloads = BuildDlms(meter, ciphering, selection, timestamp, eventId, scheduledBlockSlot);
         // The core appends the power event after the other selected profiles.
         Action<int>? confirm = power ? index =>
         {

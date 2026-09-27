@@ -69,7 +69,8 @@ public sealed partial class PushCoordinator
         }
     }
 
-    private MqttPushSource ResolveMqttSource(int batchId, MqttPushRequest request, bool normalPower = false)
+    private MqttPushSource ResolveMqttSource(int batchId, MqttPushRequest request, bool normalPower = false,
+        DateTimeOffset? scheduledBlockSlot = null)
     {
         MeterBatch batch = _registry.Batches.FirstOrDefault(b => b.Id == batchId)
             ?? throw new InvalidOperationException($"Batch {batchId} no longer exists.");
@@ -166,7 +167,7 @@ public sealed partial class PushCoordinator
                         esw = eswSession.GetEventStatusWord();
                     }
                 }
-                var now = readingTime ?? _clock.GetUtcNow();
+                var now = readingTime ?? scheduledBlockSlot ?? _clock.GetUtcNow();
                 foreach (var profile in customProfiles)
                 {
                     bool power = profile.Key == MqttPushProfiles.CustomPower;
@@ -186,7 +187,8 @@ public sealed partial class PushCoordinator
                 return messages;
             }
 
-            var delivery = BuildTrackedDlms(meter, _options.UseCiphering, selection, powerSequence, readingTime);
+            var delivery = BuildTrackedDlms(meter, _options.UseCiphering, selection, powerSequence,
+                readingTime, scheduledBlockSlot);
             IReadOnlyList<NicPublish> Encode(INicCodec encoder) => delivery.Payloads.SelectMany((payload, index) =>
             {
                 var fragments = encoder.EncodePush(meter.NodeId, payload).ToArray();
