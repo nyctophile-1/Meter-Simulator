@@ -106,7 +106,8 @@ public sealed partial class PushCoordinator
         }
         var mqtt = ResolveMqttSource(batch.Id, new MqttPushRequest { BatchIds = [batch.Id], PushSetupLogicalName = profile },
             scheduledBlockSlot: kind == BatchTrafficKind.BlockLoad ? captureSlot : null);
-        var pool = await _mqtt.OpenPoolAsync(mqtt.Binding, _options.PublisherCount, _options.PublishQos, _options.PublishTimeoutSeconds, token);
+        var qos = kind == BatchTrafficKind.BlockLoad ? 0 : _options.PublishQos;
+        var pool = await _mqtt.OpenPoolAsync(mqtt.Binding, _options.PublisherCount, qos, _options.PublishTimeoutSeconds, token);
         return new BatchTrafficSession(async (index, ct) =>
         {
             ct.ThrowIfCancellationRequested();
