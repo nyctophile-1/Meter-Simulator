@@ -19,10 +19,12 @@ public static class BatchTrafficSchedule
         var local = TimeZoneInfo.ConvertTime(now, zone).DateTime;
         var start = kind == BatchTrafficKind.Daily ? local.Date
             : kind == BatchTrafficKind.Billing ? new DateTime(local.Year, local.Month, 1)
-            : kind == BatchTrafficKind.BlockLoad ? NextBlockBoundary(local, blockPeriodSeconds)
-            : new DateTime(local.Year, local.Month, local.Day, local.Hour, local.Minute / 30 * 30, 0);
-        if (kind == BatchTrafficKind.Daily && local >= start.AddMinutes(30)) start = start.AddDays(1);
-        if (kind == BatchTrafficKind.Billing && local >= start.AddMinutes(30))
+            : kind == BatchTrafficKind.BlockLoad ? NextBoundary(local, blockPeriodSeconds)
+            : kind == BatchTrafficKind.Routing
+                ? new DateTime(local.Year, local.Month, local.Day, local.Hour, local.Minute / 30 * 30, 0)
+                : NextBoundary(local, WindowSeconds);
+        if (kind == BatchTrafficKind.Daily && local > start) start = start.AddDays(1);
+        if (kind == BatchTrafficKind.Billing && local > start)
         {
             var next = start.AddMonths(1);
             start = new DateTime(next.Year, next.Month, 1);
@@ -31,10 +33,10 @@ public static class BatchTrafficSchedule
         return new(utc, utc.AddSeconds(kind == BatchTrafficKind.BlockLoad ? blockPeriodSeconds : WindowSeconds));
     }
 
-    private static DateTime NextBlockBoundary(DateTime local, int periodSeconds)
+    private static DateTime NextBoundary(DateTime local, int periodSeconds)
     {
         if (periodSeconds <= 0 || 86400 % periodSeconds != 0)
-            throw new ArgumentOutOfRangeException(nameof(periodSeconds), "Block Load capture period must divide one day.");
+            throw new ArgumentOutOfRangeException(nameof(periodSeconds), "Capture period must divide one day.");
         long ticks = TimeSpan.FromSeconds(periodSeconds).Ticks;
         long elapsed = local.TimeOfDay.Ticks;
         long next = (elapsed + ticks - 1) / ticks * ticks;

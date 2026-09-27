@@ -61,6 +61,8 @@ internal sealed class BatchTrafficSession(Func<long, CancellationToken, Task> se
     public ValueTask DisposeAsync() => dispose();
 }
 
+internal sealed class BatchTrafficSourceChangedException(string message) : InvalidOperationException(message);
+
 public sealed partial class PushCoordinator
 {
     internal Task<IBatchTrafficSession> OpenBatchTrafficAsync(MeterBatch batch, BatchTrafficKind kind, CancellationToken token)
@@ -87,11 +89,9 @@ public sealed partial class PushCoordinator
             return new BatchTrafficSession(async (index, ct) =>
             {
                 ct.ThrowIfCancellationRequested();
-                if (!source.IsCurrent()) throw new InvalidOperationException("TCP batch or target changed; reconnecting.");
+                if (!source.IsCurrent()) throw new BatchTrafficSourceChangedException("TCP batch or target changed; reconnecting.");
                 long started = Stopwatch.GetTimestamp();
                 var meter = new MeterRef(index, batch.NicType);
-                if (!await AllowPushAsync(meter, ct))
-                { _metrics.RecordPushSkipped(batch.NicType); throw new PushSkippedException(); }
                 PushDeliveryResult result;
                 try { result = await source.Send(meter, source.Build(meter), ct); }
                 catch (PushCanceledException ex)
@@ -106,15 +106,13 @@ public sealed partial class PushCoordinator
         }
         var mqtt = ResolveMqttSource(batch.Id, new MqttPushRequest { BatchIds = [batch.Id], PushSetupLogicalName = profile },
             scheduledBlockSlot: kind == BatchTrafficKind.BlockLoad ? captureSlot : null);
-        var qos = kind == BatchTrafficKind.BlockLoad ? 0 : _options.PublishQos;
-        var pool = await _mqtt.OpenPoolAsync(mqtt.Binding, _options.PublisherCount, qos, _options.PublishTimeoutSeconds, token);
+        int publisherCount = batch.Count <= 100_000 ? 8 : 10;
+        var pool = await _mqtt.OpenPoolAsync(mqtt.Binding, publisherCount, 0, _options.PublishTimeoutSeconds, token);
         return new BatchTrafficSession(async (index, ct) =>
         {
             ct.ThrowIfCancellationRequested();
-            if (!mqtt.IsCurrent()) throw new InvalidOperationException("MQTT batch or broker changed; reconnecting.");
+            if (!mqtt.IsCurrent()) throw new BatchTrafficSourceChangedException("MQTT batch or broker changed; reconnecting.");
             long started = Stopwatch.GetTimestamp();
-            if (!await AllowPushAsync(new MeterRef(index, batch.NicType), ct))
-            { _metrics.RecordPushSkipped(batch.NicType); throw new PushSkippedException(); }
             MqttPushDelivery result;
             try { result = await pool.PublishMeterAsync(mqtt.Build(new MeterRef(index, batch.NicType)), ct); }
             catch (PushCanceledException ex)

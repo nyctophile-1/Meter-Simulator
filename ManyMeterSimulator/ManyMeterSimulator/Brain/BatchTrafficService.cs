@@ -151,6 +151,7 @@ public sealed class BatchTrafficService : BackgroundService
                 if (window.Start > _clock.GetUtcNow()) await Task.Delay(window.Start - _clock.GetUtcNow(), _clock, token);
                 if (_clock.GetUtcNow() >= window.End) continue;
                 long sent = 0, failed = 0, skipped = 0, cursor = 0;
+                string? firstError = null;
                 long[]? completedWords = job.Kind == BatchTrafficKind.BlockLoad
                     ? new long[checked((int)((job.Batch.Count + 63) / 64))] : null;
                 using var deadline = new CancellationTokenSource(TimeSpan.FromTicks(Math.Max(1, (window.End - _clock.GetUtcNow()).Ticks)), _clock);
@@ -179,6 +180,12 @@ public sealed class BatchTrafficService : BackgroundService
                                 Interlocked.Increment(ref sent);
                             }
                             catch (PushSkippedException) { Interlocked.Increment(ref skipped); }
+                            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+                            catch (Exception ex) when (job.Kind != BatchTrafficKind.Routing && ex is not BatchTrafficSourceChangedException)
+                            {
+                                Interlocked.Increment(ref failed);
+                                Interlocked.CompareExchange(ref firstError, ex.Message, null);
+                            }
                         });
                         break;
                     }
@@ -206,13 +213,16 @@ public sealed class BatchTrafficService : BackgroundService
                         _logger.LogInformation("Batch {BatchId} Block Load slot {Slot}: all {Expected} meter pushes completed",
                             job.Batch.Id, report.Slot, report.Expected);
                 }
-                _states[key] = new("Waiting for next window", sent, failed, skipped, window.End);
+                if (failed > 0 && job.Kind is not (BatchTrafficKind.BlockLoad or BatchTrafficKind.Routing))
+                    _logger.LogWarning("Batch {BatchId} {Kind} window {Slot}: {Failed} meter pushes failed; first error: {Error}",
+                        job.Batch.Id, job.Kind, window.Start, failed, firstError);
+                _states[key] = new("Waiting for next window", sent, failed, skipped, window.End, firstError);
                 Changed?.Invoke();
                 if (window.End > _clock.GetUtcNow()) await Task.Delay(window.End - _clock.GetUtcNow(), _clock, token);
 
                 async IAsyncEnumerable<long> DueMeters([EnumeratorCancellation] CancellationToken ct)
                 {
-                    if (job.Kind == BatchTrafficKind.BlockLoad)
+                    if (job.Kind != BatchTrafficKind.Routing)
                     {
                         while (cursor < job.Batch.Count && _clock.GetUtcNow() < window.End)
                         {

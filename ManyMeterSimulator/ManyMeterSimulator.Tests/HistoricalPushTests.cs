@@ -73,7 +73,7 @@ public partial class MqttPushRunTests
     [Theory]
     [InlineData(CommClass.BadComm)]
     [InlineData(CommClass.NonComm)]
-    public async Task MqttStressBypassesBadCommWhileOrdinaryAndScheduledPushHonorIt(CommClass classification)
+    public async Task MqttStressAndScheduledPushBypassBadCommWhileOrdinaryPushHonorsIt(CommClass classification)
     {
         var settings = HistoricalPushTests.Impaired(CommClass.Healthy);
         var f = new Fixture(2, badComm: settings);
@@ -85,9 +85,9 @@ public partial class MqttPushRunTests
         Assert.Equal(2, (await live.SendLiveAsync()).MetersSent);
         Assert.Equal(0, (await f.Push.PushBatchAsync(f.Batch.Id, pushSetupLogicalName: MqttPushProfiles.CustomDaily)).Sent);
         await using var scheduled = await f.Push.OpenBatchTrafficAsync(f.Batch, BatchTrafficKind.Daily, default);
-        await Assert.ThrowsAsync<PushSkippedException>(() => scheduled.SendAsync(f.Batch.StartIndex, default));
-        Assert.Equal(4, f.Publisher.Messages.Count);
-        Assert.Equal(3, f.Metrics.Snapshot(0).TotalPushMetersSkipped);
+        await scheduled.SendAsync(f.Batch.StartIndex, default);
+        Assert.Equal(5, f.Publisher.Messages.Count);
+        Assert.Equal(2, f.Metrics.Snapshot(0).TotalPushMetersSkipped);
     }
 
     [Fact]
