@@ -10,7 +10,7 @@
         <MudSelectItem T="string" Value="@profile.LogicalName">@profile.Label (@profile.LogicalName)</MudSelectItem>
     }
 </MudSelect>
-<MudText Typo="Typo.caption">Wirepas sends custom push; all other NICs send DLMS. Profiles shown are supported by every selected batch.</MudText>
+<MudText Typo="Typo.caption">Wirepas supports custom push and FG23 Routing (247/247); other NICs send DLMS. FG23 Routing is selected separately and is excluded from All supported profiles. Options are shared by every selected batch.</MudText>
 @if (_error is not null) { <MudText Color="Color.Error" Typo="Typo.caption">@_error</MudText> }
 
 @code {
@@ -25,22 +25,45 @@
     {
         var batches = Meters.Batches.Where(b => BatchIds.Contains(b.Id)).ToArray();
         string signature = string.Join("|", batches.Select(b => $"{b.Id}:{b.TemplateName}:{b.NicType}:{b.HesTemplateId}:{b.CustomPushHeaderKind}"));
-        if (_signature == signature) return;
+        if (_signature == signature)
+        {
+            return;
+        }
+
         _signature = signature;
         _error = null;
         HashSet<string>? common = null;
+
         foreach (var batch in batches)
         {
             var profiles = new List<MqttPushProfile>();
+
+            if (batch.NicType == ManyMeterSimulator.Networking.Nic.NicType.MqttWirepas)
+            {
+                profiles.Add(new(MqttPushProfiles.Fg23Routing, MqttPushProfiles.Label(MqttPushProfiles.Fg23Routing)));
+            }
+
             try
             {
                 profiles.AddRange(MqttPushProfiles.ReadBatch(batch, Templates, CustomEncoder));
             }
-            catch (Exception ex) { _error = $"Cannot read profiles for {batch.Name}: {ex.Message}"; }
+            catch (Exception ex)
+            {
+                _error = $"Cannot read meter profiles for {batch.Name}: {ex.Message}";
+            }
+
             var keys = profiles.Select(p => p.LogicalName).ToHashSet(StringComparer.Ordinal);
-            if (common is null) common = keys;
-            else common.IntersectWith(keys);
+
+            if (common is null)
+            {
+                common = keys;
+            }
+            else
+            {
+                common.IntersectWith(keys);
+            }
         }
+
         _profiles = (common ?? []).Select(ln => new MqttPushProfile(ln, MqttPushProfiles.Label(ln)))
             .OrderBy(p => p.Label).ToArray();
     }

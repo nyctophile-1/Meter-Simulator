@@ -42,22 +42,40 @@ public sealed partial class PushCoordinator
     {
         request = request with { BatchIds = request.BatchIds.ToArray() };
         request.Validate();
-        var sources = request.BatchIds.Select(id => ResolveMqttSource(id, request, normalPower: applyImpairments) with
+
+        bool routing = request.PushSetupLogicalName == MqttPushProfiles.Fg23Routing;
+        var sources = request.BatchIds.Select(id => (routing
+            ? ResolveFg23RoutingSource(id, request)
+            : ResolveMqttSource(id, request, normalPower: applyImpairments)) with
         {
             Allow = applyImpairments ? AllowPushAsync : null
         }).ToArray();
+
         var pools = new Dictionary<BrokerBinding, IMqttPushPool>();
         var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         IDisposable? lease = null;
+
         try
         {
             lease = _registry.AcquirePushLease(request.BatchIds);
+
             foreach (BrokerBinding binding in sources.Select(s => s.Binding).Distinct())
+            {
                 pools.Add(binding, await _mqtt.OpenPoolAsync(binding, request.PublisherCount, request.Qos,
                     _options.PublishTimeoutSeconds, stop.Token));
-            return new MqttPushRun(sources, pools, request, _options.UseCiphering, stop,
-                handler => { _registry.Changed += handler; _network.Changed += handler; },
-                handler => { _registry.Changed -= handler; _network.Changed -= handler; }, _metrics, lease);
+            }
+
+            return new MqttPushRun(sources, pools, request, _options.UseCiphering && !routing, stop,
+                handler =>
+                {
+                    _registry.Changed += handler;
+                    _network.Changed += handler;
+                },
+                handler =>
+                {
+                    _registry.Changed -= handler;
+                    _network.Changed -= handler;
+                }, _metrics, lease);
         }
         catch
         {

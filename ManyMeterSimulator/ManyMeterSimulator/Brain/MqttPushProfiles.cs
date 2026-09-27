@@ -18,6 +18,7 @@ public static class MqttPushProfiles
     public const string Daily = MeterSimulator.DLMS.DLMSServerSession.DailyPushLogicalName;
     public const string Billing = "0.7.25.9.0.255";
     public const string Rtc = "rtc:push";
+    public const string Fg23Routing = "routing:fg23";
 
     public static string Label(string? logicalName) => logicalName switch
     {
@@ -32,6 +33,7 @@ public static class MqttPushProfiles
         "0.5.25.9.0.255" => "Block load",
         Billing => "Billing",
         Rtc => "RTC push",
+        Fg23Routing => "FG23 Routing",
         _ => logicalName,
     };
 
