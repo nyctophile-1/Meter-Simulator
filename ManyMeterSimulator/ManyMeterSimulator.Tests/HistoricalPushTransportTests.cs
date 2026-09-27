@@ -206,15 +206,23 @@ public partial class TcpStressIntegrationTests
     }
 
     [Fact]
-    public async Task OrdinaryAndScheduledTcpStillApplyBadCommBeforeOpeningSockets()
+    public async Task OrdinaryAndHistoricalTcpStillApplyBadCommWhileScheduledPushBypassesIt()
     {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         using var listener = new TcpListener(IPAddress.IPv6Loopback, 0);
         listener.Start();
         var f = new Fixture(((IPEndPoint)listener.LocalEndpoint).Port, "D1_Master.xml",
             HistoricalPushTests.Impaired(CommClass.NonComm));
         Assert.Equal(0, (await f.Push.PushBatchAsync(f.Batch.Id)).Sent);
         await using var scheduled = await f.Push.OpenBatchTrafficAsync(f.Batch, BatchTrafficKind.Instantaneous, default);
-        await Assert.ThrowsAsync<PushSkippedException>(() => scheduled.SendAsync(f.Batch.StartIndex, default));
+        var sending = scheduled.SendAsync(f.Batch.StartIndex, timeout.Token);
+        using (var client = await listener.AcceptTcpClientAsync(timeout.Token))
+        {
+            using var received = new MemoryStream();
+            await client.GetStream().CopyToAsync(received, timeout.Token);
+            await sending;
+            Assert.NotEmpty(received.ToArray());
+        }
         await using var history = await f.Push.OpenHistoricalRunAsync(new() { BatchIds = [f.Batch.Id], Days = 1, RecordsPerSecond = 300000 }, default);
         var result = await history.SendAsync(_ => { }, default);
         Assert.Equal(result.Total, result.Skipped);

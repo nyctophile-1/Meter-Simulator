@@ -37,7 +37,7 @@ public class BatchTrafficTests
     [InlineData(3)]
     [InlineData(100_000)]
     [InlineData(1_000_000)]
-    public void DistributionCoversEveryMeterExactlyOnceWithEvenOneSecondBuckets(long count)
+    public void RoutingDistributionCoversEveryMeterExactlyOnceWithEvenOneSecondBuckets(long count)
     {
         long total = 0, min = long.MaxValue, max = 0;
         for (int second = 0; second < 1800; second++)
@@ -54,7 +54,8 @@ public class BatchTrafficTests
     [Theory]
     [InlineData("2026-09-13T18:29:59Z", "2026-09-13T18:30:00Z")]
     [InlineData("2026-09-13T18:30:00Z", "2026-09-13T18:30:00Z")]
-    [InlineData("2026-09-13T18:59:59Z", "2026-09-13T18:30:00Z")]
+    [InlineData("2026-09-13T18:30:01Z", "2026-09-14T18:30:00Z")]
+    [InlineData("2026-09-13T18:59:59Z", "2026-09-14T18:30:00Z")]
     [InlineData("2026-09-13T19:00:00Z", "2026-09-14T18:30:00Z")]
     public void DailyWindowUsesIndiaMidnightAndClosesAtHalfPast(string at, string expected)
     {
@@ -65,6 +66,7 @@ public class BatchTrafficTests
 
     [Theory]
     [InlineData("2026-08-31T18:29:59Z", "2026-08-31T18:30:00Z")]
+    [InlineData("2026-08-31T18:30:01Z", "2026-09-30T18:30:00Z")]
     [InlineData("2026-09-01T18:30:00Z", "2026-09-30T18:30:00Z")]
     [InlineData("2026-09-02T00:00:00Z", "2026-09-30T18:30:00Z")]
     public void BillingWindowRunsOnlyOnTheFirstLocalDay(string at, string expected)
@@ -74,11 +76,10 @@ public class BatchTrafficTests
         Assert.Equal(TimeSpan.FromMinutes(30), window.End - window.Start);
     }
 
-    [Theory]
-    [InlineData(BatchTrafficKind.Routing)]
-    [InlineData(BatchTrafficKind.Instantaneous)]
-    public async Task EachStreamSendsOnePassSpreadAcrossWindowAndRepeats(BatchTrafficKind kind)
+    [Fact]
+    public async Task RoutingSendsOnePassSpreadAcrossWindowAndRepeats()
     {
+        const BatchTrafficKind kind = BatchTrafficKind.Routing;
         var f = new Fixture("2026-09-13T18:30:00Z", 3, kind);
         await f.Service.StartAsync(default);
         try
@@ -91,6 +92,34 @@ public class BatchTrafficTests
             Assert.Equal(new long[] { 1, 2, 3 }, f.Sender.Sent.ToArray());
             f.Clock.Advance(TimeSpan.FromMinutes(10));
             await Until(() => f.Sender.Sent.Count == 4);
+        }
+        finally
+        {
+            await f.Service.StopAsync(default);
+            f.Service.Dispose();
+        }
+    }
+
+    [Theory]
+    [InlineData(BatchTrafficKind.Instantaneous, "2026-09-13T18:36:00Z", "2026-09-13T19:00:00Z")]
+    [InlineData(BatchTrafficKind.Events, "2026-09-13T18:36:00Z", "2026-09-13T19:00:00Z")]
+    [InlineData(BatchTrafficKind.Esw, "2026-09-13T18:36:00Z", "2026-09-13T19:00:00Z")]
+    [InlineData(BatchTrafficKind.Rtc, "2026-09-13T18:36:00Z", "2026-09-13T19:00:00Z")]
+    [InlineData(BatchTrafficKind.Daily, "2026-09-13T18:29:59Z", "2026-09-13T18:30:00Z")]
+    [InlineData(BatchTrafficKind.Billing, "2026-09-30T18:29:59Z", "2026-09-30T18:30:00Z")]
+    public async Task ScheduledProfilesWaitForBoundaryThenBurst(BatchTrafficKind kind, string at, string expected)
+    {
+        var f = new Fixture(at, 3, kind);
+        await f.Service.StartAsync(default);
+        try
+        {
+            await Until(() => f.Service.State(f.Batch, kind).Status == "Scheduled");
+            Assert.Empty(f.Sender.Sent);
+            Assert.Equal(DateTimeOffset.Parse(expected), f.Service.State(f.Batch, kind).NextWindow);
+            f.Clock.Advance(DateTimeOffset.Parse(expected) - f.Clock.GetUtcNow());
+            await Until(() => f.Sender.Sent.Count == 3);
+            Assert.Equal([f.Batch.StartIndex, f.Batch.StartIndex + 1, f.Batch.StartIndex + 2],
+                f.Sender.Sent.OrderBy(index => index));
         }
         finally
         {
@@ -143,6 +172,30 @@ public class BatchTrafficTests
             Assert.Equal(1, report.Unsent);
             Assert.Equal([f.Batch.StartIndex + 1], report.UnsentMeterIndexes());
             Assert.True(f.Sender.Canceled);
+        }
+        finally
+        {
+            await f.Service.StopAsync(default);
+            f.Service.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task OneFailedScheduledMeterDoesNotAbortTheBurst()
+    {
+        var f = new Fixture("2026-09-13T18:30:00Z", 3, BatchTrafficKind.Instantaneous);
+        f.Sender.FailIndex = f.Batch.StartIndex + 1;
+        await f.Service.StartAsync(default);
+        try
+        {
+            await Until(() => f.Sender.Sent.Count == 2);
+            f.Clock.Advance(TimeSpan.FromMinutes(30));
+            await Until(() => f.Service.State(f.Batch, BatchTrafficKind.Instantaneous).Status == "Waiting for next window");
+            var state = f.Service.State(f.Batch, BatchTrafficKind.Instantaneous);
+            Assert.Equal(2, state.Sent);
+            Assert.Equal(1, state.Failed);
+            Assert.Contains("meter failed", state.Error);
+            Assert.Equal([f.Batch.StartIndex, f.Batch.StartIndex + 2], f.Sender.Sent.Distinct().OrderBy(index => index));
         }
         finally
         {
@@ -282,6 +335,7 @@ public class BatchTrafficTests
         public int BlockPeriodSeconds { get; set; }
         public bool Block, Entered, Blocked, Canceled;
         public long BlockIndex { get; set; } = -1;
+        public long FailIndex { get; set; } = -1;
         public int BlockCapturePeriodSeconds(MeterBatch batch) => BlockPeriodSeconds;
         public Task<IBatchTrafficSession> OpenAsync(MeterBatch batch, BatchTrafficKind kind,
             DateTimeOffset? captureSlot, CancellationToken token) =>
@@ -298,6 +352,7 @@ public class BatchTrafficTests
                     }
                 }
                 catch (OperationCanceledException) { Canceled = true; throw; }
+                if (index == FailIndex) throw new IOException("meter failed");
                 Sent.Enqueue(index);
             }, () => ValueTask.CompletedTask));
     }
