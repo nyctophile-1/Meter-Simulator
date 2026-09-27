@@ -83,13 +83,13 @@
         Prepared memory estimates payloads, topics and dataset bookkeeping; meter sessions and temporary encoding buffers use additional RAM.
         Prepared Fire has no wave pauses. Data is single-use; prepare again for another burst.
     </MudText>
-    @if (Push.Options.UseCiphering)
+    @if (Push.Options.UseCiphering && _profile != MqttPushProfiles.Fg23Routing)
     {
         <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">Ciphering is enabled. Use live sending so invocation counters are generated close to transmission.</MudAlert>
     }
     <div style="display:flex;gap:12px;flex-wrap:wrap;">
         <MudButton Variant="Variant.Outlined" Disabled="@(Locked || !_batchIds.Any())" OnClick="@(() => Start(false))">@(_continuous ? "Start continuous loop" : "Send live")</MudButton>
-        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(Locked || _continuous || !_batchIds.Any() || Push.Options.UseCiphering)" OnClick="@(() => Start(true))">Prepare</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(Locked || _continuous || !_batchIds.Any() || (Push.Options.UseCiphering && _profile != MqttPushProfiles.Fg23Routing))" OnClick="@(() => Start(true))">Prepare</MudButton>
         <MudButton Variant="Variant.Filled" Color="Color.Success" Disabled="@(_state.Phase != "Ready" || Disabled)" OnClick="Fire">Fire prepared burst</MudButton>
         <MudButton Variant="Variant.Outlined" Color="Color.Error" Disabled="@(!_state.IsActive || _state.Phase == "Stopping")" OnClick="Stress.StopAsync">
             @(_state.Phase == "Ready" ? "Discard prepared data" : "Stop")
