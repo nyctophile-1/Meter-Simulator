@@ -146,6 +146,9 @@ public sealed class SharedNicOptions
     /// </summary>
     public int MaxConcurrentBrainCalls { get; set; } = Environment.ProcessorCount * 4;
 
+    /// <summary>Maximum concurrent reply publishes per broker connection.</summary>
+    public int MaxConcurrentReplyPublishes { get; set; } = 32;
+
     /// <summary>On shutdown, how long queued messages get to finish before being abandoned.</summary>
     public int ShutdownDrainSeconds { get; set; } = 10;
 
@@ -168,8 +171,8 @@ public sealed class MqttNicOptions
     /// <summary>Pause between publishing consecutive fragments, for NICs that cannot absorb a burst.</summary>
     public int InterFragmentDelayMs { get; set; }
 
-    /// <summary>QoS used when publishing responses. HES clamps its own setting to 2.</summary>
-    public int PublishQos { get; set; } = 2;
+    /// <summary>QoS used for replies. QoS 0 avoids acknowledgement round trips.</summary>
+    public int PublishQos { get; set; } = 0;
 
     /// <summary>QoS requested when subscribing to the request topics.</summary>
     public int SubscribeQos { get; set; } = 2;

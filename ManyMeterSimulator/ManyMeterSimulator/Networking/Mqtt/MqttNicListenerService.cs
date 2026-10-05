@@ -295,7 +295,8 @@ public sealed class MqttNicListenerService : BackgroundService, IMqttPushPublish
             _loggerFactory.CreateLogger($"ManyMeterSimulator.Networking.Mqtt.{binding}"),
             binding.Transport,
             _options.ConnectionFor(endpoint),
-            envelope => OnMessageAsync(bound!, envelope, stop.Token));
+            envelope => OnMessageAsync(bound!, envelope, stop.Token),
+            _options.Shared.MaxConcurrentReplyPublishes);
 
         bound = new BoundBrokerClient(binding, endpoint, client, codec, variant, stop);
         _clients[binding] = bound;
@@ -303,8 +304,9 @@ public sealed class MqttNicListenerService : BackgroundService, IMqttPushPublish
         bound.Runner = client.RunAsync(codec.RequestTopicFilters, variant.SubscribeQos, stop.Token);
 
         _logger.LogInformation(
-            "Started MQTT client {Binding} → {Broker}; subscribed to {Filters}",
-            binding, endpoint.Describe(), string.Join(", ", codec.RequestTopicFilters));
+            "Started MQTT client {Binding} → {Broker}; subscribed to {Filters}; reply QoS {ReplyQos}, publish concurrency {PublishConcurrency}",
+            binding, endpoint.Describe(), string.Join(", ", codec.RequestTopicFilters),
+            variant.PublishQos, _options.Shared.MaxConcurrentReplyPublishes);
     }
 
     private async Task ShutdownAsync()
@@ -512,11 +514,21 @@ public sealed class MqttNicListenerService : BackgroundService, IMqttPushPublish
                 _logger.LogDebug("Meter {Meter}: custom command {Command} is not implemented", item.Meter, inbound.Intent.Command);
                 return;
             }
+
             // Admission is shared with ordinary requests, but the DLMS association is isolated.
-            if (!TryTouchOrOpenSession(item.Meter, out ConnectionState? customSession)) return;
+            if (!TryTouchOrOpenSession(item.Meter, out ConnectionState? customSession))
+            {
+                return;
+            }
+
             string[] topicParts = item.Envelope.Topic.Split('/');
-            if (topicParts.Length != 4 || topicParts[2].Length == 0 || topicParts[3].Length == 0) return;
+            if (topicParts.Length != 4 || topicParts[2].Length == 0 || topicParts[3].Length == 0)
+            {
+                return;
+            }
+
             WarnIfCrossBroker(item);
+
             try
             {
                 IReadOnlyList<byte[]> responses = inbound.Intent.Command switch
@@ -525,21 +537,32 @@ public sealed class MqttNicListenerService : BackgroundService, IMqttPushPublish
                     CustomCommandType.GetAllPrepaidParameters => [_customPrepaid.Execute(inbound, cancellationToken)],
                     _ => _customProfiles.Execute(inbound, cancellationToken),
                 };
+
                 foreach (byte[] framed in responses)
                 {
                     NicPublish publish = ManyMeterSimulator.Networking.CustomPush.WirepasCustomPushEnvelope.Create(
                         topicParts[2], topicParts[3], item.Route.NodeId, 13, framed);
-                    await item.Source.Client.PublishAsync(publish.Topic, publish.Payload, item.Options.PublishQos, cancellationToken);
+                    bool sent = await item.Source.Client.PublishAsync(
+                        publish.Topic, publish.Payload, item.Options.PublishQos, cancellationToken);
+
+                    if (!sent)
+                    {
+                        _logger.LogWarning("Meter {Meter}: custom {Command} frame {FrameId} reply incomplete via {Binding}",
+                            item.Meter, inbound.Intent.Command, inbound.Request.FrameId, item.Source.Binding);
+                        return;
+                    }
                 }
+
                 customSession!.Touch();
                 customSession.RecordExchange();
-                _logger.LogInformation("Meter {Meter}: answered custom {Command} frame {FrameId} in {Packets} packets via {Binding}",
-                    item.Meter, inbound.Intent.Command, inbound.Request.FrameId, responses.Count, item.Source.Binding);
+                _logger.LogInformation("Meter {Meter}: sent custom {Command} frame {FrameId} in {Packets} packets via {Binding} at QoS {Qos}",
+                    item.Meter, inbound.Intent.Command, inbound.Request.FrameId, responses.Count, item.Source.Binding, item.Options.PublishQos);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 _logger.LogWarning(ex, "Meter {Meter}: custom {Command} failed", item.Meter, inbound.Intent.Command);
             }
+
             return;
         }
 
@@ -580,8 +603,15 @@ public sealed class MqttNicListenerService : BackgroundService, IMqttPushPublish
         var stopwatch = Stopwatch.StartNew();
         _metrics.BeginInboundExchange();
         byte[] response;
-        try { response = await _bridge.ExchangeAsync(item.Meter, decoded.DlmsFrame!, cancellationToken); }
-        finally { _metrics.EndInboundExchange(); }
+        try
+        {
+            response = await _bridge.ExchangeAsync(item.Meter, decoded.DlmsFrame!, cancellationToken);
+        }
+        finally
+        {
+            _metrics.EndInboundExchange();
+        }
+
         stopwatch.Stop();
         _metrics.RecordExchange(item.Meter.Nic, stopwatch.Elapsed);
         session.Touch();
@@ -607,11 +637,16 @@ public sealed class MqttNicListenerService : BackgroundService, IMqttPushPublish
                 _captures.Write(item.Transport, "out", publish.Topic, item.Route.NodeId, publish.Payload);
             }
 
-            // THE broker rule: answer on the connection the request arrived on. Looking the client
-            // up by transport here would be ambiguous the moment two brokers serve one transport,
-            // and a half-completed DLMS exchange split across brokers is invisible to HES — it just
-            // sees an association that answers once and then goes quiet.
-            await item.Source.Client.PublishAsync(publish.Topic, publish.Payload, item.Options.PublishQos, cancellationToken);
+            // Reply on the connection that received the request.
+            bool sent = await item.Source.Client.PublishAsync(
+                publish.Topic, publish.Payload, item.Options.PublishQos, cancellationToken);
+
+            if (!sent)
+            {
+                _logger.LogWarning("Meter {Meter}: frame {FrameId} reply incomplete via {Binding}",
+                    item.Meter, decoded.FrameId, item.Source.Binding);
+                return;
+            }
 
             if (item.Options.InterFragmentDelayMs > 0 && publishes.Count > 1)
             {
@@ -619,16 +654,15 @@ public sealed class MqttNicListenerService : BackgroundService, IMqttPushPublish
             }
         }
 
-        // The first answer from a meter is the interesting one — it proves the whole chain works.
-        // Everything after it is routine, so it drops to Debug and stays quiet at fleet scale.
+        // Log the first reply at Information and subsequent replies at Debug.
         long exchanges = session.RecordExchange();
         LogLevel level = exchanges == 1 ? LogLevel.Information : LogLevel.Debug;
 
         _logger.Log(
             level,
-            "Meter {Meter}: answered frame {FrameId} with {Bytes} DLMS bytes on {Topic} via {Binding} ({LatencyMs}ms, exchange {Count})",
+            "Meter {Meter}: sent frame {FrameId} with {Bytes} DLMS bytes on {Topic} via {Binding} ({LatencyMs}ms, exchange {Count}, QoS {Qos})",
             item.Meter, decoded.FrameId, response.Length, publishes[0].Topic, item.Source.Binding,
-            stopwatch.Elapsed.TotalMilliseconds, exchanges);
+            stopwatch.Elapsed.TotalMilliseconds, exchanges, item.Options.PublishQos);
     }
 
     /// <summary>
