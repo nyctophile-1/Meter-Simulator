@@ -21,7 +21,7 @@ public sealed class MqttNicClient : IAsyncDisposable
     private readonly MqttBrokerOptions _broker;
     private readonly Func<NicEnvelope, Task> _onMessage;
     private readonly IMqttClient _client;
-    private readonly SemaphoreSlim _publishLock = new(1, 1);
+    private readonly SemaphoreSlim _publishSlots;
 
     private IReadOnlyList<string> _topicFilters = Array.Empty<string>();
     private int _subscribeQos = 2;
@@ -30,12 +30,16 @@ public sealed class MqttNicClient : IAsyncDisposable
         ILogger logger,
         NicType nic,
         MqttBrokerOptions broker,
-        Func<NicEnvelope, Task> onMessage)
+        Func<NicEnvelope, Task> onMessage,
+        int maxConcurrentPublishes = 32)
     {
+        ArgumentOutOfRangeException.ThrowIfLessThan(maxConcurrentPublishes, 1);
+
         _logger = logger;
         _nic = nic;
         _broker = broker;
         _onMessage = onMessage;
+        _publishSlots = new SemaphoreSlim(maxConcurrentPublishes, maxConcurrentPublishes);
 
         _client = new MqttClientFactory().CreateMqttClient();
         _client.ApplicationMessageReceivedAsync += HandleMessageAsync;
@@ -184,12 +188,8 @@ public sealed class MqttNicClient : IAsyncDisposable
     }
 
     /// <summary>
-    /// Publishes one pull reply at a time on the listener connection. Push uses a separate pool.
-    ///
-    /// The broker's acknowledgement is checked rather than discarded: at QoS 1/2 a failure here
-    /// means the broker never took the message, which is a completely different problem from the
-    /// broker taking it and no one being subscribed. Without this the two are indistinguishable
-    /// from our side.
+    /// Bounds concurrent replies across meters. Callers preserve each meter's fragment order.
+    /// QoS 0 success means the packet was sent, not acknowledged by the broker.
     /// </summary>
     public async Task<bool> PublishAsync(string topic, byte[] payload, int qos, CancellationToken cancellationToken)
     {
@@ -199,7 +199,8 @@ public sealed class MqttNicClient : IAsyncDisposable
             .WithQualityOfServiceLevel((MqttQualityOfServiceLevel)qos)
             .Build();
 
-        await _publishLock.WaitAsync(cancellationToken);
+        await _publishSlots.WaitAsync(cancellationToken);
+
         MqttClientPublishResult result;
         try
         {
@@ -207,19 +208,24 @@ public sealed class MqttNicClient : IAsyncDisposable
         }
         finally
         {
-            _publishLock.Release();
+            _publishSlots.Release();
         }
 
         if (!result.IsSuccess)
         {
             _logger.LogWarning(
-                "{Nic}: broker REJECTED publish to {Topic} — {ReasonCode} {ReasonString}",
+                "{Nic}: publish to {Topic} failed — {ReasonCode} {ReasonString}",
                 _nic, topic, result.ReasonCode, result.ReasonString);
+        }
+        else if (qos == 0)
+        {
+            _logger.LogDebug("{Nic}: sent QoS 0 publish to {Topic}; broker acknowledgement unavailable", _nic, topic);
         }
         else
         {
             _logger.LogDebug("{Nic}: broker accepted publish to {Topic} ({ReasonCode})", _nic, topic, result.ReasonCode);
         }
+
         return result.IsSuccess;
     }
 
@@ -247,7 +253,7 @@ public sealed class MqttNicClient : IAsyncDisposable
     {
         _client.ApplicationMessageReceivedAsync -= HandleMessageAsync;
         _client.Dispose();
-        _publishLock.Dispose();
+        _publishSlots.Dispose();
         await ValueTask.CompletedTask;
     }
 }
