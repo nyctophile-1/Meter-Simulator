@@ -132,14 +132,14 @@ public sealed class SessionMaintenanceService : BackgroundService
             "{Kind} metrics [{Scope}]: active={Active}, accepted={Accepted}, rejectedCollision={RejectedCollision}, " +
             "rejectedMaxConn={RejectedMaxConn}, rejectedBatchNotRunning={RejectedBatchNotRunning}, " +
             "rejectedNoTemplate={RejectedNoTemplate}, idleTimeouts={IdleTimeouts}, exchanges={Exchanges}, " +
-            "avgExchangesPerSession={AvgExchanges:F1}, " +
+            "successfulCommands={SuccessfulCommands}, avgExchangesPerSession={AvgExchanges:F1}, " +
             "avgBridgeLatency={AvgLatencyMs}ms, maxBridgeLatency={MaxLatencyMs}ms, " +
             "droppedMailboxFull={MailboxFull}, malformed={Malformed}, ignored={Ignored}, " +
             "fragmentTimeouts={FragmentTimeouts}{Impairment}",
             kind, scope, snapshot.ActiveConnections, snapshot.TotalAccepted, snapshot.TotalRejectedCollision,
             snapshot.TotalRejectedMaxConnections, snapshot.TotalRejectedBatchNotRunning,
             snapshot.TotalRejectedNoTemplate, snapshot.TotalIdleTimeouts, snapshot.TotalExchanges,
-            snapshot.AvgExchangesPerSession,
+            snapshot.TotalSuccessfulCommands, snapshot.AvgExchangesPerSession,
             snapshot.AvgBridgeLatency.TotalMilliseconds, snapshot.MaxBridgeLatency.TotalMilliseconds,
             snapshot.TotalDroppedMailboxFull, snapshot.TotalMalformedPackets, snapshot.TotalIgnoredPackets,
             snapshot.TotalFragmentTimeouts,

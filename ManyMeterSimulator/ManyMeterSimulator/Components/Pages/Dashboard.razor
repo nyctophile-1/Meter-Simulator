@@ -177,7 +177,7 @@
                     <tr>
                         <th>NIC</th>
                         <th style="text-align:right">Active DLMS sessions</th>
-                        <th style="text-align:right">Exchanges<br />/min</th>
+                        <th style="text-align:right">Successful commands<br />/sec</th>
                         <th style="text-align:right">Pushes<br />/sec</th>
                         <th style="text-align:right">Exchanges<br />/sec</th>
                     </tr>
@@ -189,13 +189,18 @@
                         <tr class="batch-row is-idle">
                             <td><span class="nic-badge nic-badge-@nic.ToString().ToLowerInvariant()">@NicLabel(nic)</span></td>
                             <td style="text-align:right">@s.ActiveConnections.ToString("N0")</td>
-                            <td style="text-align:right">@NicExchangesPerMinute(nic).ToString("N0")</td>
+                            <td style="text-align:right">@NicSuccessfulCommandsPerSecond(nic).ToString("N1")</td>
                             <td style="text-align:right">@NicPushesPerSecond(nic).ToString("N1")</td>
                             <td style="text-align:right">@NicExchangesPerSecond(nic).ToString("N1")</td>
                         </tr>
                     }
                 </tbody>
             </MudSimpleTable>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary mt-2">
+                Success = a meter operation completed by MAYA's brain. Handshakes, errors and intermediate
+                blocks are excluded. Delivery and HES storage are not measured. Command and exchange rates
+                average the last 60 seconds; push rates use the latest sample.
+            </MudText>
         </MudPaper>
     </MudItem>
 
@@ -640,8 +645,9 @@
     {
         ("Active DLMS sessions", _snap.ActiveConnections.ToString("N0"), Icons.Material.Filled.Cable, Color.Success),
         ("Provisioned meters", _provisionedMeters.ToString("N0"), Icons.Material.Filled.Dns, Color.Info),
-        ("Exchanges/min", ExchangesPerMinute().ToString("N0"), Icons.Material.Filled.SwapHoriz, Color.Primary),
-        ("Accepted/min", AcceptedPerMinute().ToString("N0"), Icons.Material.Filled.CheckCircle, Color.Success),
+        ("Exchanges/sec", ExchangesPerSecond().ToString("N1"), Icons.Material.Filled.SwapHoriz, Color.Primary),
+        ("Successful commands/sec", SuccessfulCommandsPerSecond().ToString("N1"), Icons.Material.Filled.CheckCircle, Color.Success),
+        ("Sessions accepted/min", AcceptedPerMinute().ToString("N0"), Icons.Material.Filled.CheckCircle, Color.Success),
         ("MQTT pushes/sec", AllNicTypes.Where(NicTypes.IsMqtt).Sum(NicPushesPerSecond).ToString("N1"), Icons.Material.Filled.Send, Color.Secondary),
         ("TCP pushes/sec", NicPushesPerSecond(NicType.Tcp4G).ToString("N1"), Icons.Material.Filled.Send, Color.Info),
     };
@@ -668,27 +674,20 @@
     // When the app has been running for days, these remain immediately meaningful and never need
     // an operator reset. During the first minute, use the available interval; afterwards this is
     // always a true trailing 60-second rate, while the chart still retains 120 seconds of context.
-    private double ExchangesPerMinute() => PerMinute(s => s.TotalExchanges);
-    private double AcceptedPerMinute() => PerMinute(s => s.TotalAccepted);
+    private double ExchangesPerSecond() => PerSecond(s => s.TotalExchanges);
+    private double SuccessfulCommandsPerSecond() => PerSecond(s => s.TotalSuccessfulCommands);
+    private double AcceptedPerMinute() => PerSecond(s => s.TotalAccepted) * 60;
 
-    private double NicExchangesPerMinute(NicType nic) => PerMinute(s =>
+    private double NicExchangesPerSecond(NicType nic) => PerSecond(s =>
         s.ByNic.TryGetValue(nic, out NicActivityTotals totals) ? totals.TotalExchanges : 0);
 
     private double NicPushesPerSecond(NicType nic) => DashboardActivityHistory.PushesPerSecond(_activitySamples, nic);
 
-    private double NicExchangesPerSecond(NicType nic) => NicExchangesPerMinute(nic) / 60;
+    private double NicSuccessfulCommandsPerSecond(NicType nic) => PerSecond(s =>
+        s.ByNic.TryGetValue(nic, out NicActivityTotals totals) ? totals.TotalSuccessfulCommands : 0);
 
-    private double PerMinute(Func<DashboardActivitySample, long> total)
-    {
-        if (_activitySamples.Count < 2) return 0;
-        DashboardActivitySample last = _activitySamples[^1];
-        DateTimeOffset start = last.TimestampUtc.AddMinutes(-1);
-        DashboardActivitySample first = _activitySamples
-            .Where(s => s.TimestampUtc <= start)
-            .LastOrDefault(_activitySamples[0]);
-        double seconds = Math.Max(0.001, (last.TimestampUtc - first.TimestampUtc).TotalSeconds);
-        return Math.Max(0, (total(last) - total(first)) / seconds * 60);
-    }
+    private double PerSecond(Func<DashboardActivitySample, long> total) =>
+        DashboardActivityHistory.PerSecond(_activitySamples, total);
 
     private double ExchangesPerSecondAt(int index)
     {

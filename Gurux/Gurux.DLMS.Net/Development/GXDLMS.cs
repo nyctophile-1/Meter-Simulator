@@ -1263,6 +1263,7 @@ namespace Gurux.DLMS
         /// <param name="reply">Generated message.</param>
         internal static void GetLNPdu(GXDLMSLNParameters p, GXByteBuffer reply)
         {
+            byte[] plaintextResponse = null;
             bool ciphering = p.command != Command.Aarq && p.command != Command.Aare &&
                 (p.settings.IsCiphered(true) || p.cipheredCommand != Command.None ||
                 (p.settings.Cipher != null && p.settings.Cipher.Signing == Signing.GeneralSigning));
@@ -1493,6 +1494,14 @@ namespace Gurux.DLMS
                         //Get request size can be bigger than PDU size.
                         if ((p.settings.NegotiatedConformance & Conformance.GeneralBlockTransfer) != 0)
                         {
+                            if (p.command != Command.GeneralBlockTransfer && p.settings.CryptoNotifier != null &&
+                                p.settings.CryptoNotifier.responsePdu != null)
+                            {
+                                GXByteBuffer plaintext = new GXByteBuffer(reply.Array());
+                                plaintext.Set(p.data.Data, p.data.Position, p.data.Available);
+                                plaintextResponse = plaintext.Array();
+                            }
+
                             if (7 + len + reply.Size > p.settings.MaxPduSize)
                             {
                                 len = p.settings.MaxPduSize - reply.Size - 7;
@@ -1546,6 +1555,13 @@ namespace Gurux.DLMS
                 {
                     p.settings.CryptoNotifier.pdu(p.settings.CryptoNotifier, reply.Array());
                 }
+
+                if (plaintextResponse == null && p.command != Command.GeneralBlockTransfer &&
+                    p.settings.CryptoNotifier != null && p.settings.CryptoNotifier.responsePdu != null)
+                {
+                    plaintextResponse = reply.Array();
+                }
+
                 if (ciphering && reply.Size != 0 && p.command != Command.ReleaseRequest && (!p.multipleBlocks || (p.settings.NegotiatedConformance & Conformance.GeneralBlockTransfer) == 0))
                 {
                     //GBT ciphering is done for all the data, not just block.
@@ -1618,6 +1634,11 @@ namespace Gurux.DLMS
                     p.command = Command.GatewayRequest;
                 }
             }
+            if (p.settings.CryptoNotifier != null && p.settings.CryptoNotifier.responsePdu != null)
+            {
+                p.settings.CryptoNotifier.responsePdu(plaintextResponse, !p.multipleBlocks || p.lastBlock);
+            }
+
             if (UseHdlc(p.settings.InterfaceType))
             {
                 AddLLCBytes(p.settings, reply);

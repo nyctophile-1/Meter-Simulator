@@ -1,6 +1,7 @@
 using ManyMeterSimulator.MqttBridge;
 using ManyMeterSimulator.Networking.Nic;
 using MeterSimulator.DLMS;
+using ManyMeterSimulator.Diagnostics;
 
 namespace ManyMeterSimulator.Brain;
 
@@ -13,16 +14,20 @@ public sealed class BrainMeterSimBridge : IMeterSimBridge
 {
     private readonly MeterSessionManager _sessions;
     private readonly ILogger<BrainMeterSimBridge> _logger;
+    private readonly SimulatorMetrics _metrics;
 
-    public BrainMeterSimBridge(MeterSessionManager sessions, ILogger<BrainMeterSimBridge> logger)
+    public BrainMeterSimBridge(MeterSessionManager sessions, ILogger<BrainMeterSimBridge> logger,
+        SimulatorMetrics metrics)
     {
         _sessions = sessions;
         _logger = logger;
+        _metrics = metrics;
     }
 
     public async Task<byte[]> ExchangeAsync(MeterRef meter, byte[] requestFrame, CancellationToken cancellationToken)
     {
         DLMSServerSession session;
+
         try
         {
             session = _sessions.GetOrCreate(meter);
@@ -43,7 +48,15 @@ public sealed class BrainMeterSimBridge : IMeterSimBridge
         {
             lock (session)
             {
-                return session.HandleRequest(requestFrame) ?? Array.Empty<byte>();
+                long before = session.SuccessfulCommands;
+                byte[] response = session.HandleRequest(requestFrame) ?? Array.Empty<byte>();
+
+                if (session.SuccessfulCommands > before)
+                {
+                    _metrics.RecordCommandSucceeded(meter.Nic);
+                }
+
+                return response;
             }
         }, cancellationToken);
     }

@@ -65,6 +65,19 @@ namespace Gurux.DLMS
 
         EventWaitHandle waiting = null;
 
+        /// <summary>Observe plaintext responses and whether their final block was generated.</summary>
+        public event Action<byte[], bool> OnResponsePdu
+        {
+            add
+            {
+                Settings.CryptoNotifier.responsePdu += value;
+            }
+            remove
+            {
+                Settings.CryptoNotifier.responsePdu -= value;
+            }
+        }
+
         /// <summary>
         /// List of times when last objects are executed last time.
         /// </summary>
