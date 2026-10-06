@@ -2390,22 +2390,22 @@
     <Buffer>
       <Row>
         <Cell Type="25">06/08/2026 18:30:00</Cell>
-        <Cell Type="24" UIType="24">4677488.76953125</Cell>
-        <Cell Type="24" UIType="24">4875637.20703125</Cell>
+        <Cell Type="24" UIType="24">467.7489</Cell>
+        <Cell Type="24" UIType="24">487.5637</Cell>
         <Cell Type="24" UIType="24">0</Cell>
         <Cell Type="24" UIType="24">0</Cell>
       </Row>
       <Row>
         <Cell Type="25">06/09/2026 18:30:00</Cell>
-        <Cell Type="24" UIType="24">4684814.453125</Cell>
-        <Cell Type="24" UIType="24">4883597.16796875</Cell>
+        <Cell Type="24" UIType="24">468.4814</Cell>
+        <Cell Type="24" UIType="24">488.3597</Cell>
         <Cell Type="24" UIType="24">0</Cell>
         <Cell Type="24" UIType="24">0</Cell>
       </Row>
       <Row>
         <Cell Type="25">04/01/2026 18:30:00</Cell>
-        <Cell Type="24" UIType="24">3931662.35351563</Cell>
-        <Cell Type="24" UIType="24">4093066.16210938</Cell>
+        <Cell Type="24" UIType="24">393.1662</Cell>
+        <Cell Type="24" UIType="24">409.3066</Cell>
         <Cell Type="24" UIType="24">0</Cell>
         <Cell Type="24" UIType="24">0</Cell>
       </Row>
