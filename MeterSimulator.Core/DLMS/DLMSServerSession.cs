@@ -93,7 +93,12 @@ namespace MeterSimulator.DLMS
             InterfaceType.WRAPPER)
         {
             if (string.IsNullOrWhiteSpace(templatePath))
+            {
                 throw new ArgumentException("A meter template (XML) path is required.", nameof(templatePath));
+            }
+
+            OnResponsePdu += ObserveCommandResponse;
+
             // Enable server-side ciphering so the meter supports the ciphered LN association
             // (application-context LN_WITH_CIPHERING) that a secured HES/GXDLMSDirector uses.
             // Without this the server downgrades to plain LN and permanently rejects the AARQ.
@@ -1576,6 +1581,8 @@ namespace MeterSimulator.DLMS
         #region Server Hooks
         protected override void PreAction(ValueEventArgs[] args)
         {
+            _associationAction = args.Any(arg => arg.Target is GXDLMSAssociationLogicalName);
+
             foreach (var arg in args)
             {
                 if (ActionFota(arg))

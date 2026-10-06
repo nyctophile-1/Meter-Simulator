@@ -529,14 +529,26 @@ public sealed class MqttNicListenerService : BackgroundService, IMqttPushPublish
 
             WarnIfCrossBroker(item);
 
+            _metrics.BeginInboundExchange();
+
             try
             {
+                var customStopwatch = Stopwatch.StartNew();
                 IReadOnlyList<byte[]> responses = inbound.Intent.Command switch
                 {
                     CustomCommandType.GetRealtimeClock => [_customRtc.Execute(inbound, cancellationToken)],
                     CustomCommandType.GetAllPrepaidParameters => [_customPrepaid.Execute(inbound, cancellationToken)],
                     _ => _customProfiles.Execute(inbound, cancellationToken),
                 };
+
+                _metrics.RecordExchange(item.Transport, customStopwatch.Elapsed);
+
+                if (responses.Count == 0)
+                {
+                    return;
+                }
+
+                _metrics.RecordCommandSucceeded(item.Transport);
 
                 foreach (byte[] framed in responses)
                 {
@@ -561,6 +573,10 @@ public sealed class MqttNicListenerService : BackgroundService, IMqttPushPublish
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 _logger.LogWarning(ex, "Meter {Meter}: custom {Command} failed", item.Meter, inbound.Intent.Command);
+            }
+            finally
+            {
+                _metrics.EndInboundExchange();
             }
 
             return;

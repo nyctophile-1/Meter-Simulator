@@ -49,6 +49,8 @@ public sealed class SimulatorMetrics
 
     public void RecordAccepted(NicType nic) => Interlocked.Increment(ref For(nic).TotalAccepted);
 
+    public void RecordCommandSucceeded(NicType nic) => Interlocked.Increment(ref For(nic).TotalSuccessfulCommands);
+
     public int ActiveInboundExchanges => (int)Math.Clamp(Interlocked.Read(ref _activeInboundExchanges), 0, int.MaxValue);
     public void BeginInboundExchange() => Interlocked.Increment(ref _activeInboundExchanges);
     public void EndInboundExchange() => Interlocked.Decrement(ref _activeInboundExchanges);
@@ -188,9 +190,11 @@ public sealed class SimulatorMetrics
         long mailboxFull = 0, malformed = 0, fragTimeouts = 0, ignored = 0, crossBroker = 0;
         long pushSent = 0, pushFailed = 0, pushSkipped = 0, pushPayloadsSent = 0, pushPayloadsFailed = 0;
         long pushTicksSum = 0, pushTicksMax = 0, pushSamples = 0;
+        long successfulCommands = 0;
 
         foreach (NicCounters c in _byNic)
         {
+            successfulCommands += Interlocked.Read(ref c.TotalSuccessfulCommands);
             pushSent += Interlocked.Read(ref c.TotalPushMetersSent);
             pushFailed += Interlocked.Read(ref c.TotalPushMetersFailed);
             pushSkipped += Interlocked.Read(ref c.TotalPushMetersSkipped);
@@ -218,13 +222,14 @@ public sealed class SimulatorMetrics
         return Build(activeConnections, accepted, collision, maxConn, notRunning, noTemplate, idle,
             exchanges, ticksSum, ticksMax, mailboxFull, malformed, fragTimeouts, ignored, crossBroker,
             pushSent, pushFailed, pushSkipped, pushPayloadsSent, pushPayloadsFailed,
-            pushTicksSum, pushTicksMax, pushSamples);
+            pushTicksSum, pushTicksMax, pushSamples, successfulCommands);
     }
 
     /// <summary>Totals for a single NIC. <paramref name="activeConnections"/> is the caller's own count.</summary>
     public SimulatorMetricsSnapshot Snapshot(NicType nic, int activeConnections)
     {
         NicCounters c = For(nic);
+
         return Build(
             activeConnections,
             Interlocked.Read(ref c.TotalAccepted),
@@ -248,7 +253,8 @@ public sealed class SimulatorMetrics
             Interlocked.Read(ref c.TotalPushPayloadsFailed),
             Interlocked.Read(ref c.PushLatencyTicksSum),
             Interlocked.Read(ref c.PushLatencyMaxTicks),
-            Interlocked.Read(ref c.PushLatencySamples));
+            Interlocked.Read(ref c.PushLatencySamples),
+            Interlocked.Read(ref c.TotalSuccessfulCommands));
     }
 
     /// <summary>Every NIC that has seen any traffic at all — what the periodic summary iterates.</summary>
@@ -279,7 +285,8 @@ public sealed class SimulatorMetrics
         long noTemplate, long idle, long exchanges, long ticksSum, long ticksMax,
         long mailboxFull, long malformed, long fragmentTimeouts, long ignored, long crossBroker,
         long pushSent, long pushFailed, long pushSkipped, long pushPayloadsSent,
-        long pushPayloadsFailed, long pushTicksSum, long pushTicksMax, long pushSamples)
+        long pushPayloadsFailed, long pushTicksSum, long pushTicksMax, long pushSamples,
+        long successfulCommands)
     {
         // Averaged over meters actually pushed (success or failure), not over every meter in the
         // fleet — a batch that never pushed must not drag this toward zero and read as "fast".
@@ -312,7 +319,7 @@ public sealed class SimulatorMetrics
             Interlocked.Read(ref _totalBadCommDrops),
             avgBadCommDelay,
             pushSent, pushFailed, pushSkipped, pushPayloadsSent, pushPayloadsFailed,
-            avgPushLatency, TimeSpan.FromTicks(pushTicksMax));
+            avgPushLatency, TimeSpan.FromTicks(pushTicksMax), successfulCommands);
     }
 
     private NicCounters For(NicType nic) => _byNic[(int)nic];
@@ -342,6 +349,7 @@ public sealed class SimulatorMetrics
         public long TotalRejectedNoTemplate;
         public long TotalIdleTimeouts;
         public long TotalExchanges;
+        public long TotalSuccessfulCommands;
         public long BridgeLatencyTicksSum;
         public long BridgeLatencyMaxTicks;
         public long TotalDroppedMailboxFull;
@@ -392,7 +400,8 @@ public readonly record struct SimulatorMetricsSnapshot(
     long TotalPushPayloadsSent,
     long TotalPushPayloadsFailed,
     TimeSpan AvgPushLatency,
-    TimeSpan MaxPushLatency)
+    TimeSpan MaxPushLatency,
+    long TotalSuccessfulCommands = 0)
 {
     /// <summary>Meters actually attempted — what Sent and Failed add up to.</summary>
     public long TotalPushMetersAttempted => TotalPushMetersSent + TotalPushMetersFailed;

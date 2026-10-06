@@ -26,7 +26,10 @@ public sealed class DashboardActivityHistory : BackgroundService
 
     public IReadOnlyList<DashboardActivitySample> Snapshot()
     {
-        lock (_gate) return _samples.ToArray();
+        lock (_gate)
+        {
+            return _samples.ToArray();
+        }
     }
 
     public static double PushesPerSecond(IReadOnlyList<DashboardActivitySample> samples, NicType nic)
@@ -54,24 +57,48 @@ public sealed class DashboardActivityHistory : BackgroundService
     internal void Capture()
     {
         var byNic = new Dictionary<NicType, NicActivityTotals>();
+
         foreach (NicType nic in AllNics)
         {
             SimulatorMetricsSnapshot snapshot = _metrics.Snapshot(nic, _connections.ActiveCountFor(nic));
-            byNic[nic] = new NicActivityTotals(snapshot.TotalExchanges, snapshot.TotalAccepted, snapshot.TotalPushPayloadsSent);
+            byNic[nic] = new NicActivityTotals(snapshot.TotalExchanges, snapshot.TotalAccepted,
+                snapshot.TotalPushPayloadsSent, snapshot.TotalSuccessfulCommands);
         }
 
         SimulatorMetricsSnapshot total = _metrics.Snapshot(_connections.ActiveCount);
         var sample = new DashboardActivitySample(DateTimeOffset.UtcNow, total.ActiveConnections,
-            total.TotalExchanges, total.TotalAccepted, byNic);
+            total.TotalExchanges, total.TotalAccepted, byNic, total.TotalSuccessfulCommands);
+
         lock (_gate)
         {
             _samples.Add(sample);
-            if (_samples.Count > MaxPoints) _samples.RemoveAt(0);
+            if (_samples.Count > MaxPoints)
+            {
+                _samples.RemoveAt(0);
+            }
         }
+    }
+
+    public static double PerSecond(IReadOnlyList<DashboardActivitySample> samples,
+        Func<DashboardActivitySample, long> total)
+    {
+        if (samples.Count < 2)
+        {
+            return 0;
+        }
+
+        DashboardActivitySample last = samples[^1];
+        DateTimeOffset start = last.TimestampUtc.AddMinutes(-1);
+        DashboardActivitySample first = samples.LastOrDefault(s => s.TimestampUtc <= start) ?? samples[0];
+        double seconds = (last.TimestampUtc - first.TimestampUtc).TotalSeconds;
+
+        return seconds <= 0 ? 0 : Math.Max(0, (total(last) - total(first)) / seconds);
     }
 }
 
 public sealed record DashboardActivitySample(DateTimeOffset TimestampUtc, int ActiveConnections,
-    long TotalExchanges, long TotalAccepted, IReadOnlyDictionary<NicType, NicActivityTotals> ByNic);
+    long TotalExchanges, long TotalAccepted, IReadOnlyDictionary<NicType, NicActivityTotals> ByNic,
+    long TotalSuccessfulCommands = 0);
 
-public readonly record struct NicActivityTotals(long TotalExchanges, long TotalAccepted, long TotalPushPayloadsSent = 0);
+public readonly record struct NicActivityTotals(long TotalExchanges, long TotalAccepted,
+    long TotalPushPayloadsSent = 0, long TotalSuccessfulCommands = 0);
