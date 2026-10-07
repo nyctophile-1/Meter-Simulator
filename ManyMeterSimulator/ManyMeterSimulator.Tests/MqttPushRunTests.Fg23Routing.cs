@@ -64,7 +64,7 @@ public partial class MqttPushRunTests
                 (ulong)DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
         }
 
-        Assert.Contains(fixture.Publisher.Messages, m => m.Topic.Contains($"/gate_{batch.Id}_2/"));
+        Assert.Contains(fixture.Publisher.Messages, m => m.Topic.Contains("/gw_2002/"));
     }
 
     [Theory]

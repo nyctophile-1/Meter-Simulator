@@ -18,12 +18,13 @@ the required master-key and firmware-secret columns use the same demo global/HLS
 This does not add support for master-key rotation or firmware associations. Secrets and
 connection strings are excluded from previews, receipts and diagnostic messages.
 
-Direct TCP routes use `direct_tcp`; direct MQTT uses `direct_4g`. Wirepas and KMesh assign
-gateway `gate_{batchId}_{n}`, where `n = floor((meterIndex - batchStartIndex) / 1000) + 1`.
-Each gateway handles at most 1000 meters; its meters alternate across four sinks using
-`(meterIndex - 1) modulo 4`. Wirepas stores `sink0`â€“`sink3` (source endpoint 3);
-KMesh stores the equivalent numeric `0`â€“`3` (source endpoint -1). Batch and stress push
-envelopes use this same allocation so received traffic preserves the planned routes.
+Gateway IDs use the last four node-ID digits, preserving zeroes: `direct_tcp_1256`,
+`direct_4g_1256` (including IMG), `gw_1256` (Wirepas), or `kgw_1256` (KMesh).
+Assignment is independent of batch boundaries. A million consecutive meters occupy
+10,000 gateway buckets with 100 meters per bucket. Direct sinks remain `direct_tcp`
+or `direct_4g`. RF sinks remain `(meterIndex - 1) modulo 4`: Wirepas uses
+`sink0`–`sink3` (source endpoint 3), KMesh uses `0`–`3` (source endpoint -1).
+Registration, fake-routing topics, and RF data/routing push envelopes share this assignment.
 Nameplates retain their deterministic reserved IPv6 address and configured listener port.
 Routes start with `iscommunicating=false`. Required route timestamps record provisioning time,
 not measured communication. HES caches may need their normal refresh before seeing new rows.
@@ -52,7 +53,8 @@ changes to the batch, model or database after preview.
 - Registration created here carries a deterministic MAYA UUID in `nameplate.guid`.
   The UUID, exact node and serial mapping jointly establish ownership.
 - A legacy nameplate can be adopted only with a matching generated node, serial and
-  old `CRY` device identity or new `{nodeId}MAYA` identity, plus explicit operator acknowledgment of MAYA ownership.
+  old `CRY{serial}` device identity, `{nodeId}MAYA` identity, or the original script's
+  `MAYA00{serial digits}` identity, plus explicit operator acknowledgment of MAYA ownership.
   Prefix/range alone cannot authorize deletion.
 - If the node and serial match but neither the MAYA UUID nor a recognized legacy device
   identity matches, that meter is skipped. Its nameplate, security and routing rows remain
@@ -61,8 +63,11 @@ changes to the batch, model or database after preview.
   with no eligible meters cannot be submitted. Skipped rows are still included in preview
   revalidation, so a concurrent change requires a fresh preview.
 - Conflicting node/serial mappings, duplicate nameplates, out-of-range serial collisions,
-  or orphan security/routing block the entire operation. Duplicate security/routing for
-  an owned nameplate are replaced with one row each.
+  and orphan security/routing skip the affected meters instead of blocking the batch.
+  A crossed identity skips both participating in-range meters, including across chunk
+  boundaries. All their existing rows remain untouched. The preview reports counts by
+  skip reason, counting each meter once. Duplicate security/routing for an owned nameplate
+  are replaced with one row each.
 - A preview expires after five minutes and can be used once. Row IDs and PostgreSQL row
   versions are fingerprinted without fetching security material. Replacement rechecks the
   target, ownership and row versions after acquiring database locks.
@@ -97,5 +102,5 @@ reject any other host, database or user. They drop/recreate **only this disposab
 reported skipped; registry and authorization tests still run.
 
 Tests cover chunk boundaries, repeat replacement, outside-range/history preservation,
-legacy adoption, ownership collisions, orphan refusal, rollback after deletion, competing
+legacy adoption, ownership collisions, orphan skipping, rollback after deletion, competing
 replacements, cancellation, read-only targets and missing template IDs.

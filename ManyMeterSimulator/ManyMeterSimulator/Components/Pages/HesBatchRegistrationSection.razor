@@ -78,13 +78,18 @@
             @if (p.Inspection.SkippedMeters > 0)
             {
                 <MudAlert Severity="Severity.Warning">
-                    Skipping @p.Inspection.SkippedMeters.ToString("N0") meters: their existing registrations do not have a recognized MAYA identity.
-                    Their nameplate, security and routing rows will remain unchanged. @p.EligibleCount.ToString("N0") meters can continue.
+                    Skipping @p.Inspection.SkippedMeters.ToString("N0") meters with conflicting, incomplete or unrecognized registrations.
+                    Their nameplate, security and routing rows will remain unchanged. Eligible meters: @p.EligibleCount.ToString("N0").
+                    @foreach (var reason in p.Inspection.SkipReasons)
+                    {
+                        <div>@reason.Reason: @reason.Meters.ToString("N0") meters.</div>
+                    }
                     Example nodes: @string.Join(", ", p.Inspection.SkippedNodes).
                 </MudAlert>
             }
             @if (p.Inspection.LegacyMeters > 0)
             {
+                <MudText Class="mt-2">Recognized legacy MAYA meters: @p.Inspection.LegacyMeters.ToString("N0"). This includes the older script's MAYA00… device IDs with random GUIDs. Confirm below to include them.</MudText>
                 <MudCheckBox T="bool" @bind-Value="_adoptLegacy" Disabled="_busy" Label="@($"I confirm these {p.Inspection.LegacyMeters:N0} matching legacy registrations belong to MAYA and may be replaced.")" />
             }
             <MudButton OnClick="Replace" Color="Color.Error" Variant="Variant.Filled" Class="mt-3"
