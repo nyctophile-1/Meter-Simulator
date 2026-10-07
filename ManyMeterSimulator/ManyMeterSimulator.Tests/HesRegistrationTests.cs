@@ -211,7 +211,10 @@ public sealed class HesRegistrationPostgresTests
         {
             var preview = await service.PreviewAsync(admin, batch.Id, Database().Key, 7, default);
             var draft = preview.EditableValues;
-            draft.Category = "D3"; draft.CtRatio = 100; draft.PtRatio = 10; draft.CapturePeriodMinutes = 30;
+            draft.Category = "D3";
+            draft.CtRatio = 100;
+            draft.PtRatio = 10;
+            draft.CapturePeriodMinutes = 30;
             var confirmed = service.RevisePreview(admin, preview, draft);
             draft.CtRatio = 999;
             var receipt = await service.ReplaceAsync(admin, confirmed, false, default);
@@ -229,17 +232,34 @@ public sealed class HesRegistrationPostgresTests
             Assert.Equal(1L, await Sql("SELECT count(*) FROM kimbaldb_dbo.latestrouting WHERE gatewayid='gate_2_2'"));
             Assert.Equal(0L, await Sql("SELECT count(*) FROM kimbaldb_dbo.latestrouting WHERE gatewayid='gate_2_3'"));
             await Assert.ThrowsAsync<InvalidOperationException>(() => service.ReplaceAsync(admin, confirmed, false, default));
+
+            await Sql("UPDATE kimbaldb_dbo.nameplate SET guid='11111111-1111-1111-1111-111111111111', deviceid='other' WHERE nodeid='1002300002'");
+            var partial = await service.PreviewAsync(admin, batch.Id, Database().Key, 7, default);
+            Assert.Equal(1000, partial.EligibleCount);
+            Assert.Equal(1, partial.Inspection.SkippedMeters);
+            var partialReceipt = await service.ReplaceAsync(admin, partial, false, default);
+            Assert.Equal(1000, partialReceipt.Count);
+            Assert.Equal(1, partialReceipt.SkippedMeters);
+            Assert.Equal(new RegistrationCounts(1000, 1000, 1000), partialReceipt.Removed);
+            Assert.Equal(partialReceipt.Removed, partialReceipt.Inserted);
+            Assert.Equal("other", await Sql("SELECT deviceid::text FROM kimbaldb_dbo.nameplate WHERE nodeid='1002300002'"));
         }
-        finally { if (Directory.Exists(folder)) Directory.Delete(folder, true); }
+        finally
+        {
+            if (Directory.Exists(folder))
+            {
+                Directory.Delete(folder, true);
+            }
+        }
     }
 
     [LocalRegistrationPostgresFact]
     public async Task KmeshRegistrationUsesNumericSinksAndGeneratedGateways()
     {
         await Reset();
-        await Provision(Definition(1234, 501) with { Module = "KMesh", GroupGateways = true, BatchId = 4 });
-        Assert.Equal("gate_4_1/3", await Sql("SELECT gatewayid::text || '/' || sinkid::text FROM kimbaldb_dbo.latestrouting WHERE nodeid='1000001733'"));
-        Assert.Equal("gate_4_2/0", await Sql("SELECT gatewayid::text || '/' || sinkid::text FROM kimbaldb_dbo.latestrouting WHERE nodeid='1000001734'"));
+        await Provision(Definition(1234, 1001) with { Module = "KMesh", GroupGateways = true, BatchId = 4 });
+        Assert.Equal("gate_4_1/0", await Sql("SELECT gatewayid::text || '/' || sinkid::text FROM kimbaldb_dbo.latestrouting WHERE nodeid='1000002233'"));
+        Assert.Equal("gate_4_2/1", await Sql("SELECT gatewayid::text || '/' || sinkid::text FROM kimbaldb_dbo.latestrouting WHERE nodeid='1000002234'"));
     }
 
     private sealed class TestEnvironment : IHostEnvironment
@@ -298,7 +318,77 @@ public sealed class HesRegistrationPostgresTests
         await _store.ReplaceAsync(Database(), Definition(), preview, true, default);
         Assert.Equal(0, (await _store.PreviewAsync(Database(), Definition(), default)).LegacyMeters);
         await Sql("UPDATE kimbaldb_dbo.nameplate SET guid='11111111-1111-1111-1111-111111111111', deviceid='unrelated'");
-        Assert.True((await _store.PreviewAsync(Database(), Definition(), default)).Conflicts > 0);
+        var skipped = await _store.PreviewAsync(Database(), Definition(), default);
+        Assert.Equal(0, skipped.Conflicts);
+        Assert.Equal(2, skipped.SkippedMeters);
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => _store.ReplaceAsync(Database(), Definition(), skipped, true, default));
+        Assert.Contains("All meters were skipped", error.Message);
+        Assert.Equal(skipped.Fingerprint, (await _store.PreviewAsync(Database(), Definition(), default)).Fingerprint);
+    }
+
+    [LocalRegistrationPostgresFact]
+    public async Task UnrecognizedOwnershipSkipsWholeMetersAcrossChunksAndRegistersTheRest()
+    {
+        await Reset();
+        var definition = Definition(1, 1002);
+        await Provision(definition);
+        await Sql("""
+            UPDATE kimbaldb_dbo.nameplate SET guid='11111111-1111-1111-1111-111111111111', deviceid='other'
+            WHERE nodeid IN ('1000000001', '1000001001');
+            INSERT INTO kimbaldb_dbo.latestrouting(createddate,nodeid,gatewayid,sinkid,linkscore,lastcommunicatedon)
+            VALUES(now(),'1000000001','preserve','preserve',0,now());
+            """);
+        var skippedDefinition = Definition(1, 1);
+        var skippedBefore = await _store.PreviewAsync(Database(), skippedDefinition, default);
+        var boundaryBefore = await _store.PreviewAsync(Database(), Definition(1001, 1), default);
+        var preview = await _store.PreviewAsync(Database(), definition, default);
+        Assert.Equal(2, preview.SkippedMeters);
+        Assert.Equal(0, preview.Conflicts);
+        Assert.Empty(preview.Issues);
+        Assert.Equal(new RegistrationCounts(1000, 1000, 1000), preview.Existing);
+        Assert.Contains("1000000001", preview.SkippedNodes);
+        Assert.Contains("1000001001", preview.SkippedNodes);
+
+        await _store.ReplaceAsync(Database(), definition with { Manufacturer = "Changed" }, preview, false, default);
+
+        Assert.Equal(1000L, await Sql("SELECT count(*) FROM kimbaldb_dbo.nameplate WHERE manufacturer='Changed'"));
+        Assert.Equal(skippedBefore.Fingerprint, (await _store.PreviewAsync(Database(), skippedDefinition, default)).Fingerprint);
+        Assert.Equal(boundaryBefore.Fingerprint, (await _store.PreviewAsync(Database(), Definition(1001, 1), default)).Fingerprint);
+        Assert.Equal("preserve", await Sql("SELECT value FROM kimbaldb_dbo.history"));
+    }
+
+    [LocalRegistrationPostgresFact]
+    public async Task SkippedRowsStillParticipateInStalePreviewRevalidation()
+    {
+        await Reset();
+        await Provision(Definition());
+        await Sql("UPDATE kimbaldb_dbo.nameplate SET guid='11111111-1111-1111-1111-111111111111', deviceid=NULL WHERE nodeid='1000000001'");
+        var preview = await _store.PreviewAsync(Database(), Definition(), default);
+        Assert.Equal(1, preview.SkippedMeters);
+        await Sql("UPDATE kimbaldb_dbo.latestrouting SET gatewayid='changed' WHERE nodeid='1000000001'");
+        var before = await _store.PreviewAsync(Database(), Definition(), default);
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _store.ReplaceAsync(Database(), Definition(), preview, true, default));
+        Assert.Contains("changed after preview", error.Message);
+        Assert.Equal(before.Fingerprint, (await _store.PreviewAsync(Database(), Definition(), default)).Fingerprint);
+    }
+
+    [LocalRegistrationPostgresFact]
+    public async Task SkipExamplesAreBoundedAndMissingMetersRemainEligible()
+    {
+        await Reset();
+        await Provision(Definition(1, 12));
+        await Sql("UPDATE kimbaldb_dbo.nameplate SET guid='11111111-1111-1111-1111-111111111111', deviceid='other'");
+        var definition = Definition(1, 13);
+        var preview = await _store.PreviewAsync(Database(), definition, default);
+        Assert.Equal(12, preview.SkippedMeters);
+        Assert.Equal(10, preview.SkippedNodes.Count);
+        Assert.Equal(new RegistrationCounts(0, 0, 0), preview.Existing);
+
+        await _store.ReplaceAsync(Database(), definition, preview, false, default);
+        Assert.Equal(13L, await Sql("SELECT count(*) FROM kimbaldb_dbo.nameplate"));
+        Assert.Equal(12, (await _store.PreviewAsync(Database(), definition, default)).SkippedMeters);
     }
 
     [LocalRegistrationPostgresFact]

@@ -21,6 +21,7 @@ public sealed class HesRegistrationPreview
     public DateTimeOffset ExpiresAt { get; init; } = DateTimeOffset.UtcNow.AddMinutes(5);
     public string BatchName => Batch.Name;
     public long Count => Definition.Count;
+    public long EligibleCount => Count - Inspection.SkippedMeters;
     public string FirstNode => MeterNodeIds.Format(Definition.StartIndex);
     public string LastNode => MeterNodeIds.Format(Definition.EndIndex);
     public string Category => Definition.Category;
@@ -40,7 +41,8 @@ public sealed class HesRegistrationPreview
 
 public sealed record HesRegistrationReceipt(Guid OperationId, string State, string Target, int BatchId,
     string FirstNode, string LastNode, long Count, int TemplateId, string ModelHash, string ConfigurationHash,
-    RegistrationCounts Removed, RegistrationCounts Inserted, DateTimeOffset AtUtc, string? Warning = null);
+    RegistrationCounts Removed, RegistrationCounts Inserted, DateTimeOffset AtUtc, string? Warning = null,
+    long SkippedMeters = 0);
 
 public sealed class HesBatchRegistrationService(MeterRegistry meters, NetworkRegistry network,
     HesRegistrationDefinitionFactory definitions, HesRegistrationDatabase database, SessionRegistry sessions,
@@ -80,28 +82,52 @@ public sealed class HesBatchRegistrationService(MeterRegistry meters, NetworkReg
 
     public async Task<HesRegistrationReceipt> ReplaceAsync(ClaimsPrincipal user, HesRegistrationPreview preview, bool adoptLegacy, CancellationToken ct)
     {
-        if (RequireAdmin(user) != preview.Owner) throw new UnauthorizedAccessException("Preview belongs to another administrator.");
+        if (RequireAdmin(user) != preview.Owner)
+        {
+            throw new UnauthorizedAccessException("Preview belongs to another administrator.");
+        }
+
         if (preview.ExpiresAt <= DateTimeOffset.UtcNow || Interlocked.Exchange(ref preview.Consumed, 1) != 0)
+        {
             throw new InvalidOperationException("Preview has expired or was already used. Preview again.");
+        }
+
         using var lease = meters.AcquireRegistrationLease(preview.Batch);
         CheckSessions(preview.Batch);
         var current = network.Databases.SingleOrDefault(d => d.Key == preview.Database.Key);
         if (current != preview.Database || preview.Batch.EnvironmentKey != preview.EnvironmentKey ||
             definitions.Create(preview.Batch, preview.TemplateId).Fingerprint != preview.SourceFingerprint)
+        {
             throw new InvalidOperationException("Batch, model or connection changed. Preview again.");
+        }
+
         if (preview.Inspection.Conflicts > 0 || preview.Inspection.LegacyMeters > 0 && !adoptLegacy)
+        {
             throw new InvalidOperationException("Resolve ownership conflicts before replacement.");
+        }
+
+        if (preview.EligibleCount == 0)
+        {
+            throw new InvalidOperationException("All meters were skipped because their existing registrations could not be identified as MAYA. Nothing was replaced.");
+        }
+
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(TimeSpan.FromMinutes(15));
         Guid operation = Guid.NewGuid();
         var receipt = new HesRegistrationReceipt(operation, "Started", preview.Inspection.Target, preview.Batch.Id,
-            preview.FirstNode, preview.LastNode, preview.Count, preview.TemplateId, preview.ModelHash, preview.Definition.Fingerprint,
-            preview.Inspection.Existing, new(0, 0, 0), DateTimeOffset.UtcNow);
+            preview.FirstNode, preview.LastNode, preview.EligibleCount, preview.TemplateId, preview.ModelHash, preview.Definition.Fingerprint,
+            preview.Inspection.Existing, new(0, 0, 0), DateTimeOffset.UtcNow, SkippedMeters: preview.Inspection.SkippedMeters);
         await SaveReceipt(receipt);
+
         try
         {
             await database.ReplaceAsync(preview.Database, preview.Definition, preview.Inspection, adoptLegacy, timeout.Token);
-            receipt = receipt with { State = "Database provisioned; HES verification pending", Inserted = new(preview.Count, preview.Count, preview.Count), AtUtc = DateTimeOffset.UtcNow };
+            receipt = receipt with
+            {
+                State = "Database provisioned; HES verification pending",
+                Inserted = new(preview.EligibleCount, preview.EligibleCount, preview.EligibleCount),
+                AtUtc = DateTimeOffset.UtcNow
+            };
         }
         catch (RegistrationCommitUncertainException)
         {
@@ -113,8 +139,11 @@ public sealed class HesBatchRegistrationService(MeterRegistry meters, NetworkReg
             await SaveOutcomeBestEffort(receipt with { State = "Not committed", AtUtc = DateTimeOffset.UtcNow });
             throw;
         }
+
         bool saved = await SaveOutcomeBestEffort(receipt);
-        logger.LogInformation("HES batch registration {OperationId}: {Count} meters provisioned in {Target}", operation, preview.Count, receipt.Target);
+        logger.LogInformation("HES batch registration {OperationId}: {Count} meters provisioned, {Skipped} skipped in {Target}",
+            operation, preview.EligibleCount, receipt.SkippedMeters, receipt.Target);
+
         return saved ? receipt : receipt with { Warning = "Database committed, but the local completion receipt could not be saved." };
     }
 

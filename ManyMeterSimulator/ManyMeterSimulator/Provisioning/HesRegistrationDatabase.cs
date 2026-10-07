@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using System.Data;
 using System.Security.Cryptography;
 using System.Text;
@@ -9,7 +10,13 @@ namespace ManyMeterSimulator.Provisioning;
 
 public sealed record RegistrationCounts(long Nameplates, long Security, long Routes);
 public sealed record RegistrationInspection(string Target, RegistrationCounts Existing, long LegacyMeters,
-    long Conflicts, IReadOnlyList<string> Issues, string Fingerprint);
+    long Conflicts, IReadOnlyList<string> Issues, string Fingerprint)
+{
+    internal IReadOnlySet<long> SkippedIndices { get; init; } = FrozenSet<long>.Empty;
+    public long SkippedMeters => SkippedIndices.Count;
+    public IReadOnlyList<string> SkippedNodes { get; init; } = [];
+}
+
 public sealed class RegistrationCommitUncertainException() : Exception(
     "The connection was lost while committing. The database outcome is unknown. Preview again and verify the registration before retrying.");
 
@@ -36,17 +43,29 @@ public sealed class HesRegistrationDatabase
         await connection.OpenAsync(ct);
         await using var transaction = await connection.BeginTransactionAsync(ct);
         await Configure(connection, ct);
+
         // These HES tables have no uniqueness on NodeId. Lock all three for atomic revalidation
         // against both other MAYA hosts and HES writers, with a short lock timeout.
         await Execute(connection, "LOCK TABLE kimbaldb_dbo.nameplate, kimbaldb_dbo.metersecurity, kimbaldb_dbo.latestrouting IN SHARE ROW EXCLUSIVE MODE", ct);
         var current = await Inspect(connection, definition, ct);
         if (current.Target != preview.Target || current.Fingerprint != preview.Fingerprint)
+        {
             throw new InvalidOperationException("Registration changed after preview. Preview again before replacing it.");
+        }
+
         if (current.Conflicts != 0 || current.LegacyMeters > 0 && !adoptLegacy)
+        {
             throw new InvalidOperationException("Resolve ownership conflicts or explicitly adopt the matching legacy MAYA registrations first.");
+        }
+
+        long eligible = definition.Count - current.SkippedMeters;
+        if (eligible == 0)
+        {
+            throw new InvalidOperationException("All meters were skipped because their existing registrations could not be identified as MAYA. Nothing was replaced.");
+        }
 
         var now = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
-        foreach (var indices in Chunks(definition))
+        foreach (var indices in Chunks(definition, current.SkippedIndices))
         {
             ct.ThrowIfCancellationRequested();
             var nodes = indices.Select(MeterNodeIds.Format).ToArray();
@@ -60,14 +79,28 @@ public sealed class HesRegistrationDatabase
             await delete.ExecuteNonQueryAsync(ct);
             await Insert(connection, definition, indices, now, ct);
         }
+
         // Inspect again while the same locks are held: exactly one owned registration per meter.
-        var result = await Inspect(connection, definition, ct);
-        if (result.Conflicts != 0 || result.LegacyMeters != 0 || result.Existing != new RegistrationCounts(definition.Count, definition.Count, definition.Count))
+        var result = await Inspect(connection, definition, ct, current.SkippedIndices);
+        if (result.Conflicts != 0 || result.LegacyMeters != 0 || result.SkippedMeters != 0 ||
+            result.Existing != new RegistrationCounts(eligible, eligible, eligible))
+        {
             throw new InvalidOperationException("Registration verification failed; replacement was rolled back.");
+        }
+
         ct.ThrowIfCancellationRequested();
-        try { await transaction.CommitAsync(CancellationToken.None); }
-        catch (PostgresException) { throw; }
-        catch (Exception) { throw new RegistrationCommitUncertainException(); }
+        try
+        {
+            await transaction.CommitAsync(CancellationToken.None);
+        }
+        catch (PostgresException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            throw new RegistrationCommitUncertainException();
+        }
     }
 
     private static NpgsqlConnection OpenConnection(DatabaseConnection database)
@@ -85,9 +118,14 @@ public sealed class HesRegistrationDatabase
     private static async Task Configure(NpgsqlConnection connection, CancellationToken ct) =>
         await Execute(connection, "SET LOCAL lock_timeout = '5s'; SET LOCAL statement_timeout = '60s'; SET LOCAL search_path = kimbaldb_dbo, public", ct);
 
-    private static async Task<RegistrationInspection> Inspect(NpgsqlConnection connection, HesRegistrationDefinition d, CancellationToken ct)
+    private static async Task<RegistrationInspection> Inspect(NpgsqlConnection connection, HesRegistrationDefinition d,
+        CancellationToken ct, IReadOnlySet<long>? excluded = null)
     {
-        if (d.StartIndex < 1 || d.Count < 1 || d.EndIndex > MeterRegistry.MaxIndex) throw new InvalidOperationException("Invalid batch range.");
+        if (d.StartIndex < 1 || d.Count < 1 || d.EndIndex > MeterRegistry.MaxIndex)
+        {
+            throw new InvalidOperationException("Invalid batch range.");
+        }
+
         string target;
         await using (var command = new NpgsqlCommand("""
             SELECT current_database(), coalesce(inet_server_addr()::text, 'local'), inet_server_port(),
@@ -97,9 +135,13 @@ public sealed class HesRegistrationDatabase
         {
             await reader.ReadAsync(ct);
             if (reader.GetBoolean(3) || reader.GetString(4) == "on")
+            {
                 throw new InvalidOperationException("Select a writable PostgreSQL primary, not a replica or read-only connection.");
+            }
+
             target = $"{reader.GetString(0)} @ {reader.GetString(1)}:{reader.GetInt32(2)}";
         }
+
         await using (var command = new NpgsqlCommand("""
             SELECT EXISTS(SELECT 1 FROM kimbaldb_dbo.metertemplate WHERE id = @template),
               EXISTS(SELECT 1 FROM pg_constraint WHERE contype = 'f' AND
@@ -112,25 +154,46 @@ public sealed class HesRegistrationDatabase
             command.Parameters.AddWithValue("template", d.TemplateId);
             await using var reader = await command.ExecuteReaderAsync(ct);
             await reader.ReadAsync(ct);
-            if (!reader.GetBoolean(0)) throw new InvalidOperationException("The selected HES template ID does not exist in this database.");
+            if (!reader.GetBoolean(0))
+            {
+                throw new InvalidOperationException("The selected HES template ID does not exist in this database.");
+            }
+
             if (reader.GetBoolean(1) || reader.GetBoolean(2))
+            {
                 throw new InvalidOperationException("This target has registration foreign keys or triggers requiring a reviewed replacement strategy.");
+            }
         }
+
         long plates = 0, security = 0, routes = 0, legacy = 0, conflicts = 0;
         var issues = new List<string>();
+        var skipped = new HashSet<long>();
+        var skippedNodes = new List<string>();
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        void Issue(string text) { conflicts++; if (issues.Count < 10) issues.Add(text); }
+
+        void Issue(string text)
+        {
+            conflicts++;
+            if (issues.Count < 10)
+            {
+                issues.Add(text);
+            }
+        }
+
         void Hash(string table, NpgsqlDataReader reader)
         {
             // Row version + ID detects every committed update without reading security material.
             hash.AppendData(Encoding.UTF8.GetBytes($"{table}:{reader.GetInt64(0)}:{reader.GetString(1)}\n"));
         }
-        foreach (var indices in Chunks(d))
+
+        foreach (var indices in Chunks(d, excluded))
         {
             var nodes = indices.Select(MeterNodeIds.Format).ToArray();
             var serials = indices.Select(MeterRegistry.FormatSerial).ToArray();
             var expected = indices.ToDictionary(MeterNodeIds.Format);
             var owned = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var skippedSerials = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var skippedChunkNodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             await using (var command = new NpgsqlCommand("""
                 SELECT id, xmin::text, nodeid::text, meterno::text, guid, deviceid::text
                 FROM kimbaldb_dbo.nameplate WHERE nodeid = ANY(@nodes::citext[]) OR meterno = ANY(@serials::citext[]) ORDER BY id
@@ -140,21 +203,44 @@ public sealed class HesRegistrationDatabase
                 await using var reader = await command.ExecuteReaderAsync(ct);
                 while (await reader.ReadAsync(ct))
                 {
-                    plates++; Hash("n", reader);
+                    Hash("n", reader);
                     string node = reader.IsDBNull(2) ? "" : reader.GetString(2);
                     string serial = reader.IsDBNull(3) ? "" : reader.GetString(3);
                     if (!expected.TryGetValue(node, out var index) || !string.Equals(serial, MeterRegistry.FormatSerial(index), StringComparison.OrdinalIgnoreCase))
-                    { Issue($"Node/serial collision involving {node}. No records will be replaced."); continue; }
-                    if (!owned.Add(node)) { Issue($"Multiple nameplates use node {node}."); continue; }
-                    if (reader.GetGuid(4) != HesRegistrationDefinition.OwnershipId(index))
+                    {
+                        Issue($"Node/serial collision involving {node}. No records will be replaced.");
+                        continue;
+                    }
+
+                    if (!owned.Add(node))
+                    {
+                        Issue($"Multiple nameplates use node {node}.");
+                        continue;
+                    }
+
+                    if (reader.IsDBNull(4) || reader.GetGuid(4) != HesRegistrationDefinition.OwnershipId(index))
                     {
                         if (reader.IsDBNull(5) || !(string.Equals(reader.GetString(5), "CRY" + serial, StringComparison.OrdinalIgnoreCase)
                             || string.Equals(reader.GetString(5), HesRegistrationDefinition.DeviceId(index), StringComparison.OrdinalIgnoreCase)))
-                            Issue($"MAYA ownership cannot be established for node {node}.");
-                        else legacy++;
+                        {
+                            skipped.Add(index);
+                            skippedSerials.Add(serial);
+                            skippedChunkNodes.Add(node);
+                            if (skippedNodes.Count < 10)
+                            {
+                                skippedNodes.Add(node);
+                            }
+
+                            continue;
+                        }
+
+                        legacy++;
                     }
+
+                    plates++;
                 }
             }
+
             await using (var command = new NpgsqlCommand("""
                 SELECT id, xmin::text, meterno::text FROM kimbaldb_dbo.metersecurity WHERE meterno = ANY(@serials::citext[]) ORDER BY id;
                 SELECT id, xmin::text, nodeid::text FROM kimbaldb_dbo.latestrouting WHERE nodeid = ANY(@nodes::citext[]) ORDER BY id;
@@ -165,18 +251,44 @@ public sealed class HesRegistrationDatabase
                 await using var reader = await command.ExecuteReaderAsync(ct);
                 while (await reader.ReadAsync(ct))
                 {
-                    security++; Hash("s", reader);
-                    if (!ownedSerials.Contains(reader.GetString(2))) Issue("Security exists without a verified in-range nameplate; orphan cleanup is blocked.");
+                    Hash("s", reader);
+                    string serial = reader.GetString(2);
+                    if (skippedSerials.Contains(serial))
+                    {
+                        continue;
+                    }
+
+                    security++;
+                    if (!ownedSerials.Contains(serial))
+                    {
+                        Issue("Security exists without a verified in-range nameplate; orphan cleanup is blocked.");
+                    }
                 }
+
                 await reader.NextResultAsync(ct);
                 while (await reader.ReadAsync(ct))
                 {
-                    routes++; Hash("r", reader);
-                    if (!owned.Contains(reader.GetString(2))) Issue("Routing exists without a verified in-range nameplate; orphan cleanup is blocked.");
+                    Hash("r", reader);
+                    string node = reader.GetString(2);
+                    if (skippedChunkNodes.Contains(node))
+                    {
+                        continue;
+                    }
+
+                    routes++;
+                    if (!owned.Contains(node))
+                    {
+                        Issue("Routing exists without a verified in-range nameplate; orphan cleanup is blocked.");
+                    }
                 }
             }
         }
-        return new(target, new(plates, security, routes), legacy, conflicts, issues, Convert.ToHexString(hash.GetHashAndReset()));
+
+        return new(target, new(plates, security, routes), legacy, conflicts, issues, Convert.ToHexString(hash.GetHashAndReset()))
+        {
+            SkippedIndices = skipped.ToFrozenSet(),
+            SkippedNodes = skippedNodes.ToArray()
+        };
     }
 
     private static async Task Insert(NpgsqlConnection connection, HesRegistrationDefinition d, long[] indices, DateTime now, CancellationToken ct)
@@ -247,10 +359,19 @@ public sealed class HesRegistrationDatabase
         command.Parameters.AddWithValue("nodes", nodes);
         command.Parameters.AddWithValue("serials", serials);
     }
-    private static IEnumerable<long[]> Chunks(HesRegistrationDefinition d)
+    private static IEnumerable<long[]> Chunks(HesRegistrationDefinition d, IReadOnlySet<long>? excluded = null)
     {
         for (long first = d.StartIndex; first <= d.EndIndex; first += ChunkSize)
-            yield return Enumerable.Range(0, (int)Math.Min(ChunkSize, d.EndIndex - first + 1)).Select(n => first + n).ToArray();
+        {
+            var indices = Enumerable.Range(0, (int)Math.Min(ChunkSize, d.EndIndex - first + 1))
+                .Select(n => first + n)
+                .Where(index => excluded is null || !excluded.Contains(index))
+                .ToArray();
+            if (indices.Length > 0)
+            {
+                yield return indices;
+            }
+        }
     }
     private static async Task Execute(NpgsqlConnection connection, string sql, CancellationToken ct)
     {
