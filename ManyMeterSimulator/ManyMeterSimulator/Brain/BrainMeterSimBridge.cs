@@ -60,4 +60,9 @@ public sealed class BrainMeterSimBridge : IMeterSimBridge
             }
         }, cancellationToken);
     }
+
+    public void ResetAssociation(MeterRef meter)
+    {
+        _sessions.ResetAssociation(meter);
+    }
 }
