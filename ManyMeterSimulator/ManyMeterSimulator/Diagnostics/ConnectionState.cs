@@ -54,6 +54,8 @@ public sealed class ConnectionState
     /// </summary>
     public bool IsVirtual { get; init; }
 
+    public bool IsCustomCommand { get; set; }
+
     /// <summary>Linked to the service's shutdown token; also cancelled by the idle sweep to force-close a stale session.</summary>
     public required CancellationTokenSource SessionCts { get; init; }
 
