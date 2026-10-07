@@ -48,7 +48,7 @@
                     <tr><td>First meter address</td><td>@p.FirstAddress : @p.Port</td></tr>
                     <tr><td>Model SHA-256</td><td style="overflow-wrap:anywhere">@p.ModelHash</td></tr>
                     <tr><td>Remove existing rows</td><td>Nameplate @p.Inspection.Existing.Nameplates; security @p.Inspection.Existing.Security; routing @p.Inspection.Existing.Routes</td></tr>
-                    <tr><td>Insert rows</td><td>@p.Count.ToString("N0") in each table</td></tr>
+                    <tr><td>Insert rows</td><td>@p.EligibleCount.ToString("N0") in each table; @p.Inspection.SkippedMeters.ToString("N0") meters skipped</td></tr>
                     <tr><td>Security</td><td>Simulator demo profile • values hidden</td></tr>
                 </tbody>
             </MudSimpleTable>
@@ -75,16 +75,24 @@
             </MudGrid>
             <MudText Typo="Typo.body2" Class="mt-2">Replacement briefly locks the three registration tables. Run during a test maintenance window. Routes start with iscommunicating=false; HES parsing and persistence still need verification.</MudText>
             @foreach (var issue in p.Inspection.Issues) { <MudAlert Severity="Severity.Error">@issue</MudAlert> }
+            @if (p.Inspection.SkippedMeters > 0)
+            {
+                <MudAlert Severity="Severity.Warning">
+                    Skipping @p.Inspection.SkippedMeters.ToString("N0") meters: their existing registrations do not have a recognized MAYA identity.
+                    Their nameplate, security and routing rows will remain unchanged. @p.EligibleCount.ToString("N0") meters can continue.
+                    Example nodes: @string.Join(", ", p.Inspection.SkippedNodes).
+                </MudAlert>
+            }
             @if (p.Inspection.LegacyMeters > 0)
             {
                 <MudCheckBox T="bool" @bind-Value="_adoptLegacy" Disabled="_busy" Label="@($"I confirm these {p.Inspection.LegacyMeters:N0} matching legacy registrations belong to MAYA and may be replaced.")" />
             }
             <MudButton OnClick="Replace" Color="Color.Error" Variant="Variant.Filled" Class="mt-3"
-                Disabled="@(_busy || p.Inspection.Conflicts > 0 || p.Inspection.LegacyMeters > 0 && !_adoptLegacy)">Review and submit</MudButton>
+                Disabled="@(_busy || p.EligibleCount == 0 || p.Inspection.Conflicts > 0 || p.Inspection.LegacyMeters > 0 && !_adoptLegacy)">Review and submit</MudButton>
         }
         @if (_receipt is { } receipt)
         {
-            <MudAlert Severity="Severity.Success" Class="mt-3">@receipt.State. Inserted @receipt.Count.ToString("N0") rows per table. Receipt: @receipt.OperationId.</MudAlert>
+            <MudAlert Severity="Severity.Success" Class="mt-3">@receipt.State. Inserted @receipt.Inserted.Nameplates.ToString("N0") rows per table; @receipt.SkippedMeters.ToString("N0") meters skipped and left unchanged. Receipt: @receipt.OperationId.</MudAlert>
             @if (receipt.Warning is not null) { <MudAlert Severity="Severity.Warning">@receipt.Warning</MudAlert> }
         }
     </MudPaper>
@@ -94,7 +102,7 @@
             @if (_confirmedPreview is { } c)
             {
                 var v = c.EditableValues;
-                <MudText>@c.BatchName — @c.Count.ToString("N0") meters in @c.Inspection.Target</MudText>
+                <MudText>@c.BatchName — @c.EligibleCount.ToString("N0") meters to register; @c.Inspection.SkippedMeters.ToString("N0") skipped in @c.Inspection.Target</MudText>
                 <MudSimpleTable Dense="true" Class="mt-3"><tbody>
                     <tr><td>Nodes</td><td>@c.FirstNode – @c.LastNode</td></tr>
                     <tr><td>HES template / category / meter type</td><td>@c.TemplateId / @v.Category / @v.MeterType</td></tr>
@@ -107,7 +115,7 @@
                     <tr><td>Route</td><td>@c.Route</td></tr>
                     <tr><td>Installed on / original installed on</td><td>UTC now at submission</td></tr>
                     <tr><td>Rows to remove</td><td>Nameplate @c.Inspection.Existing.Nameplates; security @c.Inspection.Existing.Security; routing @c.Inspection.Existing.Routes</td></tr>
-                    <tr><td>Rows to insert</td><td>@c.Count.ToString("N0") per table</td></tr>
+                    <tr><td>Rows to insert</td><td>@c.EligibleCount.ToString("N0") per table</td></tr>
                 </tbody></MudSimpleTable>
                 <MudText Class="mt-3">Submit replaces these registrations atomically. Other meters and historical data are preserved.</MudText>
             }

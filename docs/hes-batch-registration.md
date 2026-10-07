@@ -19,9 +19,9 @@ This does not add support for master-key rotation or firmware associations. Secr
 connection strings are excluded from previews, receipts and diagnostic messages.
 
 Direct TCP routes use `direct_tcp`; direct MQTT uses `direct_4g`. Wirepas and KMesh assign
-gateway `gate_{batchId}_{n}`, where `n = floor((meterIndex - batchStartIndex) / 500) + 1`.
-Each gateway handles at most 500 meters; its meters alternate across four sinks using the
-batch-relative ordinal modulo 4. Wirepas stores `sink0`–`sink3` (source endpoint 3);
+gateway `gate_{batchId}_{n}`, where `n = floor((meterIndex - batchStartIndex) / 1000) + 1`.
+Each gateway handles at most 1000 meters; its meters alternate across four sinks using
+`(meterIndex - 1) modulo 4`. Wirepas stores `sink0`–`sink3` (source endpoint 3);
 KMesh stores the equivalent numeric `0`–`3` (source endpoint -1). Batch and stress push
 envelopes use this same allocation so received traffic preserves the planned routes.
 Nameplates retain their deterministic reserved IPv6 address and configured listener port.
@@ -54,6 +54,12 @@ changes to the batch, model or database after preview.
 - A legacy nameplate can be adopted only with a matching generated node, serial and
   old `CRY` device identity or new `{nodeId}MAYA` identity, plus explicit operator acknowledgment of MAYA ownership.
   Prefix/range alone cannot authorize deletion.
+- If the node and serial match but neither the MAYA UUID nor a recognized legacy device
+  identity matches, that meter is skipped. Its nameplate, security and routing rows remain
+  untouched while eligible meters in the batch proceed. Preview, confirmation and receipt
+  show eligible/skipped counts; the preview shows up to ten example skipped nodes. A batch
+  with no eligible meters cannot be submitted. Skipped rows are still included in preview
+  revalidation, so a concurrent change requires a fresh preview.
 - Conflicting node/serial mappings, duplicate nameplates, out-of-range serial collisions,
   or orphan security/routing block the entire operation. Duplicate security/routing for
   an owned nameplate are replaced with one row each.
