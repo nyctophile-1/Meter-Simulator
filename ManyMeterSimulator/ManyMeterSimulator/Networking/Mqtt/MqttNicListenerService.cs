@@ -516,7 +516,7 @@ public sealed class MqttNicListenerService : BackgroundService, IMqttPushPublish
             }
 
             // Admission is shared with ordinary requests, but the DLMS association is isolated.
-            if (!TryTouchOrOpenSession(item.Meter, out ConnectionState? customSession))
+            if (!TryTouchOrOpenSession(item.Meter, out ConnectionState? customSession, customCommand: true))
             {
                 return;
             }
@@ -548,25 +548,22 @@ public sealed class MqttNicListenerService : BackgroundService, IMqttPushPublish
                     return;
                 }
 
-                _metrics.RecordCommandSucceeded(item.Transport);
-
-                foreach (byte[] framed in responses)
+                bool completed = await CustomReplyCompletion.PublishAsync(responses, async framed =>
                 {
                     NicPublish publish = ManyMeterSimulator.Networking.CustomPush.WirepasCustomPushEnvelope.Create(
                         topicParts[2], topicParts[3], item.Route.NodeId, 13, framed);
-                    bool sent = await item.Source.Client.PublishAsync(
-                        publish.Topic, publish.Payload, item.Options.PublishQos, cancellationToken);
 
-                    if (!sent)
-                    {
-                        _logger.LogWarning("Meter {Meter}: custom {Command} frame {FrameId} reply incomplete via {Binding}",
-                            item.Meter, inbound.Intent.Command, inbound.Request.FrameId, item.Source.Binding);
-                        return;
-                    }
+                    return await item.Source.Client.PublishAsync(
+                        publish.Topic, publish.Payload, item.Options.PublishQos, cancellationToken);
+                }, customSession!, _sessions, _metrics);
+
+                if (!completed)
+                {
+                    _logger.LogWarning("Meter {Meter}: custom {Command} frame {FrameId} reply incomplete via {Binding}",
+                        item.Meter, inbound.Intent.Command, inbound.Request.FrameId, item.Source.Binding);
+                    return;
                 }
 
-                customSession!.Touch();
-                customSession.RecordExchange();
                 _logger.LogInformation("Meter {Meter}: sent custom {Command} frame {FrameId} in {Packets} packets via {Binding} at QoS {Qos}",
                     item.Meter, inbound.Intent.Command, inbound.Request.FrameId, responses.Count, item.Source.Binding, item.Options.PublishQos);
             }
@@ -711,14 +708,18 @@ public sealed class MqttNicListenerService : BackgroundService, IMqttPushPublish
     /// <summary>
     /// Finds this meter's live session, opening one on first contact.
     ///
-    /// A connectionless NIC has no accept event, so the first message IS the session start. Once
-    /// open, the session is refreshed by traffic and reaped by the idle sweep — which is the only
-    /// thing that ends it, since there is no close event either.
+    /// A connectionless NIC has no accept event, so the first message starts the session.
+    /// Ordinary DLMS sessions use idle cleanup; custom-only sessions end after their final reply.
     /// </summary>
-    private bool TryTouchOrOpenSession(MeterRef meter, out ConnectionState? session)
+    private bool TryTouchOrOpenSession(MeterRef meter, out ConnectionState? session, bool customCommand = false)
     {
         if (_sessions.TryGet(meter, out session) && session is not null)
         {
+            if (!customCommand)
+            {
+                session.IsCustomCommand = false;
+            }
+
             return true;
         }
 
@@ -727,6 +728,7 @@ public sealed class MqttNicListenerService : BackgroundService, IMqttPushPublish
             Meter = meter,
             SessionCts = new CancellationTokenSource(),
             IsVirtual = true,
+            IsCustomCommand = customCommand,
         };
 
         AdmissionResult admission = _admission.TryAdmit(meter, candidate, int.MaxValue);
@@ -741,7 +743,17 @@ public sealed class MqttNicListenerService : BackgroundService, IMqttPushPublish
         {
             // Raced with another message for the same meter; the winner's session is the one to use.
             candidate.SessionCts.Dispose();
-            return _sessions.TryGet(meter, out session) && session is not null;
+            if (!_sessions.TryGet(meter, out session) || session is null)
+            {
+                return false;
+            }
+
+            if (!customCommand)
+            {
+                session.IsCustomCommand = false;
+            }
+
+            return true;
         }
 
         // There is no channel to refuse on — dropping is exactly what a powered-off meter looks
