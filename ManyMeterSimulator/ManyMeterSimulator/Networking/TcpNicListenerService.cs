@@ -171,8 +171,16 @@ public class TcpNicListenerService : BackgroundService
             }
             finally
             {
-                _registry.Unregister(meter, state);
-                _logger.LogInformation("Connection closed for meter {MeterId}", meterId);
+                try
+                {
+                    // Reset before another connection can acquire this meter's slot.
+                    _bridge.ResetAssociation(meter);
+                }
+                finally
+                {
+                    _registry.Unregister(meter, state);
+                    _logger.LogInformation("Connection closed for meter {MeterId}", meterId);
+                }
             }
         }
     }

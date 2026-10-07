@@ -20,4 +20,6 @@ namespace ManyMeterSimulator.MqttBridge;
 public interface IMeterSimBridge
 {
     Task<byte[]> ExchangeAsync(MeterRef meter, byte[] requestFrame, CancellationToken cancellationToken);
+
+    void ResetAssociation(MeterRef meter);
 }

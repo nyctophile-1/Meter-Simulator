@@ -21,6 +21,12 @@ public sealed class SimulatedMeterSimBridge : IMeterSimBridge
     public async Task<byte[]> ExchangeAsync(MeterRef meter, byte[] requestFrame, CancellationToken cancellationToken)
     {
         await Task.Delay(_options.RoundTripDelayMs, cancellationToken);
+
         return requestFrame;
+    }
+
+    public void ResetAssociation(MeterRef meter)
+    {
+        // The framing-only bridge has no association state.
     }
 }

@@ -132,6 +132,26 @@ public sealed class MeterSessionManager
     public DLMSServerSession GetOrCreate(MeterRef meter)
         => GetOrCreate(meter, _sessions);
 
+    public void ResetAssociation(MeterRef meter)
+    {
+        if (!_sessions.TryGetValue(meter.Index, out Lazy<DLMSServerSession>? existing)
+            || !existing.IsValueCreated)
+        {
+            return;
+        }
+
+        DLMSServerSession session = existing.Value;
+
+        lock (session)
+        {
+            uint invocationCounter = session.Ciphering.InvocationCounter;
+            session.Reset();
+
+            // A TCP reconnect must not rewind the meter's security counter.
+            session.Ciphering.InvocationCounter = invocationCounter;
+        }
+    }
+
     private DLMSServerSession GetOrCreate(MeterRef meter, ConcurrentDictionary<long, Lazy<DLMSServerSession>> sessions)
     {
         Lazy<DLMSServerSession> lazy = sessions.GetOrAdd(
