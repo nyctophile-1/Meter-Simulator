@@ -41,9 +41,9 @@ public sealed class MqttRoutingServiceTests
         Assert.Equal(8, fixture.Publisher.Messages.Count);
         Assert.Equal(8, fixture.Publisher.Messages.Select(m => m.Message.Topic).Distinct().Count());
         Assert.All(fixture.Publisher.Messages, m => Assert.Empty(m.Message.Payload));
-        Assert.Equal(new[] { "FakeRouting/1000000001/3/direct_4g/direct_4g", "FakeRouting/1000000002/3/direct_4g/direct_4g", "FakeRouting/1000000003/3/direct_4g/direct_4g", "FakeRouting/1000000006/4/direct_tcp/direct_tcp" },
+        Assert.Equal(new[] { "FakeRouting/1000000001/3/direct_4g_0001/direct_4g", "FakeRouting/1000000002/3/direct_4g_0002/direct_4g", "FakeRouting/1000000003/3/direct_4g_0003/direct_4g", "FakeRouting/1000000006/4/direct_tcp_0006/direct_tcp" },
             fixture.Publisher.Messages.Where(m => m.BrokerKey == "a").Select(m => m.Message.Topic));
-        Assert.Equal(new[] { "FakeRouting/1000000004/3/direct_4g/direct_4g", "FakeRouting/1000000005/3/direct_4g/direct_4g", "FakeRouting/1000000007/2/gate_4_1/sink2", "FakeRouting/1000000008/1/gate_5_1/3" },
+        Assert.Equal(new[] { "FakeRouting/1000000004/3/direct_4g_0004/direct_4g", "FakeRouting/1000000005/3/direct_4g_0005/direct_4g", "FakeRouting/1000000007/2/gw_0007/sink2", "FakeRouting/1000000008/1/kgw_0008/3" },
             fixture.Publisher.Messages.Where(m => m.BrokerKey == "b").Select(m => m.Message.Topic));
         Assert.All(fixture.Publisher.Pools, p => Assert.True(p.Disposed));
 

@@ -9,12 +9,14 @@ using NpgsqlTypes;
 namespace ManyMeterSimulator.Provisioning;
 
 public sealed record RegistrationCounts(long Nameplates, long Security, long Routes);
+public sealed record RegistrationSkipReason(string Reason, long Meters);
 public sealed record RegistrationInspection(string Target, RegistrationCounts Existing, long LegacyMeters,
     long Conflicts, IReadOnlyList<string> Issues, string Fingerprint)
 {
     internal IReadOnlySet<long> SkippedIndices { get; init; } = FrozenSet<long>.Empty;
     public long SkippedMeters => SkippedIndices.Count;
     public IReadOnlyList<string> SkippedNodes { get; init; } = [];
+    public IReadOnlyList<RegistrationSkipReason> SkipReasons { get; init; } = [];
 }
 
 public sealed class RegistrationCommitUncertainException() : Exception(
@@ -61,7 +63,7 @@ public sealed class HesRegistrationDatabase
         long eligible = definition.Count - current.SkippedMeters;
         if (eligible == 0)
         {
-            throw new InvalidOperationException("All meters were skipped because their existing registrations could not be identified as MAYA. Nothing was replaced.");
+            throw new InvalidOperationException("All meters were skipped because their registrations are conflicting, incomplete or unrecognized. Nothing was replaced.");
         }
 
         var now = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
@@ -165,18 +167,23 @@ public sealed class HesRegistrationDatabase
             }
         }
 
-        long plates = 0, security = 0, routes = 0, legacy = 0, conflicts = 0;
-        var issues = new List<string>();
+        long plates = 0, security = 0, routes = 0, legacy = 0;
         var skipped = new HashSet<long>();
         var skippedNodes = new List<string>();
+        var skipReasons = new Dictionary<string, long>();
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
 
-        void Issue(string text)
+        void Skip(long index, string reason)
         {
-            conflicts++;
-            if (issues.Count < 10)
+            if (!skipped.Add(index))
             {
-                issues.Add(text);
+                return;
+            }
+
+            skipReasons[reason] = skipReasons.GetValueOrDefault(reason) + 1;
+            if (skippedNodes.Count < 10)
+            {
+                skippedNodes.Add(MeterNodeIds.Format(index));
             }
         }
 
@@ -190,13 +197,18 @@ public sealed class HesRegistrationDatabase
         {
             var nodes = indices.Select(MeterNodeIds.Format).ToArray();
             var serials = indices.Select(MeterRegistry.FormatSerial).ToArray();
-            var expected = indices.ToDictionary(MeterNodeIds.Format);
-            var owned = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var skippedSerials = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var skippedChunkNodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var expectedNodes = indices.ToDictionary(MeterNodeIds.Format, StringComparer.OrdinalIgnoreCase);
+            var expectedSerials = indices.ToDictionary(MeterRegistry.FormatSerial, StringComparer.OrdinalIgnoreCase);
+            var matched = new HashSet<long>();
+            var legacyIndices = new HashSet<long>();
+            var securityCounts = new Dictionary<long, long>();
+            var routeCounts = new Dictionary<long, long>();
+
             await using (var command = new NpgsqlCommand("""
                 SELECT id, xmin::text, nodeid::text, meterno::text, guid, deviceid::text
-                FROM kimbaldb_dbo.nameplate WHERE nodeid = ANY(@nodes::citext[]) OR meterno = ANY(@serials::citext[]) ORDER BY id
+                FROM kimbaldb_dbo.nameplate
+                WHERE nodeid = ANY(@nodes::citext[]) OR meterno = ANY(@serials::citext[])
+                ORDER BY id
                 """, connection))
             {
                 AddIdentities(command, nodes, serials);
@@ -206,62 +218,65 @@ public sealed class HesRegistrationDatabase
                     Hash("n", reader);
                     string node = reader.IsDBNull(2) ? "" : reader.GetString(2);
                     string serial = reader.IsDBNull(3) ? "" : reader.GetString(3);
-                    if (!expected.TryGetValue(node, out var index) || !string.Equals(serial, MeterRegistry.FormatSerial(index), StringComparison.OrdinalIgnoreCase))
+                    bool hasNode = expectedNodes.TryGetValue(node, out long nodeIndex);
+                    bool hasSerial = expectedSerials.TryGetValue(serial, out long serialIndex);
+                    if (!hasNode || !hasSerial || nodeIndex != serialIndex)
                     {
-                        Issue($"Node/serial collision involving {node}. No records will be replaced.");
-                        continue;
-                    }
-
-                    if (!owned.Add(node))
-                    {
-                        Issue($"Multiple nameplates use node {node}.");
-                        continue;
-                    }
-
-                    if (reader.IsDBNull(4) || reader.GetGuid(4) != HesRegistrationDefinition.OwnershipId(index))
-                    {
-                        if (reader.IsDBNull(5) || !(string.Equals(reader.GetString(5), "CRY" + serial, StringComparison.OrdinalIgnoreCase)
-                            || string.Equals(reader.GetString(5), HesRegistrationDefinition.DeviceId(index), StringComparison.OrdinalIgnoreCase)))
+                        // A crossed identity makes both participating meters ineligible.
+                        if (hasNode)
                         {
-                            skipped.Add(index);
-                            skippedSerials.Add(serial);
-                            skippedChunkNodes.Add(node);
-                            if (skippedNodes.Count < 10)
-                            {
-                                skippedNodes.Add(node);
-                            }
+                            Skip(nodeIndex, "Node/serial collision");
+                        }
 
+                        if (hasSerial)
+                        {
+                            Skip(serialIndex, "Node/serial collision");
+                        }
+
+                        continue;
+                    }
+
+                    if (!matched.Add(nodeIndex))
+                    {
+                        Skip(nodeIndex, "Multiple nameplates for one meter");
+                        continue;
+                    }
+
+                    if (reader.IsDBNull(4) || reader.GetGuid(4) != HesRegistrationDefinition.OwnershipId(nodeIndex))
+                    {
+                        string? device = reader.IsDBNull(5) ? null : reader.GetString(5);
+                        string expectedSerial = MeterRegistry.FormatSerial(nodeIndex);
+                        bool isLegacy = string.Equals(device, "CRY" + expectedSerial, StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(device, HesRegistrationDefinition.DeviceId(nodeIndex), StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(device, "MAYA00" + expectedSerial[2..], StringComparison.OrdinalIgnoreCase);
+                        if (!isLegacy)
+                        {
+                            Skip(nodeIndex, "Unrecognized MAYA identity");
                             continue;
                         }
 
-                        legacy++;
+                        legacyIndices.Add(nodeIndex);
                     }
-
-                    plates++;
                 }
             }
 
             await using (var command = new NpgsqlCommand("""
-                SELECT id, xmin::text, meterno::text FROM kimbaldb_dbo.metersecurity WHERE meterno = ANY(@serials::citext[]) ORDER BY id;
-                SELECT id, xmin::text, nodeid::text FROM kimbaldb_dbo.latestrouting WHERE nodeid = ANY(@nodes::citext[]) ORDER BY id;
+                SELECT id, xmin::text, meterno::text
+                FROM kimbaldb_dbo.metersecurity WHERE meterno = ANY(@serials::citext[]) ORDER BY id;
+                SELECT id, xmin::text, nodeid::text
+                FROM kimbaldb_dbo.latestrouting WHERE nodeid = ANY(@nodes::citext[]) ORDER BY id;
                 """, connection))
             {
                 AddIdentities(command, nodes, serials);
-                var ownedSerials = owned.Select(n => MeterRegistry.FormatSerial(expected[n])).ToHashSet(StringComparer.OrdinalIgnoreCase);
                 await using var reader = await command.ExecuteReaderAsync(ct);
                 while (await reader.ReadAsync(ct))
                 {
                     Hash("s", reader);
-                    string serial = reader.GetString(2);
-                    if (skippedSerials.Contains(serial))
+                    long index = expectedSerials[reader.GetString(2)];
+                    securityCounts[index] = securityCounts.GetValueOrDefault(index) + 1;
+                    if (!matched.Contains(index))
                     {
-                        continue;
-                    }
-
-                    security++;
-                    if (!ownedSerials.Contains(serial))
-                    {
-                        Issue("Security exists without a verified in-range nameplate; orphan cleanup is blocked.");
+                        Skip(index, "Security without a matching nameplate");
                     }
                 }
 
@@ -269,25 +284,29 @@ public sealed class HesRegistrationDatabase
                 while (await reader.ReadAsync(ct))
                 {
                     Hash("r", reader);
-                    string node = reader.GetString(2);
-                    if (skippedChunkNodes.Contains(node))
+                    long index = expectedNodes[reader.GetString(2)];
+                    routeCounts[index] = routeCounts.GetValueOrDefault(index) + 1;
+                    if (!matched.Contains(index))
                     {
-                        continue;
-                    }
-
-                    routes++;
-                    if (!owned.Contains(node))
-                    {
-                        Issue("Routing exists without a verified in-range nameplate; orphan cleanup is blocked.");
+                        Skip(index, "Routing without a matching nameplate");
                     }
                 }
             }
+
+            foreach (long index in indices.Where(index => !skipped.Contains(index)))
+            {
+                plates += matched.Contains(index) ? 1 : 0;
+                legacy += legacyIndices.Contains(index) ? 1 : 0;
+                security += securityCounts.GetValueOrDefault(index);
+                routes += routeCounts.GetValueOrDefault(index);
+            }
         }
 
-        return new(target, new(plates, security, routes), legacy, conflicts, issues, Convert.ToHexString(hash.GetHashAndReset()))
+        return new(target, new(plates, security, routes), legacy, 0, [], Convert.ToHexString(hash.GetHashAndReset()))
         {
             SkippedIndices = skipped.ToFrozenSet(),
-            SkippedNodes = skippedNodes.ToArray()
+            SkippedNodes = skippedNodes.ToArray(),
+            SkipReasons = skipReasons.Select(pair => new RegistrationSkipReason(pair.Key, pair.Value)).ToArray()
         };
     }
 

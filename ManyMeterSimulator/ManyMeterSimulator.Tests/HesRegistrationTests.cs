@@ -16,16 +16,16 @@ namespace ManyMeterSimulator.Tests;
 public sealed class HesRegistrationLeaseTests
 {
     [Theory]
-    [InlineData(0, "gate_17_1", "sink1", 1u)]
-    [InlineData(3, "gate_17_1", "sink0", 0u)]
-    [InlineData(499, "gate_17_1", "sink0", 0u)]
-    [InlineData(500, "gate_17_1", "sink1", 1u)]
-    [InlineData(999, "gate_17_1", "sink0", 0u)]
-    [InlineData(1000, "gate_17_2", "sink1", 1u)]
-    public void GatewaysUseBatchRelativeGroupsAndFourSinks(int offset, string gateway, string wirepasSink, uint kmeshSink)
+    [InlineData(0, "gw_0002", "sink1", 1u)]
+    [InlineData(3, "gw_0005", "sink0", 0u)]
+    [InlineData(499, "gw_0501", "sink0", 0u)]
+    [InlineData(500, "gw_0502", "sink1", 1u)]
+    [InlineData(999, "gw_1001", "sink0", 0u)]
+    [InlineData(1000, "gw_1002", "sink1", 1u)]
+    public void GatewaysUseNodeSuffixAndStableSinks(int offset, string gateway, string wirepasSink, uint kmeshSink)
     {
         Assert.Equal((gateway, wirepasSink), BatchGatewayAssignment.For(17, 2300002, 2300002 + offset));
-        Assert.Equal((gateway, kmeshSink), BatchGatewayAssignment.ForKmesh(17, 2300002, 2300002 + offset));
+        Assert.Equal(("k" + gateway, kmeshSink), BatchGatewayAssignment.ForKmesh(17, 2300002, 2300002 + offset));
     }
 
     [Fact]
@@ -49,11 +49,11 @@ public sealed class HesRegistrationLeaseTests
         Assert.Throws<InvalidOperationException>(() => draft.Apply(definition));
     }
     [Theory]
-    [InlineData(NicType.Tcp4G, "direct_tcp", "direct_tcp", -1)]
-    [InlineData(NicType.Mqtt4G, "direct_4g", "direct_4g", -1)]
-    [InlineData(NicType.Mqtt4GImg, "direct_4g", "direct_4g", -1)]
-    [InlineData(NicType.MqttWirepas, "gate_1_1", "sink0", 3)]
-    [InlineData(NicType.MqttKmesh, "gate_1_1", "0", -1)]
+    [InlineData(NicType.Tcp4G, "direct_tcp_0001", "direct_tcp", -1)]
+    [InlineData(NicType.Mqtt4G, "direct_4g_0001", "direct_4g", -1)]
+    [InlineData(NicType.Mqtt4GImg, "direct_4g_0001", "direct_4g", -1)]
+    [InlineData(NicType.MqttWirepas, "gw_0001", "sink0", 3)]
+    [InlineData(NicType.MqttKmesh, "kgw_0001", "0", -1)]
     public void DefinitionUsesActualModelAndTransport(NicType nic, string gateway, string sink, int endpoint)
     {
         var templates = new TemplateRegistry(Options.Create(new TemplateOptions { Folder = Path.Combine(AppContext.BaseDirectory, "Templates") }),
@@ -72,6 +72,17 @@ public sealed class HesRegistrationLeaseTests
         Assert.Equal(gateway, d.Gateway);
         Assert.Equal(sink, d.Sink);
         Assert.Equal(endpoint, d.Endpoint);
+
+        foreach (long index in new[] { batch.StartIndex, batch.EndIndex })
+        {
+            var route = d.RouteFor(index);
+            var topic = ManyMeterSimulator.Networking.Mqtt.NicTopics.FakeRouting(batch, index).Split('/');
+
+            Assert.Equal(route.Gateway, topic[3]);
+            Assert.Equal(route.Sink, topic[4]);
+            Assert.EndsWith(MeterNodeIds.Format(index)[^4..], route.Gateway);
+        }
+
         Assert.Equal(64, d.ModelHash.Length);
         Assert.Equal(64, d.Fingerprint.Length);
         Assert.Throws<InvalidOperationException>(() => factory.Create(batch, 8));
@@ -225,12 +236,12 @@ public sealed class HesRegistrationPostgresTests
                 AND communicationmodule='RF' AND deviceid=nodeid::text || 'MAYA'
                 AND installedon=originalinstalledon AND abs(extract(epoch FROM (installedon-(now() at time zone 'UTC')))) < 30
                 """));
-            Assert.Equal("gate_2_1/sink0", await Sql("SELECT gatewayid::text || '/' || sinkid::text FROM kimbaldb_dbo.latestrouting WHERE nodeid='1002300501'"));
-            Assert.Equal("gate_2_1/sink1", await Sql("SELECT gatewayid::text || '/' || sinkid::text FROM kimbaldb_dbo.latestrouting WHERE nodeid='1002300502'"));
-            Assert.Equal("gate_2_2/sink1", await Sql("SELECT gatewayid::text || '/' || sinkid::text FROM kimbaldb_dbo.latestrouting WHERE nodeid='1002301002'"));
-            Assert.Equal(1000L, await Sql("SELECT count(*) FROM kimbaldb_dbo.latestrouting WHERE gatewayid='gate_2_1'"));
-            Assert.Equal(1L, await Sql("SELECT count(*) FROM kimbaldb_dbo.latestrouting WHERE gatewayid='gate_2_2'"));
-            Assert.Equal(0L, await Sql("SELECT count(*) FROM kimbaldb_dbo.latestrouting WHERE gatewayid='gate_2_3'"));
+            Assert.Equal("gw_0501/sink0", await Sql("SELECT gatewayid::text || '/' || sinkid::text FROM kimbaldb_dbo.latestrouting WHERE nodeid='1002300501'"));
+            Assert.Equal("gw_0502/sink1", await Sql("SELECT gatewayid::text || '/' || sinkid::text FROM kimbaldb_dbo.latestrouting WHERE nodeid='1002300502'"));
+            Assert.Equal("gw_1002/sink1", await Sql("SELECT gatewayid::text || '/' || sinkid::text FROM kimbaldb_dbo.latestrouting WHERE nodeid='1002301002'"));
+            Assert.Equal(1001L, await Sql("SELECT count(DISTINCT gatewayid) FROM kimbaldb_dbo.latestrouting"));
+            Assert.Equal(1L, await Sql("SELECT count(*) FROM kimbaldb_dbo.latestrouting WHERE gatewayid='gw_1002'"));
+            Assert.Equal(0L, await Sql("SELECT count(*) FROM kimbaldb_dbo.latestrouting WHERE gatewayid='gw_1003'"));
             await Assert.ThrowsAsync<InvalidOperationException>(() => service.ReplaceAsync(admin, confirmed, false, default));
 
             await Sql("UPDATE kimbaldb_dbo.nameplate SET guid='11111111-1111-1111-1111-111111111111', deviceid='other' WHERE nodeid='1002300002'");
@@ -258,8 +269,8 @@ public sealed class HesRegistrationPostgresTests
     {
         await Reset();
         await Provision(Definition(1234, 1001) with { Module = "KMesh", GroupGateways = true, BatchId = 4 });
-        Assert.Equal("gate_4_1/0", await Sql("SELECT gatewayid::text || '/' || sinkid::text FROM kimbaldb_dbo.latestrouting WHERE nodeid='1000002233'"));
-        Assert.Equal("gate_4_2/1", await Sql("SELECT gatewayid::text || '/' || sinkid::text FROM kimbaldb_dbo.latestrouting WHERE nodeid='1000002234'"));
+        Assert.Equal("kgw_2233/0", await Sql("SELECT gatewayid::text || '/' || sinkid::text FROM kimbaldb_dbo.latestrouting WHERE nodeid='1000002233'"));
+        Assert.Equal("kgw_2234/1", await Sql("SELECT gatewayid::text || '/' || sinkid::text FROM kimbaldb_dbo.latestrouting WHERE nodeid='1000002234'"));
     }
 
     private sealed class TestEnvironment : IHostEnvironment
@@ -293,17 +304,111 @@ public sealed class HesRegistrationPostgresTests
     }
 
     [LocalRegistrationPostgresFact]
-    public async Task OutOfRangeSerialCollisionAndOrphanSecurityBlockReplacement()
+    public async Task OutOfRangeSerialCollisionAndOrphanSecuritySkipTheAffectedMeter()
     {
         await Reset();
         await Provision(Definition());
         await Sql("UPDATE kimbaldb_dbo.nameplate SET nodeid='9000000000' WHERE meterno='MY00000001'");
         var preview = await _store.PreviewAsync(Database(), Definition(), default);
-        Assert.True(preview.Conflicts > 0);
-        await Assert.ThrowsAsync<InvalidOperationException>(() => _store.ReplaceAsync(Database(), Definition(), preview, true, default));
+        Assert.Equal(0, preview.Conflicts);
+        Assert.Equal(1, preview.SkippedMeters);
+        Assert.Equal("Node/serial collision", Assert.Single(preview.SkipReasons).Reason);
+        await _store.ReplaceAsync(Database(), Definition(), preview, true, default);
         Assert.Equal("9000000000", await Sql("SELECT nodeid::text FROM kimbaldb_dbo.nameplate WHERE meterno='MY00000001'"));
         await Sql("DELETE FROM kimbaldb_dbo.nameplate WHERE meterno='MY00000001'");
-        Assert.True((await _store.PreviewAsync(Database(), Definition(), default)).Conflicts > 0);
+        var orphan = await _store.PreviewAsync(Database(), Definition(), default);
+        Assert.Equal(0, orphan.Conflicts);
+        Assert.Equal(1, orphan.SkippedMeters);
+        await _store.ReplaceAsync(Database(), Definition(), orphan, false, default);
+        Assert.Equal(1L, await Sql("SELECT count(*) FROM kimbaldb_dbo.metersecurity WHERE meterno='MY00000001'"));
+    }
+
+    [LocalRegistrationPostgresFact]
+    public async Task OriginalScriptDeviceIdsAreLegacyButSimilarUnrelatedIdsAreSkipped()
+    {
+        await Reset();
+        await Provision(Definition(1, 3));
+        await Sql("""
+            UPDATE kimbaldb_dbo.nameplate SET guid='11111111-1111-1111-1111-111111111111',
+                deviceid='MAYA00'||regexp_replace(meterno::text,'[^0-9]','','g');
+            UPDATE kimbaldb_dbo.nameplate SET deviceid='MAYA0000000999' WHERE nodeid='1000000003';
+            """);
+        var definition = Definition(1, 3);
+        var preview = await _store.PreviewAsync(Database(), definition, default);
+        Assert.Equal(2, preview.LegacyMeters);
+        Assert.Equal(1, preview.SkippedMeters);
+        Assert.Equal(0, preview.Conflicts);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => _store.ReplaceAsync(Database(), definition, preview, false, default));
+
+        await _store.ReplaceAsync(Database(), definition, preview, true, default);
+        var after = await _store.PreviewAsync(Database(), definition, default);
+        Assert.Equal(0, after.LegacyMeters);
+        Assert.Equal(1, after.SkippedMeters);
+        Assert.Equal("MAYA0000000999", await Sql("SELECT deviceid::text FROM kimbaldb_dbo.nameplate WHERE nodeid='1000000003'"));
+    }
+
+    [LocalRegistrationPostgresFact]
+    public async Task OrphanRoutingIsSkippedWithoutBlockingMissingOrOwnedMeters()
+    {
+        await Reset();
+        await Provision(Definition(1, 1));
+        await Sql("""
+            INSERT INTO kimbaldb_dbo.latestrouting(createddate,nodeid,gatewayid,sinkid,linkscore,lastcommunicatedon)
+            VALUES(now(),'1000000002','preserve','preserve',0,now()),(now(),'1000000002','preserve','preserve',0,now());
+            """);
+        var before = await _store.PreviewAsync(Database(), Definition(2, 1), default);
+        var definition = Definition(1, 3);
+        var preview = await _store.PreviewAsync(Database(), definition, default);
+        Assert.Equal(0, preview.Conflicts);
+        Assert.Equal(1, preview.SkippedMeters);
+        Assert.Equal("Routing without a matching nameplate", Assert.Single(preview.SkipReasons).Reason);
+        Assert.Equal(new RegistrationCounts(1, 1, 1), preview.Existing);
+
+        await _store.ReplaceAsync(Database(), definition, preview, false, default);
+        Assert.Equal(before.Fingerprint, (await _store.PreviewAsync(Database(), Definition(2, 1), default)).Fingerprint);
+        Assert.Equal(2L, await Sql("SELECT count(*) FROM kimbaldb_dbo.nameplate"));
+        Assert.Equal(4L, await Sql("SELECT count(*) FROM kimbaldb_dbo.latestrouting"));
+    }
+
+    [LocalRegistrationPostgresFact]
+    public async Task CrossedIdentitiesSkipBothMetersEvenAcrossChunkBoundaries()
+    {
+        await Reset();
+        var definition = Definition(1, 1002);
+        await Provision(definition);
+        await Sql("""
+            UPDATE kimbaldb_dbo.nameplate SET meterno='TEMP' WHERE nodeid='1000000001';
+            UPDATE kimbaldb_dbo.nameplate SET meterno='MY00000001' WHERE nodeid='1000001001';
+            UPDATE kimbaldb_dbo.nameplate SET meterno='MY00001001' WHERE nodeid='1000000001';
+            """);
+        var before = await _store.PreviewAsync(Database(), Definition(1, 1), default);
+        var preview = await _store.PreviewAsync(Database(), definition, default);
+        Assert.Equal(2, preview.SkippedMeters);
+        Assert.Equal(2, Assert.Single(preview.SkipReasons).Meters);
+        Assert.Equal(new RegistrationCounts(1000, 1000, 1000), preview.Existing);
+
+        await _store.ReplaceAsync(Database(), definition, preview, false, default);
+        Assert.Equal(before.Fingerprint, (await _store.PreviewAsync(Database(), Definition(1, 1), default)).Fingerprint);
+    }
+
+    [LocalRegistrationPostgresFact]
+    public async Task DuplicateNameplatesAreSkippedAndExcludedFromReplacementCounts()
+    {
+        await Reset();
+        await Provision(Definition());
+        await Sql("""
+            ALTER TABLE kimbaldb_dbo.nameplate DROP CONSTRAINT nameplate_meterno_key;
+            INSERT INTO kimbaldb_dbo.nameplate(guid,meterno,deviceid,createddate,nodeid)
+            SELECT guid,meterno,deviceid,createddate,nodeid FROM kimbaldb_dbo.nameplate WHERE nodeid='1000000001';
+            """);
+        var before = await _store.PreviewAsync(Database(), Definition(1, 1), default);
+        var preview = await _store.PreviewAsync(Database(), Definition(), default);
+        Assert.Equal(1, preview.SkippedMeters);
+        Assert.Equal("Multiple nameplates for one meter", Assert.Single(preview.SkipReasons).Reason);
+        Assert.Equal(new RegistrationCounts(1, 1, 1), preview.Existing);
+
+        await _store.ReplaceAsync(Database(), Definition(), preview, false, default);
+        Assert.Equal(before.Fingerprint, (await _store.PreviewAsync(Database(), Definition(1, 1), default)).Fingerprint);
     }
 
     [LocalRegistrationPostgresFact]

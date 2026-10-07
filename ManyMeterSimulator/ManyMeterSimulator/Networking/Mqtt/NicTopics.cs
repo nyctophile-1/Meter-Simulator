@@ -33,8 +33,8 @@ public static class NicTopics
         };
         var route = nicType switch
         {
-            NicType.Tcp4G => ("direct_tcp", "direct_tcp"),
-            NicType.Mqtt4G or NicType.Mqtt4GImg => ("direct_4g", "direct_4g"),
+            NicType.Tcp4G => (BatchGatewayAssignment.GatewayFor("TCP", meterIndex), "direct_tcp"),
+            NicType.Mqtt4G or NicType.Mqtt4GImg => (BatchGatewayAssignment.GatewayFor("MQTT4G", meterIndex), "direct_4g"),
             NicType.MqttWirepas => BatchGatewayAssignment.For(batch.Id, batch.StartIndex, meterIndex),
             NicType.MqttKmesh => KmeshRoute(),
             _ => throw new ArgumentOutOfRangeException(nameof(nicType))

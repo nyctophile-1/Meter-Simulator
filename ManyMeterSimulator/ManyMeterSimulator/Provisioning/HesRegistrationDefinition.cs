@@ -25,15 +25,26 @@ public sealed record HesRegistrationDefinition(
     public override string ToString() => "HES registration definition (security redacted)";
     public (string Gateway, string Sink) RouteFor(long index)
     {
-        if (index < StartIndex || index > EndIndex) throw new ArgumentOutOfRangeException(nameof(index));
-        if (!GroupGateways) return (Gateway, Sink);
+        if (index < StartIndex || index > EndIndex)
+        {
+            throw new ArgumentOutOfRangeException(nameof(index));
+        }
+
         if (Module == "KMesh")
         {
             var route = BatchGatewayAssignment.ForKmesh(BatchId, StartIndex, index);
+
             return (route.Gateway, route.Sink.ToString(CultureInfo.InvariantCulture));
         }
-        return BatchGatewayAssignment.For(BatchId, StartIndex, index);
+
+        if (Module == "RF")
+        {
+            return BatchGatewayAssignment.For(BatchId, StartIndex, index);
+        }
+
+        return (BatchGatewayAssignment.GatewayFor(Module, index), Sink);
     }
+
     public static string DeviceId(long index) => MeterNodeIds.Format(index) + "MAYA";
     // Stable, application-specific ownership marker; serial prefix or range alone is insufficient.
     public static Guid OwnershipId(long index) => new(SHA256.HashData(
@@ -86,41 +97,62 @@ public sealed class HesRegistrationDefinitionFactory(
     public HesRegistrationDefinition Create(MeterBatch batch, int templateId)
     {
         if (templateId <= 0 || batch.HesTemplateId is > 0 && templateId != batch.HesTemplateId)
+        {
             throw new InvalidOperationException("Use the HES template ID assigned to this batch.");
+        }
+
         string path = templates.ResolveOrThrow(batch.TemplateName);
         var meter = new DLMSMeter(batch.StartIndex, brain.Value.LogicalName, brain.Value.ClientAddress, brain.Value.ServerAddress);
         var session = new DLMSServerSession(meter, path, pushConfig: null);
         session.Initialize(true);
+
         string Value(string obis) => meter.GetValue(obis) switch
         {
             byte[] bytes => Encoding.ASCII.GetString(bytes),
             var value => Convert.ToString(value, CultureInfo.InvariantCulture) ?? ""
         };
+
         int? Number(string obis) => int.TryParse(Value(obis), CultureInfo.InvariantCulture, out int n) ? n : null;
+
         string category = Value("0.0.94.91.11.255");
         string type = Value("0.0.94.91.9.255");
         if (string.IsNullOrWhiteSpace(category) || string.IsNullOrWhiteSpace(type))
-            throw new InvalidOperationException("The batch model must define meter category and meter type before registration.");
-        var route = batch.NicType switch
         {
-            NicType.Tcp4G => ("direct_tcp", "direct_tcp", -1),
-            NicType.Mqtt4G or NicType.Mqtt4GImg => ("direct_4g", "direct_4g", -1),
-            NicType.MqttWirepas => ($"gate_{batch.Id}_1", "sink0", 3),
-            NicType.MqttKmesh => ($"gate_{batch.Id}_1", "0", -1),
+            throw new InvalidOperationException("The batch model must define meter category and meter type before registration.");
+        }
+
+        string module = batch.NicType switch
+        {
+            NicType.Tcp4G => "TCP",
+            NicType.Mqtt4G or NicType.Mqtt4GImg => "MQTT4G",
+            NicType.MqttWirepas => "RF",
+            NicType.MqttKmesh => "KMesh",
             _ => throw new InvalidOperationException("Unsupported batch transport.")
         };
-        if (string.IsNullOrWhiteSpace(route.Item1) || string.IsNullOrWhiteSpace(route.Item2) || route.Item1.Length > 32 || route.Item2.Length > 32)
-            throw new InvalidOperationException("Configure a valid gateway and sink (at most 32 characters) before provisioning.");
+        string gateway = BatchGatewayAssignment.GatewayFor(module, batch.StartIndex);
+        string sink = batch.NicType switch
+        {
+            NicType.Tcp4G => "direct_tcp",
+            NicType.Mqtt4G or NicType.Mqtt4GImg => "direct_4g",
+            NicType.MqttWirepas => BatchGatewayAssignment.For(batch.Id, batch.StartIndex, batch.StartIndex).Sink,
+            _ => BatchGatewayAssignment.ForKmesh(batch.Id, batch.StartIndex, batch.StartIndex).Sink.ToString(CultureInfo.InvariantCulture)
+        };
+        int endpoint = batch.NicType == NicType.MqttWirepas ? 3 : -1;
+
         string rating = Value("0.0.94.91.12.255");
-        if (rating.Length > 10) throw new InvalidOperationException("Model current rating exceeds the HES nameplate limit.");
+        if (rating.Length > 10)
+        {
+            throw new InvalidOperationException("Model current rating exceeds the HES nameplate limit.");
+        }
+
         return new(batch.StartIndex, batch.Count, templateId,
             Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))),
             "Kimbal", "MY01.1", type, category, rating,
-            Number("0.0.96.1.4.255"), PositiveOrOne(Number("1.0.0.4.2.255")), PositiveOrOne(Number("1.0.0.4.3.255")), CaptureMinutes(Number("1.0.0.8.4.255")),
-            tcp.Value.AddressPrefix, tcp.Value.ListenPort,
-            batch.NicType switch { NicType.Tcp4G => "TCP", NicType.MqttWirepas => "RF", NicType.MqttKmesh => "KMesh", _ => "MQTT4G" },
-            route.Item1, route.Item2, route.Item3,
-            Encoding.ASCII.GetString(meter.BlockCipherKey!), Encoding.ASCII.GetString(meter.HLSKey!), Encoding.ASCII.GetString(meter.LLSKey!), batch.Id, batch.NicType is NicType.MqttWirepas or NicType.MqttKmesh);
+            Number("0.0.96.1.4.255"), PositiveOrOne(Number("1.0.0.4.2.255")), PositiveOrOne(Number("1.0.0.4.3.255")),
+            CaptureMinutes(Number("1.0.0.8.4.255")), tcp.Value.AddressPrefix, tcp.Value.ListenPort,
+            module, gateway, sink, endpoint,
+            Encoding.ASCII.GetString(meter.BlockCipherKey!), Encoding.ASCII.GetString(meter.HLSKey!),
+            Encoding.ASCII.GetString(meter.LLSKey!), batch.Id, batch.NicType is NicType.MqttWirepas or NicType.MqttKmesh);
     }
 
     private static int PositiveOrOne(int? value) => value is > 0 ? value.Value : 1;

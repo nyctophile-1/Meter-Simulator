@@ -139,16 +139,26 @@ public partial class MqttPushRunTests
         f.Batches.TryStart(batch.Id);
         await using var run = await f.Push.OpenMqttRunAsync(f.Request with
             { BatchIds = [batch.Id], PushSetupLogicalName = MqttPushProfiles.Daily });
-        if (ciphering) await run.SendLiveAsync();
-        else { await run.PrepareAsync(); Assert.Empty(f.Publisher.Messages); await run.FireAsync(); }
+
+        if (ciphering)
+        {
+            await run.SendLiveAsync();
+        }
+        else
+        {
+            await run.PrepareAsync();
+            Assert.Empty(f.Publisher.Messages);
+            await run.FireAsync();
+        }
+
         var message = Assert.Single(f.Publisher.Messages);
         var meter = new MeterRef(batch.StartIndex, nic);
         byte[] payload = message.Payload;
         if (nic == NicType.MqttKmesh)
         {
-            Assert.Equal($"gateway/push/meter/gate_{batch.Id}_1/{meter.NodeId}", message.Topic);
+            Assert.Equal($"gateway/push/meter/kgw_{meter.NodeId[^4..]}/{meter.NodeId}", message.Topic);
             var packet = PushDataMessage.Parser.ParseFrom(payload);
-            Assert.Equal($"gate_{batch.Id}_1", packet.Header.GatewayId);
+            Assert.Equal($"kgw_{meter.NodeId[^4..]}", packet.Header.GatewayId);
             Assert.Equal((uint)((batch.StartIndex - 1) % 4), packet.Header.SinkId);
             Assert.Equal(uint.Parse(meter.NodeId), packet.Header.NodeAddr);
             Assert.Equal(meter.Serial, packet.Data.MeterNumber);
@@ -156,7 +166,11 @@ public partial class MqttPushRunTests
             Assert.Equal(1u, packet.Data.FragInfo.TotalFrag);
             payload = packet.Data.Payload.ToByteArray();
         }
-        else Assert.Equal($"Normal_Push/{meter.NodeId}", message.Topic);
+        else
+        {
+            Assert.Equal($"Normal_Push/{meter.NodeId}", message.Topic);
+        }
+
         var fields = DailyPushTests.Decode(payload);
         Assert.Equal(7, fields.Length);
         Assert.Equal("CRY" + meter.Serial, fields[0]);

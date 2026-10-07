@@ -28,9 +28,8 @@ public sealed class HesRegistrationPreview
     public string MeterType => Definition.MeterType;
     public int TemplateId => Definition.TemplateId;
     public string ModelHash => Definition.ModelHash;
-    public string Route => Definition.GroupGateways
-        ? $"{Definition.RouteFor(Definition.StartIndex).Gateway} … {Definition.RouteFor(Definition.EndIndex).Gateway}; up to {BatchGatewayAssignment.MetersPerGateway} meters/gateway; {(Definition.Module == "KMesh" ? "sinks 0–3" : "sink0–sink3")}; endpoint {Definition.Endpoint}"
-        : $"{Definition.Gateway} / {Definition.Sink}; endpoint {Definition.Endpoint}";
+    public string Route => $"Gateway uses the last 4 node-ID digits (example: {Definition.RouteFor(Definition.StartIndex).Gateway}); "
+        + $"{(Definition.Module == "KMesh" ? "sinks 0–3" : Definition.Module == "RF" ? "sink0–sink3" : Definition.Sink)}; endpoint {Definition.Endpoint}";
     public string Module => Definition.Module;
     public string FirstDeviceId => HesRegistrationDefinition.DeviceId(Definition.StartIndex);
     public string LastDeviceId => HesRegistrationDefinition.DeviceId(Definition.EndIndex);
@@ -108,7 +107,7 @@ public sealed class HesBatchRegistrationService(MeterRegistry meters, NetworkReg
 
         if (preview.EligibleCount == 0)
         {
-            throw new InvalidOperationException("All meters were skipped because their existing registrations could not be identified as MAYA. Nothing was replaced.");
+            throw new InvalidOperationException("All meters were skipped because their registrations are conflicting, incomplete or unrecognized. Nothing was replaced.");
         }
 
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
